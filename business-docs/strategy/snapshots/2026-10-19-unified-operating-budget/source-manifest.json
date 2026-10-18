@@ -1,0 +1,63 @@
+{
+  "as_of": "2026-10-19",
+  "read_only": true,
+  "archive": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-closed-rebase",
+  "source_files": [
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-closed-rebase/closed-pnl-private.json",
+      "sha256": "56b6340f9137c20ec3fb9878d609f10311b0e5e80af989469efbbdbce91409ad"
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-closed-rebase/sushi-labor-private.json",
+      "sha256": "20df340b7179c7bc8321e401813af50fe371c7d2e73a200d43d2a2ad50489ef9"
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-closed-rebase/roll-food-allocation.json",
+      "sha256": "a78c8e266b6c4816ae167e8e340247ed5fbcfbaf41fc764757a383a025885bd5"
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-closed-rebase/daily-sales-safe-aggregates.json",
+      "sha256": "38d1814d11a8e55f0782f185fdb95686bcdf43ac5d520dfce1e6ce7c11e2b377"
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-closed-rebase/current-rates-private.json",
+      "sha256": "82019bdbcd5c3511224f733f9b0498404465e4a552b0a60feaae50febd48e0e8"
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-closed-rebase/iiko-channels-manifest.json",
+      "sha256": "405bd1f919776c352b6799060a194126dfa239b494c36523d4adeb6df321e9cd"
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-closed-rebase/utilities-private.json",
+      "sha256": "8c9d7ac32749fda3ce8a9d87371a24c010de346802c3ef4f2479ac063157771f"
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-unified-budget/normalization-drills-private.json",
+      "sha256": "f3a4f83f543beb4beb185ec8a747879a97870837913a39c0a8979f8ba8ea27df"
+    }
+  ],
+  "privacy": "Only business totals and anonymous daily revenue/coefficient aggregates in inputs.json; no customers, employees, tokens or bank details. Raw drill in private archive.",
+  "normalization_private_archive": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-unified-budget",
+  "snapshot_files": [
+    {
+      "name": "inputs.json",
+      "sha256": "d4c175fdab86419e3b262d5a1b67d0079b1c1890d4ce2e54892c02340809f058"
+    },
+    {
+      "name": "calculate.py",
+      "sha256": "a8f21bfc2470ab1a6262d872a40cc6f4417e0d4470f9d3a6e66aba8940edc432"
+    },
+    {
+      "name": "results.json",
+      "sha256": "487340af9e8b398cba709bc4c65292578a77b539df96eadc51fd10850ab722fb"
+    },
+    {
+      "name": "build_report.py",
+      "sha256": "ad94da3a76e739c957d5a907a26807880f35a8ad476f59e2b9c4031a924189a2"
+    },
+    {
+      "name": "report.html",
+      "sha256": "90e6f56df115a3882d446b4a733138c4b85fb6ead3c2b4c57579b796a70b92d4"
+    }
+  ]
+}

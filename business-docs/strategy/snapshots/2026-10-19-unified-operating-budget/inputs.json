@@ -1,0 +1,1897 @@
+{
+  "as_of": "2026-10-19",
+  "source_authority": "Owner-selected closed app P&L, July–September2026. Facts preserved; future budget assumptions are separate.",
+  "months": {
+    "2026-07": {
+      "orders": 1979,
+      "calendar_days": 31,
+      "lines": {
+        "revenue_net_chernikova": {
+          "code": "revenue_net_chernikova",
+          "title": "Выручка с учетом скидок Черникова",
+          "kind": "source",
+          "amount": "3596783.28",
+          "status": "ok",
+          "sign_role": 1
+        },
+        "partner_commission": {
+          "code": "partner_commission",
+          "title": "Комиссия партнерам (с -)",
+          "kind": "source",
+          "amount": "40890.60",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "customer_refunds": {
+          "code": "customer_refunds",
+          "title": "Возвраты клиентам (с минусом)",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "food_cost_chernikova": {
+          "code": "food_cost_chernikova",
+          "title": "Расход продуктов (фудкост) Черникова",
+          "kind": "source",
+          "amount": "1047255.66",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "cook_payroll": {
+          "code": "cook_payroll",
+          "title": "Зарплата поваров (оклады и удержания)",
+          "kind": "source",
+          "amount": "504122.67",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "pizza_box_inventory": {
+          "code": "pizza_box_inventory",
+          "title": "Результаты инвентаризации коробки д/пиццы",
+          "kind": "source",
+          "amount": "-7290.59",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "rent_chernikova": {
+          "code": "rent_chernikova",
+          "title": "Аренда торговой точки Черникова",
+          "kind": "source",
+          "amount": "104000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "administrator_payroll": {
+          "code": "administrator_payroll",
+          "title": "Зарплата администраторов",
+          "kind": "source",
+          "amount": "177164.84",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "bonuses": {
+          "code": "bonuses",
+          "title": "Премии поваров, шеф-повара, администраторов",
+          "kind": "source",
+          "amount": "26800.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "writeoffs": {
+          "code": "writeoffs",
+          "title": "Списание продукции и сырья",
+          "kind": "source",
+          "amount": "75111.05",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "audit_results": {
+          "code": "audit_results",
+          "title": "Результаты ревизий",
+          "kind": "source",
+          "amount": "18001.71",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "beverage_inventory": {
+          "code": "beverage_inventory",
+          "title": "Результаты инвентаризации напитков (барная ревизия)",
+          "kind": "source",
+          "amount": "227.25",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "courier_service": {
+          "code": "courier_service",
+          "title": "Траты на курьерскую службу",
+          "kind": "source",
+          "amount": "282187.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "acquiring": {
+          "code": "acquiring",
+          "title": "Комиссия за эквайринг",
+          "kind": "source",
+          "amount": "48907.38",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "transport": {
+          "code": "transport",
+          "title": "Транспортные услуги",
+          "kind": "source",
+          "amount": "22093.40",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "staff_meals": {
+          "code": "staff_meals",
+          "title": "Расходы на питание персонала",
+          "kind": "source",
+          "amount": "23748.19",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "automation": {
+          "code": "automation",
+          "title": "Оплата систем автоматизации",
+          "kind": "source",
+          "amount": "61699.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "shop_maintenance": {
+          "code": "shop_maintenance",
+          "title": "Содержание торговых точек",
+          "kind": "source",
+          "amount": "35879.17",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "equipment_repair": {
+          "code": "equipment_repair",
+          "title": "Ремонт оборудования",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "warehouse_rent": {
+          "code": "warehouse_rent",
+          "title": "Аренда склада",
+          "kind": "source",
+          "amount": "10000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "packaging_inventory": {
+          "code": "packaging_inventory",
+          "title": "Результаты инвентаризации упаковки (кроме коробок для пиццы)",
+          "kind": "source",
+          "amount": "28146.04",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "aux_goods": {
+          "code": "aux_goods",
+          "title": "Вспомогательные товары(учет по факту оплаты)",
+          "kind": "source",
+          "amount": "9153.87",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "payroll_taxes": {
+          "code": "payroll_taxes",
+          "title": "Налоги с ЗП",
+          "kind": "source",
+          "amount": "20013.93",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "accumulation_fund": {
+          "code": "accumulation_fund",
+          "title": "Накопительный фонд",
+          "kind": "source",
+          "amount": "35694.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "admin_payroll": {
+          "code": "admin_payroll",
+          "title": "Зарплата администрации",
+          "kind": "source",
+          "amount": "326500.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "utilities_chernikova": {
+          "code": "utilities_chernikova",
+          "title": "Коммунальные платежи Черникова",
+          "kind": "source",
+          "amount": "127243.84",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "office_rent": {
+          "code": "office_rent",
+          "title": "Аренда офиса",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "office_maintenance": {
+          "code": "office_maintenance",
+          "title": "Содержание офиса",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "rko": {
+          "code": "rko",
+          "title": "РКО",
+          "kind": "source",
+          "amount": "4378.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "bank_fees": {
+          "code": "bank_fees",
+          "title": "Прочие банковские комиссии",
+          "kind": "source",
+          "amount": "878.28",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "fd_nk_services": {
+          "code": "fd_nk_services",
+          "title": "Услуги ФД и НК",
+          "kind": "source",
+          "amount": "3000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "staff_expenses": {
+          "code": "staff_expenses",
+          "title": "Расходы на персонал",
+          "kind": "source",
+          "amount": "10334.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "staff_training": {
+          "code": "staff_training",
+          "title": "Обучение персонала",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "telecom": {
+          "code": "telecom",
+          "title": "Телекоммуникации",
+          "kind": "source",
+          "amount": "14925.54",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "recruiting": {
+          "code": "recruiting",
+          "title": "Поиск и найм персонала",
+          "kind": "source",
+          "amount": "4096.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "aggregator_commission": {
+          "code": "aggregator_commission",
+          "title": "Комиссия агрегатору",
+          "kind": "source",
+          "amount": "6000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "targeted_ads": {
+          "code": "targeted_ads",
+          "title": "Таргетированная реклама",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "outdoor_ads": {
+          "code": "outdoor_ads",
+          "title": "Наружная реклама",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "yandex_maps_ads": {
+          "code": "yandex_maps_ads",
+          "title": "Реклама на Яндекс-картах",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "context_ads": {
+          "code": "context_ads",
+          "title": "Контекстная реклама",
+          "kind": "source",
+          "amount": "48000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "flyers": {
+          "code": "flyers",
+          "title": "Листовки",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "seo": {
+          "code": "seo",
+          "title": "SEO - оптимизация",
+          "kind": "source",
+          "amount": "13000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "other_marketing": {
+          "code": "other_marketing",
+          "title": "Прочие маркетинговые услуги",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "website_app": {
+          "code": "website_app",
+          "title": "Сайт и приложение",
+          "kind": "source",
+          "amount": "83092.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "other_income": {
+          "code": "other_income",
+          "title": "Прочие доходы",
+          "kind": "source",
+          "amount": "1200.00",
+          "status": "ok",
+          "sign_role": 1
+        },
+        "unclaimed_deposits_writeoff": {
+          "code": "unclaimed_deposits_writeoff",
+          "title": "Списание невостребованных депозитов",
+          "kind": "source",
+          "amount": "6000.00",
+          "status": "ok",
+          "sign_role": 1
+        },
+        "other_expenses": {
+          "code": "other_expenses",
+          "title": "Прочие расходы",
+          "kind": "source",
+          "amount": "1005.28",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "loan_interest": {
+          "code": "loan_interest",
+          "title": "Проценты по кредитам",
+          "kind": "source",
+          "amount": null,
+          "status": "not_configured",
+          "sign_role": -1
+        },
+        "taxes": {
+          "code": "taxes",
+          "title": "Налоги",
+          "kind": "source",
+          "amount": "220589.50",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "overdraft_fee": {
+          "code": "overdraft_fee",
+          "title": "Комиссия за овердрафт",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "depreciation": {
+          "code": "depreciation",
+          "title": "Амортизация",
+          "kind": "source",
+          "amount": "26928.49",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "asset_disposal_loss": {
+          "code": "asset_disposal_loss",
+          "title": "Убыток от выбытия ОС",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "fines_penalties": {
+          "code": "fines_penalties",
+          "title": "Штрафы и пени",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        }
+      },
+      "reported_profit": "150207.18",
+      "enterprise": {
+        "net": 3596783.28,
+        "food": 1047240.1453888159,
+        "food_cost_ratio": 0.29116020173136925
+      },
+      "rolls": {
+        "net_allocated": 1919885.691651414,
+        "food": 571982.4079761904,
+        "food_cost_ratio": 0.29792524131173276
+      },
+      "other": {
+        "net_allocated": 1676897.5883485859,
+        "food": 475257.73741262546
+      },
+      "audit_before_employee_recoveries": 45256.86,
+      "audit_employee_recoveries": 27255.15,
+      "payroll_breakdown_sum": {
+        "base_pay": "868032.51",
+        "percent_pay": "135749.00",
+        "vacation_pay": "10000.00",
+        "bonuses": "26800.00",
+        "fund_accrual": "35694.00",
+        "other_penalties": "5994.00",
+        "audit_penalties": "27255.15"
+      },
+      "sushi_fixed_fund": 236968.34,
+      "channels": {
+        "starter_net": 2751933.65,
+        "yandex_net": 46656.0
+      },
+      "days": [
+        {
+          "date": "2026-07-01",
+          "revenue": 123604.0,
+          "other_coeff": 22.5
+        },
+        {
+          "date": "2026-07-02",
+          "revenue": 88248.15,
+          "other_coeff": 22.106944444444444
+        },
+        {
+          "date": "2026-07-03",
+          "revenue": 193508.2,
+          "other_coeff": 30.0
+        },
+        {
+          "date": "2026-07-04",
+          "revenue": 123383.05,
+          "other_coeff": 25.0
+        },
+        {
+          "date": "2026-07-05",
+          "revenue": 120368.0,
+          "other_coeff": 20.0
+        },
+        {
+          "date": "2026-07-06",
+          "revenue": 105747.2,
+          "other_coeff": 35.0
+        },
+        {
+          "date": "2026-07-07",
+          "revenue": 86165.06,
+          "other_coeff": 24.998888888888885
+        },
+        {
+          "date": "2026-07-08",
+          "revenue": 121650.95,
+          "other_coeff": 27.498611111111114
+        },
+        {
+          "date": "2026-07-09",
+          "revenue": 105364.5,
+          "other_coeff": 25.166666666666664
+        },
+        {
+          "date": "2026-07-10",
+          "revenue": 160234.75,
+          "other_coeff": 27.501944444444444
+        },
+        {
+          "date": "2026-07-11",
+          "revenue": 154967.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-07-12",
+          "revenue": 118341.15,
+          "other_coeff": 27.496111111111116
+        },
+        {
+          "date": "2026-07-13",
+          "revenue": 95968.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-07-14",
+          "revenue": 105498.8,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-07-15",
+          "revenue": 134820.2,
+          "other_coeff": 17.5
+        },
+        {
+          "date": "2026-07-16",
+          "revenue": 113226.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-07-17",
+          "revenue": 116737.8,
+          "other_coeff": 30.0
+        },
+        {
+          "date": "2026-07-18",
+          "revenue": 128477.0,
+          "other_coeff": 27.5025
+        },
+        {
+          "date": "2026-07-19",
+          "revenue": 91205.0,
+          "other_coeff": 27.500833333333336
+        },
+        {
+          "date": "2026-07-20",
+          "revenue": 102298.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-07-21",
+          "revenue": 104207.15,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-07-22",
+          "revenue": 77556.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-07-23",
+          "revenue": 112254.75,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-07-24",
+          "revenue": 126933.9,
+          "other_coeff": 27.495
+        },
+        {
+          "date": "2026-07-25",
+          "revenue": 146006.72,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-07-26",
+          "revenue": 147436.8,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-07-27",
+          "revenue": 75546.35,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-07-28",
+          "revenue": 73272.0,
+          "other_coeff": 26.694444444444443
+        },
+        {
+          "date": "2026-07-29",
+          "revenue": 119968.1,
+          "other_coeff": 15.0
+        },
+        {
+          "date": "2026-07-30",
+          "revenue": 104916.3,
+          "other_coeff": 27.49972222222222
+        },
+        {
+          "date": "2026-07-31",
+          "revenue": 118872.4,
+          "other_coeff": 30.0
+        }
+      ]
+    },
+    "2026-08": {
+      "orders": 1819,
+      "calendar_days": 31,
+      "lines": {
+        "revenue_net_chernikova": {
+          "code": "revenue_net_chernikova",
+          "title": "Выручка с учетом скидок Черникова",
+          "kind": "source",
+          "amount": "3282430.64",
+          "status": "ok",
+          "sign_role": 1
+        },
+        "partner_commission": {
+          "code": "partner_commission",
+          "title": "Комиссия партнерам (с -)",
+          "kind": "source",
+          "amount": "41550.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "customer_refunds": {
+          "code": "customer_refunds",
+          "title": "Возвраты клиентам (с минусом)",
+          "kind": "source",
+          "amount": "2163.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "food_cost_chernikova": {
+          "code": "food_cost_chernikova",
+          "title": "Расход продуктов (фудкост) Черникова",
+          "kind": "source",
+          "amount": "962524.44",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "cook_payroll": {
+          "code": "cook_payroll",
+          "title": "Зарплата поваров (оклады и удержания)",
+          "kind": "source",
+          "amount": "516145.86",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "pizza_box_inventory": {
+          "code": "pizza_box_inventory",
+          "title": "Результаты инвентаризации коробки д/пиццы",
+          "kind": "source",
+          "amount": "9074.23",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "rent_chernikova": {
+          "code": "rent_chernikova",
+          "title": "Аренда торговой точки Черникова",
+          "kind": "source",
+          "amount": "100000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "administrator_payroll": {
+          "code": "administrator_payroll",
+          "title": "Зарплата администраторов",
+          "kind": "source",
+          "amount": "183364.56",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "bonuses": {
+          "code": "bonuses",
+          "title": "Премии поваров, шеф-повара, администраторов",
+          "kind": "source",
+          "amount": "22996.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "writeoffs": {
+          "code": "writeoffs",
+          "title": "Списание продукции и сырья",
+          "kind": "source",
+          "amount": "83724.37",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "audit_results": {
+          "code": "audit_results",
+          "title": "Результаты ревизий",
+          "kind": "source",
+          "amount": "30375.89",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "beverage_inventory": {
+          "code": "beverage_inventory",
+          "title": "Результаты инвентаризации напитков (барная ревизия)",
+          "kind": "source",
+          "amount": "511.95",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "courier_service": {
+          "code": "courier_service",
+          "title": "Траты на курьерскую службу",
+          "kind": "source",
+          "amount": "263664.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "acquiring": {
+          "code": "acquiring",
+          "title": "Комиссия за эквайринг",
+          "kind": "source",
+          "amount": "46092.57",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "transport": {
+          "code": "transport",
+          "title": "Транспортные услуги",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "staff_meals": {
+          "code": "staff_meals",
+          "title": "Расходы на питание персонала",
+          "kind": "source",
+          "amount": "30479.73",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "automation": {
+          "code": "automation",
+          "title": "Оплата систем автоматизации",
+          "kind": "source",
+          "amount": "63099.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "shop_maintenance": {
+          "code": "shop_maintenance",
+          "title": "Содержание торговых точек",
+          "kind": "source",
+          "amount": "55027.38",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "equipment_repair": {
+          "code": "equipment_repair",
+          "title": "Ремонт оборудования",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "warehouse_rent": {
+          "code": "warehouse_rent",
+          "title": "Аренда склада",
+          "kind": "source",
+          "amount": "10000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "packaging_inventory": {
+          "code": "packaging_inventory",
+          "title": "Результаты инвентаризации упаковки (кроме коробок для пиццы)",
+          "kind": "source",
+          "amount": "26401.43",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "aux_goods": {
+          "code": "aux_goods",
+          "title": "Вспомогательные товары(учет по факту оплаты)",
+          "kind": "source",
+          "amount": "7605.48",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "payroll_taxes": {
+          "code": "payroll_taxes",
+          "title": "Налоги с ЗП",
+          "kind": "source",
+          "amount": "20013.93",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "accumulation_fund": {
+          "code": "accumulation_fund",
+          "title": "Накопительный фонд",
+          "kind": "source",
+          "amount": "32732.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "admin_payroll": {
+          "code": "admin_payroll",
+          "title": "Зарплата администрации",
+          "kind": "source",
+          "amount": "326000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "utilities_chernikova": {
+          "code": "utilities_chernikova",
+          "title": "Коммунальные платежи Черникова",
+          "kind": "source",
+          "amount": "136095.40",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "office_rent": {
+          "code": "office_rent",
+          "title": "Аренда офиса",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "office_maintenance": {
+          "code": "office_maintenance",
+          "title": "Содержание офиса",
+          "kind": "source",
+          "amount": "350.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "rko": {
+          "code": "rko",
+          "title": "РКО",
+          "kind": "source",
+          "amount": "4289.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "bank_fees": {
+          "code": "bank_fees",
+          "title": "Прочие банковские комиссии",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "fd_nk_services": {
+          "code": "fd_nk_services",
+          "title": "Услуги ФД и НК",
+          "kind": "source",
+          "amount": "3000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "staff_expenses": {
+          "code": "staff_expenses",
+          "title": "Расходы на персонал",
+          "kind": "source",
+          "amount": "358.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "staff_training": {
+          "code": "staff_training",
+          "title": "Обучение персонала",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "telecom": {
+          "code": "telecom",
+          "title": "Телекоммуникации",
+          "kind": "source",
+          "amount": "14521.64",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "recruiting": {
+          "code": "recruiting",
+          "title": "Поиск и найм персонала",
+          "kind": "source",
+          "amount": "10601.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "aggregator_commission": {
+          "code": "aggregator_commission",
+          "title": "Комиссия агрегатору",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "targeted_ads": {
+          "code": "targeted_ads",
+          "title": "Таргетированная реклама",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "outdoor_ads": {
+          "code": "outdoor_ads",
+          "title": "Наружная реклама",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "yandex_maps_ads": {
+          "code": "yandex_maps_ads",
+          "title": "Реклама на Яндекс-картах",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "context_ads": {
+          "code": "context_ads",
+          "title": "Контекстная реклама",
+          "kind": "source",
+          "amount": "68000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "flyers": {
+          "code": "flyers",
+          "title": "Листовки",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "seo": {
+          "code": "seo",
+          "title": "SEO - оптимизация",
+          "kind": "source",
+          "amount": "13000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "other_marketing": {
+          "code": "other_marketing",
+          "title": "Прочие маркетинговые услуги",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "website_app": {
+          "code": "website_app",
+          "title": "Сайт и приложение",
+          "kind": "source",
+          "amount": "77171.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "other_income": {
+          "code": "other_income",
+          "title": "Прочие доходы",
+          "kind": "source",
+          "amount": "1400.84",
+          "status": "ok",
+          "sign_role": 1
+        },
+        "unclaimed_deposits_writeoff": {
+          "code": "unclaimed_deposits_writeoff",
+          "title": "Списание невостребованных депозитов",
+          "kind": "source",
+          "amount": "4719.91",
+          "status": "ok",
+          "sign_role": 1
+        },
+        "other_expenses": {
+          "code": "other_expenses",
+          "title": "Прочие расходы",
+          "kind": "source",
+          "amount": "1.96",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "loan_interest": {
+          "code": "loan_interest",
+          "title": "Проценты по кредитам",
+          "kind": "source",
+          "amount": null,
+          "status": "not_configured",
+          "sign_role": -1
+        },
+        "taxes": {
+          "code": "taxes",
+          "title": "Налоги",
+          "kind": "source",
+          "amount": "201728.34",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "overdraft_fee": {
+          "code": "overdraft_fee",
+          "title": "Комиссия за овердрафт",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "depreciation": {
+          "code": "depreciation",
+          "title": "Амортизация",
+          "kind": "source",
+          "amount": "26928.49",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "asset_disposal_loss": {
+          "code": "asset_disposal_loss",
+          "title": "Убыток от выбытия ОС",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "fines_penalties": {
+          "code": "fines_penalties",
+          "title": "Штрафы и пени",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        }
+      },
+      "reported_profit": "-101039.26",
+      "enterprise": {
+        "net": 3282430.64,
+        "food": 962639.6435897436,
+        "food_cost_ratio": 0.2932703685674052
+      },
+      "rolls": {
+        "net_allocated": 1748550.003698958,
+        "food": 522458.905,
+        "food_cost_ratio": 0.29879551851234903
+      },
+      "other": {
+        "net_allocated": 1533880.636301042,
+        "food": 440180.7385897436
+      },
+      "audit_before_employee_recoveries": 55438.34,
+      "audit_employee_recoveries": 25062.45,
+      "payroll_breakdown_sum": {
+        "base_pay": "882460.42",
+        "percent_pay": "121623.00",
+        "vacation_pay": "30000.00",
+        "bonuses": "22996.00",
+        "fund_accrual": "32732.00",
+        "other_penalties": "8573.00",
+        "audit_penalties": "25062.45"
+      },
+      "sushi_fixed_fund": 234756.22,
+      "channels": {
+        "starter_net": 2552645.61,
+        "yandex_net": 71566.0
+      },
+      "days": [
+        {
+          "date": "2026-08-01",
+          "revenue": 129747.15,
+          "other_coeff": 30.0
+        },
+        {
+          "date": "2026-08-02",
+          "revenue": 92847.8,
+          "other_coeff": 20.0
+        },
+        {
+          "date": "2026-08-03",
+          "revenue": 98910.4,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-08-04",
+          "revenue": 56668.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-08-05",
+          "revenue": 66304.3,
+          "other_coeff": 17.5
+        },
+        {
+          "date": "2026-08-06",
+          "revenue": 65898.0,
+          "other_coeff": 17.497500000000002
+        },
+        {
+          "date": "2026-08-07",
+          "revenue": 136962.6,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-08-08",
+          "revenue": 184694.4,
+          "other_coeff": 25.0
+        },
+        {
+          "date": "2026-08-09",
+          "revenue": 81747.0,
+          "other_coeff": 25.0
+        },
+        {
+          "date": "2026-08-10",
+          "revenue": 76445.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-08-11",
+          "revenue": 106484.25,
+          "other_coeff": 17.5
+        },
+        {
+          "date": "2026-08-12",
+          "revenue": 130196.0,
+          "other_coeff": 15.003611111111113
+        },
+        {
+          "date": "2026-08-13",
+          "revenue": 96537.4,
+          "other_coeff": 12.5
+        },
+        {
+          "date": "2026-08-14",
+          "revenue": 150831.0,
+          "other_coeff": 22.5
+        },
+        {
+          "date": "2026-08-15",
+          "revenue": 175890.2,
+          "other_coeff": 34.998888888888885
+        },
+        {
+          "date": "2026-08-16",
+          "revenue": 99755.0,
+          "other_coeff": 27.498611111111114
+        },
+        {
+          "date": "2026-08-17",
+          "revenue": 95721.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-08-18",
+          "revenue": 61479.83,
+          "other_coeff": 20.0
+        },
+        {
+          "date": "2026-08-19",
+          "revenue": 93336.78,
+          "other_coeff": 27.918888888888887
+        },
+        {
+          "date": "2026-08-20",
+          "revenue": 89883.0,
+          "other_coeff": 32.5
+        },
+        {
+          "date": "2026-08-21",
+          "revenue": 126964.24,
+          "other_coeff": 37.5
+        },
+        {
+          "date": "2026-08-22",
+          "revenue": 139389.2,
+          "other_coeff": 37.50138888888888
+        },
+        {
+          "date": "2026-08-23",
+          "revenue": 113255.75,
+          "other_coeff": 32.5
+        },
+        {
+          "date": "2026-08-24",
+          "revenue": 65935.0,
+          "other_coeff": 30.001666666666665
+        },
+        {
+          "date": "2026-08-25",
+          "revenue": 74972.02,
+          "other_coeff": 27.499166666666664
+        },
+        {
+          "date": "2026-08-26",
+          "revenue": 105736.15,
+          "other_coeff": 32.50277777777778
+        },
+        {
+          "date": "2026-08-27",
+          "revenue": 70321.22,
+          "other_coeff": 30.0
+        },
+        {
+          "date": "2026-08-28",
+          "revenue": 132914.0,
+          "other_coeff": 30.0
+        },
+        {
+          "date": "2026-08-29",
+          "revenue": 171945.0,
+          "other_coeff": 30.0
+        },
+        {
+          "date": "2026-08-30",
+          "revenue": 93846.0,
+          "other_coeff": 27.50347222222222
+        },
+        {
+          "date": "2026-08-31",
+          "revenue": 96812.95,
+          "other_coeff": 31.416666666666664
+        }
+      ]
+    },
+    "2026-09": {
+      "orders": 1709,
+      "calendar_days": 30,
+      "lines": {
+        "revenue_net_chernikova": {
+          "code": "revenue_net_chernikova",
+          "title": "Выручка с учетом скидок Черникова",
+          "kind": "source",
+          "amount": "3066493.59",
+          "status": "ok",
+          "sign_role": 1
+        },
+        "partner_commission": {
+          "code": "partner_commission",
+          "title": "Комиссия партнерам (с -)",
+          "kind": "source",
+          "amount": "30098.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "customer_refunds": {
+          "code": "customer_refunds",
+          "title": "Возвраты клиентам (с минусом)",
+          "kind": "source",
+          "amount": "1500.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "food_cost_chernikova": {
+          "code": "food_cost_chernikova",
+          "title": "Расход продуктов (фудкост) Черникова",
+          "kind": "source",
+          "amount": "885705.80",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "cook_payroll": {
+          "code": "cook_payroll",
+          "title": "Зарплата поваров (оклады и удержания)",
+          "kind": "source",
+          "amount": "473401.17",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "pizza_box_inventory": {
+          "code": "pizza_box_inventory",
+          "title": "Результаты инвентаризации коробки д/пиццы",
+          "kind": "source",
+          "amount": "-2648.40",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "rent_chernikova": {
+          "code": "rent_chernikova",
+          "title": "Аренда торговой точки Черникова",
+          "kind": "source",
+          "amount": "100000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "administrator_payroll": {
+          "code": "administrator_payroll",
+          "title": "Зарплата администраторов",
+          "kind": "source",
+          "amount": "179906.03",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "bonuses": {
+          "code": "bonuses",
+          "title": "Премии поваров, шеф-повара, администраторов",
+          "kind": "source",
+          "amount": "29396.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "writeoffs": {
+          "code": "writeoffs",
+          "title": "Списание продукции и сырья",
+          "kind": "source",
+          "amount": "67349.34",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "audit_results": {
+          "code": "audit_results",
+          "title": "Результаты ревизий",
+          "kind": "source",
+          "amount": "18815.58",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "beverage_inventory": {
+          "code": "beverage_inventory",
+          "title": "Результаты инвентаризации напитков (барная ревизия)",
+          "kind": "source",
+          "amount": "342.62",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "courier_service": {
+          "code": "courier_service",
+          "title": "Траты на курьерскую службу",
+          "kind": "source",
+          "amount": "243970.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "acquiring": {
+          "code": "acquiring",
+          "title": "Комиссия за эквайринг",
+          "kind": "source",
+          "amount": "42392.06",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "transport": {
+          "code": "transport",
+          "title": "Транспортные услуги",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "staff_meals": {
+          "code": "staff_meals",
+          "title": "Расходы на питание персонала",
+          "kind": "source",
+          "amount": "31109.97",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "automation": {
+          "code": "automation",
+          "title": "Оплата систем автоматизации",
+          "kind": "source",
+          "amount": "64349.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "shop_maintenance": {
+          "code": "shop_maintenance",
+          "title": "Содержание торговых точек",
+          "kind": "source",
+          "amount": "58609.14",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "equipment_repair": {
+          "code": "equipment_repair",
+          "title": "Ремонт оборудования",
+          "kind": "source",
+          "amount": "11100.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "warehouse_rent": {
+          "code": "warehouse_rent",
+          "title": "Аренда склада",
+          "kind": "source",
+          "amount": "10000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "packaging_inventory": {
+          "code": "packaging_inventory",
+          "title": "Результаты инвентаризации упаковки (кроме коробок для пиццы)",
+          "kind": "source",
+          "amount": "32281.08",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "aux_goods": {
+          "code": "aux_goods",
+          "title": "Вспомогательные товары(учет по факту оплаты)",
+          "kind": "source",
+          "amount": "10753.50",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "payroll_taxes": {
+          "code": "payroll_taxes",
+          "title": "Налоги с ЗП",
+          "kind": "source",
+          "amount": null,
+          "status": "no_data",
+          "sign_role": -1
+        },
+        "accumulation_fund": {
+          "code": "accumulation_fund",
+          "title": "Накопительный фонд",
+          "kind": "source",
+          "amount": "36216.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "admin_payroll": {
+          "code": "admin_payroll",
+          "title": "Зарплата администрации",
+          "kind": "source",
+          "amount": "326000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "utilities_chernikova": {
+          "code": "utilities_chernikova",
+          "title": "Коммунальные платежи Черникова",
+          "kind": "source",
+          "amount": "115605.08",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "office_rent": {
+          "code": "office_rent",
+          "title": "Аренда офиса",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "office_maintenance": {
+          "code": "office_maintenance",
+          "title": "Содержание офиса",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "rko": {
+          "code": "rko",
+          "title": "РКО",
+          "kind": "source",
+          "amount": "7505.08",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "bank_fees": {
+          "code": "bank_fees",
+          "title": "Прочие банковские комиссии",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "fd_nk_services": {
+          "code": "fd_nk_services",
+          "title": "Услуги ФД и НК",
+          "kind": "source",
+          "amount": "3000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "staff_expenses": {
+          "code": "staff_expenses",
+          "title": "Расходы на персонал",
+          "kind": "source",
+          "amount": "1140.96",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "staff_training": {
+          "code": "staff_training",
+          "title": "Обучение персонала",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "telecom": {
+          "code": "telecom",
+          "title": "Телекоммуникации",
+          "kind": "source",
+          "amount": "14364.08",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "recruiting": {
+          "code": "recruiting",
+          "title": "Поиск и найм персонала",
+          "kind": "source",
+          "amount": "6000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "aggregator_commission": {
+          "code": "aggregator_commission",
+          "title": "Комиссия агрегатору",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "targeted_ads": {
+          "code": "targeted_ads",
+          "title": "Таргетированная реклама",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "outdoor_ads": {
+          "code": "outdoor_ads",
+          "title": "Наружная реклама",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "yandex_maps_ads": {
+          "code": "yandex_maps_ads",
+          "title": "Реклама на Яндекс-картах",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "context_ads": {
+          "code": "context_ads",
+          "title": "Контекстная реклама",
+          "kind": "source",
+          "amount": "78000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "flyers": {
+          "code": "flyers",
+          "title": "Листовки",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "seo": {
+          "code": "seo",
+          "title": "SEO - оптимизация",
+          "kind": "source",
+          "amount": "13000.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "other_marketing": {
+          "code": "other_marketing",
+          "title": "Прочие маркетинговые услуги",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "website_app": {
+          "code": "website_app",
+          "title": "Сайт и приложение",
+          "kind": "source",
+          "amount": "73106.00",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "other_income": {
+          "code": "other_income",
+          "title": "Прочие доходы",
+          "kind": "source",
+          "amount": "2550.00",
+          "status": "ok",
+          "sign_role": 1
+        },
+        "unclaimed_deposits_writeoff": {
+          "code": "unclaimed_deposits_writeoff",
+          "title": "Списание невостребованных депозитов",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": 1
+        },
+        "other_expenses": {
+          "code": "other_expenses",
+          "title": "Прочие расходы",
+          "kind": "source",
+          "amount": "1.90",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "loan_interest": {
+          "code": "loan_interest",
+          "title": "Проценты по кредитам",
+          "kind": "source",
+          "amount": null,
+          "status": "not_configured",
+          "sign_role": -1
+        },
+        "taxes": {
+          "code": "taxes",
+          "title": "Налоги",
+          "kind": "source",
+          "amount": "188772.12",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "overdraft_fee": {
+          "code": "overdraft_fee",
+          "title": "Комиссия за овердрафт",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "depreciation": {
+          "code": "depreciation",
+          "title": "Амортизация",
+          "kind": "source",
+          "amount": "26928.49",
+          "status": "ok",
+          "sign_role": -1
+        },
+        "asset_disposal_loss": {
+          "code": "asset_disposal_loss",
+          "title": "Убыток от выбытия ОС",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        },
+        "fines_penalties": {
+          "code": "fines_penalties",
+          "title": "Штрафы и пени",
+          "kind": "source",
+          "amount": "0.00",
+          "status": "zero_confirmed",
+          "sign_role": -1
+        }
+      },
+      "reported_profit": "-109027.01",
+      "enterprise": {
+        "net": 3066493.59,
+        "food": 885705.8041406712,
+        "food_cost_ratio": 0.2888334112384925
+      },
+      "rolls": {
+        "net_allocated": 1722395.8195039225,
+        "food": 497125.10142857145,
+        "food_cost_ratio": 0.28862419183747867
+      },
+      "other": {
+        "net_allocated": 1344097.7704960774,
+        "food": 388580.7027120997
+      },
+      "audit_before_employee_recoveries": 57935.29,
+      "audit_employee_recoveries": 39119.71,
+      "payroll_breakdown_sum": {
+        "base_pay": "841118.20",
+        "percent_pay": "118938.00",
+        "vacation_pay": "26000.00",
+        "bonuses": "29396.00",
+        "fund_accrual": "36216.00",
+        "other_penalties": "6749.00",
+        "audit_penalties": "39119.71"
+      },
+      "sushi_fixed_fund": 212226.81,
+      "channels": {
+        "starter_net": 2424982.04,
+        "yandex_net": 81754.0
+      },
+      "days": [
+        {
+          "date": "2026-09-01",
+          "revenue": 265040.0,
+          "other_coeff": 32.625
+        },
+        {
+          "date": "2026-09-02",
+          "revenue": 51222.0,
+          "other_coeff": 27.208333333333336
+        },
+        {
+          "date": "2026-09-03",
+          "revenue": 53492.82,
+          "other_coeff": 25.191666666666663
+        },
+        {
+          "date": "2026-09-04",
+          "revenue": 110601.55,
+          "other_coeff": 32.50388888888888
+        },
+        {
+          "date": "2026-09-05",
+          "revenue": 133381.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-06",
+          "revenue": 107223.84,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-07",
+          "revenue": 97102.15,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-08",
+          "revenue": 63063.3,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-09",
+          "revenue": 73609.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-10",
+          "revenue": 94769.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-11",
+          "revenue": 104549.02,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-12",
+          "revenue": 154373.2,
+          "other_coeff": 27.49972222222222
+        },
+        {
+          "date": "2026-09-13",
+          "revenue": 128993.01,
+          "other_coeff": 35.219722222222224
+        },
+        {
+          "date": "2026-09-14",
+          "revenue": 95352.25,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-15",
+          "revenue": 103340.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-16",
+          "revenue": 75343.45,
+          "other_coeff": 25.0
+        },
+        {
+          "date": "2026-09-17",
+          "revenue": 62323.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-18",
+          "revenue": 129345.15,
+          "other_coeff": 32.55555555555556
+        },
+        {
+          "date": "2026-09-19",
+          "revenue": 123102.35,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-20",
+          "revenue": 56806.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-21",
+          "revenue": 70711.9,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-22",
+          "revenue": 62786.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-23",
+          "revenue": 64778.0,
+          "other_coeff": 27.263888888888886
+        },
+        {
+          "date": "2026-09-24",
+          "revenue": 63868.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-25",
+          "revenue": 164633.45,
+          "other_coeff": 28.90625
+        },
+        {
+          "date": "2026-09-26",
+          "revenue": 176647.0,
+          "other_coeff": 37.5
+        },
+        {
+          "date": "2026-09-27",
+          "revenue": 144567.0,
+          "other_coeff": 30.0
+        },
+        {
+          "date": "2026-09-28",
+          "revenue": 93546.0,
+          "other_coeff": 27.5
+        },
+        {
+          "date": "2026-09-29",
+          "revenue": 60151.15,
+          "other_coeff": 26.0375
+        },
+        {
+          "date": "2026-09-30",
+          "revenue": 81773.0,
+          "other_coeff": 27.5
+        }
+      ]
+    }
+  },
+  "rates": {
+    "sushi_daily_category2": 2400,
+    "senior_daily": 500,
+    "frisat_daily": 200,
+    "one_employee_fund_rate": 0.05,
+    "sushi_weight": 7.5,
+    "revenue_tiers": [
+      {
+        "min": 50000.0,
+        "rate": 0.035
+      },
+      {
+        "min": 140000.0,
+        "rate": 0.045
+      },
+      {
+        "min": 190000.0,
+        "rate": 0.055
+      },
+      {
+        "min": 550000.0,
+        "rate": 0.065
+      }
+    ]
+  },
+  "utilities_electricity_water": {
+    "2026-07": 122123.25,
+    "2026-08": 127137.75,
+    "2026-09": 106484.49
+  },
+  "yandex_analytical_commission": {
+    "2026-07": 8768.51,
+    "2026-08": 12381.21,
+    "2026-09": 14333.47
+  },
+  "fuel_net_august": 2640,
+  "future_payroll_tax_provision": 20013.93,
+  "oneoff_bank_error_july": 1000,
+  "garbage_reclassified_from_july_rent": 3000,
+  "assumed_yandex_rate": 0.25,
+  "assumed_starter_rate": 0.03,
+  "assumed_business_tax_rate": 0.06
+}

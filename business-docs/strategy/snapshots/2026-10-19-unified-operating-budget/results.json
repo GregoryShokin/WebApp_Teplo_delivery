@@ -1,0 +1,4511 @@
+{
+  "as_of": "2026-10-19",
+  "model": "One forward operating budget; actual closed reports remain unchanged.",
+  "scope": "Черникова Department.Code=2. Four daily12h sushi positions ofcategory2; otherroles preserved; onlyrollrecipesFC33%; actualobservedoffers retained.",
+  "calendar": {
+    "months": 3,
+    "quarter_days": 92,
+    "average_month_days": 30.666666666666668,
+    "average_friday_saturday_days": 8.666666666666666
+  },
+  "baseline": {
+    "quarter_orders": 5507,
+    "average_orders": 1835.6666666666667,
+    "quarter_revenue": 9945707.51,
+    "weighted_net_check": 1806.0118957690213,
+    "actual_quarter_roll_fc": 0.2952357924782555,
+    "future_roll_fc": 0.33,
+    "future_enterprise_recipe_fc": 0.30998232911198753
+  },
+  "budget_coefficients": {
+    "fixed_monthly": 1517035.1818,
+    "variable_per_order_without_company_pool": 1047.5849122640334,
+    "contribution_per_order_before_company_pool": 758.4269835049879,
+    "formula": "profit(q)=q*netcheck−fixed_monthly−q*variable_per_order−one_daily_company_pool(q)−new_unknown_costs",
+    "four_sushi_fixed_fund": 320433.3333333333,
+    "other_fixed_payroll": 719164.5866666666,
+    "vacation_reserve_already_inside_payroll": 22000,
+    "starter_fixed_residual": 494.05366666667396,
+    "business_tax_fixed_residual": 4782.503133333317
+  },
+  "thresholds": {
+    "0": {
+      "first_crossing": 2221,
+      "safe_crossing_through8000": 2221,
+      "planning_orders": 2250,
+      "profit_at_safe": 634.3500148140884,
+      "profit_at_previous_order": -48.977104418183444,
+      "profit_at_planning": 20450.83647254968,
+      "revenue_at_planning": 4063526.765480298
+    },
+    "500000": {
+      "first_crossing": 3006,
+      "safe_crossing_through8000": 3006,
+      "planning_orders": 3050,
+      "profit_at_safe": 500108.1891604829,
+      "profit_at_previous_order": 499437.15011492005,
+      "profit_at_planning": 529633.9071652272,
+      "revenue_at_planning": 5508336.282095515
+    }
+  },
+  "scenarios": {
+    "2000": {
+      "orders": 2000,
+      "orders_per_average_day": 65.21739130434783,
+      "revenue": 3612023.7915380425,
+      "fixed_costs": 1517035.1818,
+      "variable_without_company_pool": 2095169.8245280667,
+      "company_pool": 143062.57169057563,
+      "costs_before_unknowns": 3755267.5780186425,
+      "additional_future_cost": 0,
+      "profit_before_unknowns": -143243.78648059972,
+      "food": 1119663.5477088746,
+      "enterprise_recipe_fc": 0.30998232911198753,
+      "four_sushi_payroll_fixed_fund_percent": 395138.6666666666,
+      "total_payroll_fixed_plus_pool_before_payrolltax": 1182660.4916905756,
+      "budget_lines": [
+        {
+          "code": "four_sushi_fixed",
+          "title": "Четверо второй категории: смены, старший, пт/сб, фонд",
+          "fixed_monthly": 320433.3333333333,
+          "per_order": 0.0,
+          "basis": "4 ежедневных места ×12ч; 2400/смена; 1 старший500; 1 сотрудник5%фонда. Средний календарь92/3 дня.",
+          "group": "payroll",
+          "amount": 320433.3333333333
+        },
+        {
+          "code": "other_fixed_payroll",
+          "title": "Остальной фиксированный ФОТ, премии, фонды, отпускной резерв",
+          "fixed_monthly": 719164.5866666666,
+          "per_order": 0.0,
+          "basis": "Полный ФОТ ОПиУ + отмена экономии от прочих штрафов − старые суши база/фонд − весь исторический процент; отпуска включены.",
+          "group": "payroll",
+          "amount": 719164.5866666666
+        },
+        {
+          "code": "roll_food",
+          "title": "Продукты роллов: FC33%",
+          "fixed_monthly": 0.0,
+          "per_order": 323.03875066314095,
+          "basis": "33% от распределённой net-выручки только роллов; раскрытие смешанных сетов.",
+          "group": "food",
+          "amount": 646077.5013262819
+        },
+        {
+          "code": "other_food",
+          "title": "Продукты остальных блюд: рецептуры прежние",
+          "fixed_monthly": 0.0,
+          "per_order": 236.79302319129633,
+          "basis": "Исходные сырьевые рубли прочих блюд / заказы квартала.",
+          "group": "food",
+          "amount": 473586.04638259264
+        },
+        {
+          "code": "writeoff_reserve",
+          "title": "Резерв списаний продуктов",
+          "fixed_monthly": 0.0,
+          "per_order": 43.73050332566224,
+          "basis": "Квартальные списания / квартальная рецептурная стоимость × будущая стоимость продуктов.",
+          "group": "losses",
+          "amount": 87461.00665132448
+        },
+        {
+          "code": "inventory_reserve",
+          "title": "Резерв результатов ревизий до удержаний с сотрудников",
+          "fixed_monthly": 0.0,
+          "per_order": 30.669578138228363,
+          "basis": "Компонент inventory до payroll-компенсаций, уже с учётом излишков. Удержания не планируем.",
+          "group": "losses",
+          "amount": 61339.15627645673
+        },
+        {
+          "code": "packaging_discrepancy",
+          "title": "Отклонения инвентаризации упаковки и напитков сверх техкарт",
+          "fixed_monthly": 0.0,
+          "per_order": 15.963386598874163,
+          "basis": "Упаковка в техкартах уже в продуктах. Здесь только отклонения; квартальный чистый излишек коробок не планируется.",
+          "group": "losses",
+          "amount": 31926.773197748324
+        },
+        {
+          "code": "courier_service",
+          "title": "Курьерская служба",
+          "fixed_monthly": 0.0,
+          "per_order": 143.42128200472126,
+          "basis": "Расход квартала / учётные заказы; бюджетный proxy при прежних долях доставки.",
+          "group": "delivery",
+          "amount": 286842.5640094425
+        },
+        {
+          "code": "consumables_maintenance",
+          "title": "Расходники и содержание точки",
+          "fixed_monthly": 29504.756666666664,
+          "per_order": 16.07304703105139,
+          "basis": "50% условно постоянных,50% на заказ; прежнее явно заданное допущение.",
+          "group": "operations",
+          "amount": 61650.85072876945
+        },
+        {
+          "code": "utilities",
+          "title": "Коммунальные расходы и вывоз мусора",
+          "fixed_monthly": 68023.85833333334,
+          "per_order": 32.29939077537679,
+          "basis": "Электричество/вода50% переменные,50% постоянные; вывоз мусора постоянный, включая3000июля из аренды.",
+          "group": "operations",
+          "amount": 132622.6398840869
+        },
+        {
+          "code": "rent",
+          "title": "Аренда точки и склада",
+          "fixed_monthly": 110000.0,
+          "per_order": 0.0,
+          "basis": "Аренда точки100000/мес, склада10000/мес.",
+          "group": "operations",
+          "amount": 110000.0
+        },
+        {
+          "code": "rent_unspecified_reserve",
+          "title": "Резерв нерасшифрованной добавки к аренде июля",
+          "fixed_monthly": 333.3333333333333,
+          "per_order": 0.0,
+          "basis": "1000₽ июля без назначения сохранены как333.33/мес; не объявлены экономией.",
+          "group": "operations",
+          "amount": 333.3333333333333
+        },
+        {
+          "code": "acquiring",
+          "title": "Эквайринг",
+          "fixed_monthly": 0.0,
+          "per_order": 24.948612674777557,
+          "basis": "Квартальная эффективная комиссия при прежнем среднем чеке.",
+          "group": "fees",
+          "amount": 49897.22534955511
+        },
+        {
+          "code": "starter",
+          "title": "Starter: сайт и приложение",
+          "fixed_monthly": 494.05366666667396,
+          "per_order": 42.10765189758489,
+          "basis": "Принятые в модели3% оборота Starter +494.05/мес эмпирического остатка счета. Это калибровка бюджета, не новый тариф.",
+          "group": "fees",
+          "amount": 84709.35746183645
+        },
+        {
+          "code": "yandex",
+          "title": "Комиссия Яндекса вне каскада ОПиУ",
+          "fixed_monthly": 0.0,
+          "per_order": 9.078264027601234,
+          "basis": "Плановые25% только доли Яндекса. Историческая меньшая комиссия не переносится как будущая скидка.",
+          "group": "fees",
+          "amount": 18156.528055202467
+        },
+        {
+          "code": "partner_refunds",
+          "title": "Комиссии прочим партнёрам и возвраты",
+          "fixed_monthly": 0.0,
+          "per_order": 21.100708189576903,
+          "basis": "Ровно один раз: модель использует iiko net до этих вычетов.",
+          "group": "fees",
+          "amount": 42201.41637915381
+        },
+        {
+          "code": "payroll_taxes",
+          "title": "Резерв налогов с зарплаты",
+          "fixed_monthly": 20013.93,
+          "per_order": 0.0,
+          "basis": "20013.93 по июлю/августу при прежней официальной схеме и конвенции ОПиУ; сентябрьский None сохранён в источнике.",
+          "group": "taxes",
+          "amount": 20013.93
+        },
+        {
+          "code": "business_taxes",
+          "title": "Налоги бизнеса",
+          "fixed_monthly": 4782.503133333317,
+          "per_order": 108.36071374614127,
+          "basis": "Прежняя модель6% выручки +4782.50/мес постоянной составляющей по источнику; без новой юридической трактовки.",
+          "group": "taxes",
+          "amount": 221503.93062561587
+        },
+        {
+          "code": "fuel_reserve",
+          "title": "Топливо: чистая сумма августовской аналитической поправки",
+          "fixed_monthly": 880.0,
+          "per_order": 0.0,
+          "basis": "2640₽ квартал /3; не потеряно при объединении.",
+          "group": "operations",
+          "amount": 880.0
+        },
+        {
+          "code": "transport",
+          "title": "Транспортные услуги",
+          "fixed_monthly": 7364.466666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 7364.466666666667
+        },
+        {
+          "code": "staff_meals",
+          "title": "Расходы на питание персонала",
+          "fixed_monthly": 28445.963333333333,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 28445.963333333333
+        },
+        {
+          "code": "automation",
+          "title": "Оплата систем автоматизации",
+          "fixed_monthly": 63049.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 63049.0
+        },
+        {
+          "code": "equipment_repair",
+          "title": "Ремонт оборудования",
+          "fixed_monthly": 3700.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3700.0
+        },
+        {
+          "code": "office_rent",
+          "title": "Аренда офиса",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "office_maintenance",
+          "title": "Содержание офиса",
+          "fixed_monthly": 116.66666666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 116.66666666666667
+        },
+        {
+          "code": "rko",
+          "title": "РКО",
+          "fixed_monthly": 5390.693333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 5390.693333333334
+        },
+        {
+          "code": "bank_fees",
+          "title": "Прочие банковские комиссии",
+          "fixed_monthly": 292.76,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 292.76
+        },
+        {
+          "code": "fd_nk_services",
+          "title": "Услуги ФД и НК",
+          "fixed_monthly": 3000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3000.0
+        },
+        {
+          "code": "staff_expenses",
+          "title": "Расходы на персонал",
+          "fixed_monthly": 3944.3199999999997,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3944.3199999999997
+        },
+        {
+          "code": "staff_training",
+          "title": "Обучение персонала",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "telecom",
+          "title": "Телекоммуникации",
+          "fixed_monthly": 14603.753333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 14603.753333333334
+        },
+        {
+          "code": "recruiting",
+          "title": "Поиск и найм персонала",
+          "fixed_monthly": 6899.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 6899.0
+        },
+        {
+          "code": "aggregator_commission",
+          "title": "Комиссия агрегатору",
+          "fixed_monthly": 2000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 2000.0
+        },
+        {
+          "code": "targeted_ads",
+          "title": "Таргетированная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "outdoor_ads",
+          "title": "Наружная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "yandex_maps_ads",
+          "title": "Реклама на Яндекс-картах",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "context_ads",
+          "title": "Контекстная реклама",
+          "fixed_monthly": 64666.666666666664,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 64666.666666666664
+        },
+        {
+          "code": "flyers",
+          "title": "Листовки",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "seo",
+          "title": "SEO - оптимизация",
+          "fixed_monthly": 13000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 13000.0
+        },
+        {
+          "code": "other_marketing",
+          "title": "Прочие маркетинговые услуги",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "other_expenses",
+          "title": "Прочие расходы",
+          "fixed_monthly": 3.046666666666681,
+          "per_order": 0.0,
+          "basis": "Среднее после исключения подтверждённой единичной потери1000₽ июля.",
+          "group": "operations",
+          "amount": 3.046666666666681
+        },
+        {
+          "code": "overdraft_fee",
+          "title": "Комиссия за овердрафт",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "depreciation",
+          "title": "Амортизация",
+          "fixed_monthly": 26928.49,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 26928.49
+        },
+        {
+          "code": "asset_disposal_loss",
+          "title": "Убыток от выбытия ОС",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "fines_penalties",
+          "title": "Штрафы и пени",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "company_percent_pool",
+          "title": "Единый процентный фонд всей кухни",
+          "amount": 143062.57169057563,
+          "group": "payroll",
+          "fixed_monthly": null,
+          "per_order": null,
+          "basis": "Действующие ступени применены к каждому из92 масштабированных дней, затем /3. Не четыре самостоятельных процента."
+        }
+      ]
+    },
+    "2200": {
+      "orders": 2200,
+      "orders_per_average_day": 71.73913043478261,
+      "revenue": 3973226.170691847,
+      "fixed_costs": 1517035.1818,
+      "variable_without_company_pool": 2304686.8069808735,
+      "company_pool": 164753.34374614127,
+      "costs_before_unknowns": 3986475.3325270144,
+      "additional_future_cost": 0,
+      "profit_before_unknowns": -13249.16183516776,
+      "food": 1231629.902479762,
+      "enterprise_recipe_fc": 0.30998232911198753,
+      "four_sushi_payroll_fixed_fund_percent": 406536.0,
+      "total_payroll_fixed_plus_pool_before_payrolltax": 1204351.2637461412,
+      "budget_lines": [
+        {
+          "code": "four_sushi_fixed",
+          "title": "Четверо второй категории: смены, старший, пт/сб, фонд",
+          "fixed_monthly": 320433.3333333333,
+          "per_order": 0.0,
+          "basis": "4 ежедневных места ×12ч; 2400/смена; 1 старший500; 1 сотрудник5%фонда. Средний календарь92/3 дня.",
+          "group": "payroll",
+          "amount": 320433.3333333333
+        },
+        {
+          "code": "other_fixed_payroll",
+          "title": "Остальной фиксированный ФОТ, премии, фонды, отпускной резерв",
+          "fixed_monthly": 719164.5866666666,
+          "per_order": 0.0,
+          "basis": "Полный ФОТ ОПиУ + отмена экономии от прочих штрафов − старые суши база/фонд − весь исторический процент; отпуска включены.",
+          "group": "payroll",
+          "amount": 719164.5866666666
+        },
+        {
+          "code": "roll_food",
+          "title": "Продукты роллов: FC33%",
+          "fixed_monthly": 0.0,
+          "per_order": 323.03875066314095,
+          "basis": "33% от распределённой net-выручки только роллов; раскрытие смешанных сетов.",
+          "group": "food",
+          "amount": 710685.2514589101
+        },
+        {
+          "code": "other_food",
+          "title": "Продукты остальных блюд: рецептуры прежние",
+          "fixed_monthly": 0.0,
+          "per_order": 236.79302319129633,
+          "basis": "Исходные сырьевые рубли прочих блюд / заказы квартала.",
+          "group": "food",
+          "amount": 520944.6510208519
+        },
+        {
+          "code": "writeoff_reserve",
+          "title": "Резерв списаний продуктов",
+          "fixed_monthly": 0.0,
+          "per_order": 43.73050332566224,
+          "basis": "Квартальные списания / квартальная рецептурная стоимость × будущая стоимость продуктов.",
+          "group": "losses",
+          "amount": 96207.10731645692
+        },
+        {
+          "code": "inventory_reserve",
+          "title": "Резерв результатов ревизий до удержаний с сотрудников",
+          "fixed_monthly": 0.0,
+          "per_order": 30.669578138228363,
+          "basis": "Компонент inventory до payroll-компенсаций, уже с учётом излишков. Удержания не планируем.",
+          "group": "losses",
+          "amount": 67473.0719041024
+        },
+        {
+          "code": "packaging_discrepancy",
+          "title": "Отклонения инвентаризации упаковки и напитков сверх техкарт",
+          "fixed_monthly": 0.0,
+          "per_order": 15.963386598874163,
+          "basis": "Упаковка в техкартах уже в продуктах. Здесь только отклонения; квартальный чистый излишек коробок не планируется.",
+          "group": "losses",
+          "amount": 35119.45051752316
+        },
+        {
+          "code": "courier_service",
+          "title": "Курьерская служба",
+          "fixed_monthly": 0.0,
+          "per_order": 143.42128200472126,
+          "basis": "Расход квартала / учётные заказы; бюджетный proxy при прежних долях доставки.",
+          "group": "delivery",
+          "amount": 315526.8204103868
+        },
+        {
+          "code": "consumables_maintenance",
+          "title": "Расходники и содержание точки",
+          "fixed_monthly": 29504.756666666664,
+          "per_order": 16.07304703105139,
+          "basis": "50% условно постоянных,50% на заказ; прежнее явно заданное допущение.",
+          "group": "operations",
+          "amount": 64865.46013497973
+        },
+        {
+          "code": "utilities",
+          "title": "Коммунальные расходы и вывоз мусора",
+          "fixed_monthly": 68023.85833333334,
+          "per_order": 32.29939077537679,
+          "basis": "Электричество/вода50% переменные,50% постоянные; вывоз мусора постоянный, включая3000июля из аренды.",
+          "group": "operations",
+          "amount": 139082.51803916227
+        },
+        {
+          "code": "rent",
+          "title": "Аренда точки и склада",
+          "fixed_monthly": 110000.0,
+          "per_order": 0.0,
+          "basis": "Аренда точки100000/мес, склада10000/мес.",
+          "group": "operations",
+          "amount": 110000.0
+        },
+        {
+          "code": "rent_unspecified_reserve",
+          "title": "Резерв нерасшифрованной добавки к аренде июля",
+          "fixed_monthly": 333.3333333333333,
+          "per_order": 0.0,
+          "basis": "1000₽ июля без назначения сохранены как333.33/мес; не объявлены экономией.",
+          "group": "operations",
+          "amount": 333.3333333333333
+        },
+        {
+          "code": "acquiring",
+          "title": "Эквайринг",
+          "fixed_monthly": 0.0,
+          "per_order": 24.948612674777557,
+          "basis": "Квартальная эффективная комиссия при прежнем среднем чеке.",
+          "group": "fees",
+          "amount": 54886.94788451063
+        },
+        {
+          "code": "starter",
+          "title": "Starter: сайт и приложение",
+          "fixed_monthly": 494.05366666667396,
+          "per_order": 42.10765189758489,
+          "basis": "Принятые в модели3% оборота Starter +494.05/мес эмпирического остатка счета. Это калибровка бюджета, не новый тариф.",
+          "group": "fees",
+          "amount": 93130.88784135343
+        },
+        {
+          "code": "yandex",
+          "title": "Комиссия Яндекса вне каскада ОПиУ",
+          "fixed_monthly": 0.0,
+          "per_order": 9.078264027601234,
+          "basis": "Плановые25% только доли Яндекса. Историческая меньшая комиссия не переносится как будущая скидка.",
+          "group": "fees",
+          "amount": 19972.180860722714
+        },
+        {
+          "code": "partner_refunds",
+          "title": "Комиссии прочим партнёрам и возвраты",
+          "fixed_monthly": 0.0,
+          "per_order": 21.100708189576903,
+          "basis": "Ровно один раз: модель использует iiko net до этих вычетов.",
+          "group": "fees",
+          "amount": 46421.55801706918
+        },
+        {
+          "code": "payroll_taxes",
+          "title": "Резерв налогов с зарплаты",
+          "fixed_monthly": 20013.93,
+          "per_order": 0.0,
+          "basis": "20013.93 по июлю/августу при прежней официальной схеме и конвенции ОПиУ; сентябрьский None сохранён в источнике.",
+          "group": "taxes",
+          "amount": 20013.93
+        },
+        {
+          "code": "business_taxes",
+          "title": "Налоги бизнеса",
+          "fixed_monthly": 4782.503133333317,
+          "per_order": 108.36071374614127,
+          "basis": "Прежняя модель6% выручки +4782.50/мес постоянной составляющей по источнику; без новой юридической трактовки.",
+          "group": "taxes",
+          "amount": 243176.07337484413
+        },
+        {
+          "code": "fuel_reserve",
+          "title": "Топливо: чистая сумма августовской аналитической поправки",
+          "fixed_monthly": 880.0,
+          "per_order": 0.0,
+          "basis": "2640₽ квартал /3; не потеряно при объединении.",
+          "group": "operations",
+          "amount": 880.0
+        },
+        {
+          "code": "transport",
+          "title": "Транспортные услуги",
+          "fixed_monthly": 7364.466666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 7364.466666666667
+        },
+        {
+          "code": "staff_meals",
+          "title": "Расходы на питание персонала",
+          "fixed_monthly": 28445.963333333333,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 28445.963333333333
+        },
+        {
+          "code": "automation",
+          "title": "Оплата систем автоматизации",
+          "fixed_monthly": 63049.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 63049.0
+        },
+        {
+          "code": "equipment_repair",
+          "title": "Ремонт оборудования",
+          "fixed_monthly": 3700.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3700.0
+        },
+        {
+          "code": "office_rent",
+          "title": "Аренда офиса",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "office_maintenance",
+          "title": "Содержание офиса",
+          "fixed_monthly": 116.66666666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 116.66666666666667
+        },
+        {
+          "code": "rko",
+          "title": "РКО",
+          "fixed_monthly": 5390.693333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 5390.693333333334
+        },
+        {
+          "code": "bank_fees",
+          "title": "Прочие банковские комиссии",
+          "fixed_monthly": 292.76,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 292.76
+        },
+        {
+          "code": "fd_nk_services",
+          "title": "Услуги ФД и НК",
+          "fixed_monthly": 3000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3000.0
+        },
+        {
+          "code": "staff_expenses",
+          "title": "Расходы на персонал",
+          "fixed_monthly": 3944.3199999999997,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3944.3199999999997
+        },
+        {
+          "code": "staff_training",
+          "title": "Обучение персонала",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "telecom",
+          "title": "Телекоммуникации",
+          "fixed_monthly": 14603.753333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 14603.753333333334
+        },
+        {
+          "code": "recruiting",
+          "title": "Поиск и найм персонала",
+          "fixed_monthly": 6899.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 6899.0
+        },
+        {
+          "code": "aggregator_commission",
+          "title": "Комиссия агрегатору",
+          "fixed_monthly": 2000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 2000.0
+        },
+        {
+          "code": "targeted_ads",
+          "title": "Таргетированная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "outdoor_ads",
+          "title": "Наружная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "yandex_maps_ads",
+          "title": "Реклама на Яндекс-картах",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "context_ads",
+          "title": "Контекстная реклама",
+          "fixed_monthly": 64666.666666666664,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 64666.666666666664
+        },
+        {
+          "code": "flyers",
+          "title": "Листовки",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "seo",
+          "title": "SEO - оптимизация",
+          "fixed_monthly": 13000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 13000.0
+        },
+        {
+          "code": "other_marketing",
+          "title": "Прочие маркетинговые услуги",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "other_expenses",
+          "title": "Прочие расходы",
+          "fixed_monthly": 3.046666666666681,
+          "per_order": 0.0,
+          "basis": "Среднее после исключения подтверждённой единичной потери1000₽ июля.",
+          "group": "operations",
+          "amount": 3.046666666666681
+        },
+        {
+          "code": "overdraft_fee",
+          "title": "Комиссия за овердрафт",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "depreciation",
+          "title": "Амортизация",
+          "fixed_monthly": 26928.49,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 26928.49
+        },
+        {
+          "code": "asset_disposal_loss",
+          "title": "Убыток от выбытия ОС",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "fines_penalties",
+          "title": "Штрафы и пени",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "company_percent_pool",
+          "title": "Единый процентный фонд всей кухни",
+          "amount": 164753.34374614127,
+          "group": "payroll",
+          "fixed_monthly": null,
+          "per_order": null,
+          "basis": "Действующие ступени применены к каждому из92 масштабированных дней, затем /3. Не четыре самостоятельных процента."
+        }
+      ]
+    },
+    "2250": {
+      "orders": 2250,
+      "orders_per_average_day": 73.3695652173913,
+      "revenue": 4063526.765480298,
+      "fixed_costs": 1517035.1818,
+      "variable_without_company_pool": 2357066.052594075,
+      "company_pool": 168974.69461367352,
+      "costs_before_unknowns": 4043075.9290077486,
+      "additional_future_cost": 0,
+      "profit_before_unknowns": 20450.83647254968,
+      "food": 1259621.491172484,
+      "enterprise_recipe_fc": 0.30998232911198753,
+      "four_sushi_payroll_fixed_fund_percent": 408734.6666666666,
+      "total_payroll_fixed_plus_pool_before_payrolltax": 1208572.6146136734,
+      "budget_lines": [
+        {
+          "code": "four_sushi_fixed",
+          "title": "Четверо второй категории: смены, старший, пт/сб, фонд",
+          "fixed_monthly": 320433.3333333333,
+          "per_order": 0.0,
+          "basis": "4 ежедневных места ×12ч; 2400/смена; 1 старший500; 1 сотрудник5%фонда. Средний календарь92/3 дня.",
+          "group": "payroll",
+          "amount": 320433.3333333333
+        },
+        {
+          "code": "other_fixed_payroll",
+          "title": "Остальной фиксированный ФОТ, премии, фонды, отпускной резерв",
+          "fixed_monthly": 719164.5866666666,
+          "per_order": 0.0,
+          "basis": "Полный ФОТ ОПиУ + отмена экономии от прочих штрафов − старые суши база/фонд − весь исторический процент; отпуска включены.",
+          "group": "payroll",
+          "amount": 719164.5866666666
+        },
+        {
+          "code": "roll_food",
+          "title": "Продукты роллов: FC33%",
+          "fixed_monthly": 0.0,
+          "per_order": 323.03875066314095,
+          "basis": "33% от распределённой net-выручки только роллов; раскрытие смешанных сетов.",
+          "group": "food",
+          "amount": 726837.1889920671
+        },
+        {
+          "code": "other_food",
+          "title": "Продукты остальных блюд: рецептуры прежние",
+          "fixed_monthly": 0.0,
+          "per_order": 236.79302319129633,
+          "basis": "Исходные сырьевые рубли прочих блюд / заказы квартала.",
+          "group": "food",
+          "amount": 532784.3021804168
+        },
+        {
+          "code": "writeoff_reserve",
+          "title": "Резерв списаний продуктов",
+          "fixed_monthly": 0.0,
+          "per_order": 43.73050332566224,
+          "basis": "Квартальные списания / квартальная рецептурная стоимость × будущая стоимость продуктов.",
+          "group": "losses",
+          "amount": 98393.63248274004
+        },
+        {
+          "code": "inventory_reserve",
+          "title": "Резерв результатов ревизий до удержаний с сотрудников",
+          "fixed_monthly": 0.0,
+          "per_order": 30.669578138228363,
+          "basis": "Компонент inventory до payroll-компенсаций, уже с учётом излишков. Удержания не планируем.",
+          "group": "losses",
+          "amount": 69006.55081101382
+        },
+        {
+          "code": "packaging_discrepancy",
+          "title": "Отклонения инвентаризации упаковки и напитков сверх техкарт",
+          "fixed_monthly": 0.0,
+          "per_order": 15.963386598874163,
+          "basis": "Упаковка в техкартах уже в продуктах. Здесь только отклонения; квартальный чистый излишек коробок не планируется.",
+          "group": "losses",
+          "amount": 35917.61984746686
+        },
+        {
+          "code": "courier_service",
+          "title": "Курьерская служба",
+          "fixed_monthly": 0.0,
+          "per_order": 143.42128200472126,
+          "basis": "Расход квартала / учётные заказы; бюджетный proxy при прежних долях доставки.",
+          "group": "delivery",
+          "amount": 322697.8845106228
+        },
+        {
+          "code": "consumables_maintenance",
+          "title": "Расходники и содержание точки",
+          "fixed_monthly": 29504.756666666664,
+          "per_order": 16.07304703105139,
+          "basis": "50% условно постоянных,50% на заказ; прежнее явно заданное допущение.",
+          "group": "operations",
+          "amount": 65669.11248653229
+        },
+        {
+          "code": "utilities",
+          "title": "Коммунальные расходы и вывоз мусора",
+          "fixed_monthly": 68023.85833333334,
+          "per_order": 32.29939077537679,
+          "basis": "Электричество/вода50% переменные,50% постоянные; вывоз мусора постоянный, включая3000июля из аренды.",
+          "group": "operations",
+          "amount": 140697.48757793114
+        },
+        {
+          "code": "rent",
+          "title": "Аренда точки и склада",
+          "fixed_monthly": 110000.0,
+          "per_order": 0.0,
+          "basis": "Аренда точки100000/мес, склада10000/мес.",
+          "group": "operations",
+          "amount": 110000.0
+        },
+        {
+          "code": "rent_unspecified_reserve",
+          "title": "Резерв нерасшифрованной добавки к аренде июля",
+          "fixed_monthly": 333.3333333333333,
+          "per_order": 0.0,
+          "basis": "1000₽ июля без назначения сохранены как333.33/мес; не объявлены экономией.",
+          "group": "operations",
+          "amount": 333.3333333333333
+        },
+        {
+          "code": "acquiring",
+          "title": "Эквайринг",
+          "fixed_monthly": 0.0,
+          "per_order": 24.948612674777557,
+          "basis": "Квартальная эффективная комиссия при прежнем среднем чеке.",
+          "group": "fees",
+          "amount": 56134.378518249505
+        },
+        {
+          "code": "starter",
+          "title": "Starter: сайт и приложение",
+          "fixed_monthly": 494.05366666667396,
+          "per_order": 42.10765189758489,
+          "basis": "Принятые в модели3% оборота Starter +494.05/мес эмпирического остатка счета. Это калибровка бюджета, не новый тариф.",
+          "group": "fees",
+          "amount": 95236.27043623268
+        },
+        {
+          "code": "yandex",
+          "title": "Комиссия Яндекса вне каскада ОПиУ",
+          "fixed_monthly": 0.0,
+          "per_order": 9.078264027601234,
+          "basis": "Плановые25% только доли Яндекса. Историческая меньшая комиссия не переносится как будущая скидка.",
+          "group": "fees",
+          "amount": 20426.094062102777
+        },
+        {
+          "code": "partner_refunds",
+          "title": "Комиссии прочим партнёрам и возвраты",
+          "fixed_monthly": 0.0,
+          "per_order": 21.100708189576903,
+          "basis": "Ровно один раз: модель использует iiko net до этих вычетов.",
+          "group": "fees",
+          "amount": 47476.59342654803
+        },
+        {
+          "code": "payroll_taxes",
+          "title": "Резерв налогов с зарплаты",
+          "fixed_monthly": 20013.93,
+          "per_order": 0.0,
+          "basis": "20013.93 по июлю/августу при прежней официальной схеме и конвенции ОПиУ; сентябрьский None сохранён в источнике.",
+          "group": "taxes",
+          "amount": 20013.93
+        },
+        {
+          "code": "business_taxes",
+          "title": "Налоги бизнеса",
+          "fixed_monthly": 4782.503133333317,
+          "per_order": 108.36071374614127,
+          "basis": "Прежняя модель6% выручки +4782.50/мес постоянной составляющей по источнику; без новой юридической трактовки.",
+          "group": "taxes",
+          "amount": 248594.10906215117
+        },
+        {
+          "code": "fuel_reserve",
+          "title": "Топливо: чистая сумма августовской аналитической поправки",
+          "fixed_monthly": 880.0,
+          "per_order": 0.0,
+          "basis": "2640₽ квартал /3; не потеряно при объединении.",
+          "group": "operations",
+          "amount": 880.0
+        },
+        {
+          "code": "transport",
+          "title": "Транспортные услуги",
+          "fixed_monthly": 7364.466666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 7364.466666666667
+        },
+        {
+          "code": "staff_meals",
+          "title": "Расходы на питание персонала",
+          "fixed_monthly": 28445.963333333333,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 28445.963333333333
+        },
+        {
+          "code": "automation",
+          "title": "Оплата систем автоматизации",
+          "fixed_monthly": 63049.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 63049.0
+        },
+        {
+          "code": "equipment_repair",
+          "title": "Ремонт оборудования",
+          "fixed_monthly": 3700.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3700.0
+        },
+        {
+          "code": "office_rent",
+          "title": "Аренда офиса",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "office_maintenance",
+          "title": "Содержание офиса",
+          "fixed_monthly": 116.66666666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 116.66666666666667
+        },
+        {
+          "code": "rko",
+          "title": "РКО",
+          "fixed_monthly": 5390.693333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 5390.693333333334
+        },
+        {
+          "code": "bank_fees",
+          "title": "Прочие банковские комиссии",
+          "fixed_monthly": 292.76,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 292.76
+        },
+        {
+          "code": "fd_nk_services",
+          "title": "Услуги ФД и НК",
+          "fixed_monthly": 3000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3000.0
+        },
+        {
+          "code": "staff_expenses",
+          "title": "Расходы на персонал",
+          "fixed_monthly": 3944.3199999999997,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3944.3199999999997
+        },
+        {
+          "code": "staff_training",
+          "title": "Обучение персонала",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "telecom",
+          "title": "Телекоммуникации",
+          "fixed_monthly": 14603.753333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 14603.753333333334
+        },
+        {
+          "code": "recruiting",
+          "title": "Поиск и найм персонала",
+          "fixed_monthly": 6899.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 6899.0
+        },
+        {
+          "code": "aggregator_commission",
+          "title": "Комиссия агрегатору",
+          "fixed_monthly": 2000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 2000.0
+        },
+        {
+          "code": "targeted_ads",
+          "title": "Таргетированная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "outdoor_ads",
+          "title": "Наружная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "yandex_maps_ads",
+          "title": "Реклама на Яндекс-картах",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "context_ads",
+          "title": "Контекстная реклама",
+          "fixed_monthly": 64666.666666666664,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 64666.666666666664
+        },
+        {
+          "code": "flyers",
+          "title": "Листовки",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "seo",
+          "title": "SEO - оптимизация",
+          "fixed_monthly": 13000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 13000.0
+        },
+        {
+          "code": "other_marketing",
+          "title": "Прочие маркетинговые услуги",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "other_expenses",
+          "title": "Прочие расходы",
+          "fixed_monthly": 3.046666666666681,
+          "per_order": 0.0,
+          "basis": "Среднее после исключения подтверждённой единичной потери1000₽ июля.",
+          "group": "operations",
+          "amount": 3.046666666666681
+        },
+        {
+          "code": "overdraft_fee",
+          "title": "Комиссия за овердрафт",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "depreciation",
+          "title": "Амортизация",
+          "fixed_monthly": 26928.49,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 26928.49
+        },
+        {
+          "code": "asset_disposal_loss",
+          "title": "Убыток от выбытия ОС",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "fines_penalties",
+          "title": "Штрафы и пени",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "company_percent_pool",
+          "title": "Единый процентный фонд всей кухни",
+          "amount": 168974.69461367352,
+          "group": "payroll",
+          "fixed_monthly": null,
+          "per_order": null,
+          "basis": "Действующие ступени применены к каждому из92 масштабированных дней, затем /3. Не четыре самостоятельных процента."
+        }
+      ]
+    },
+    "2300": {
+      "orders": 2300,
+      "orders_per_average_day": 75.0,
+      "revenue": 4153827.360268749,
+      "fixed_costs": 1517035.1818,
+      "variable_without_company_pool": 2409445.298207277,
+      "company_pool": 175436.38187125477,
+      "costs_before_unknowns": 4101916.8618785315,
+      "additional_future_cost": 0,
+      "profit_before_unknowns": 51910.498390217195,
+      "food": 1287613.0798652058,
+      "enterprise_recipe_fc": 0.30998232911198753,
+      "four_sushi_payroll_fixed_fund_percent": 412094.6666666666,
+      "total_payroll_fixed_plus_pool_before_payrolltax": 1215034.3018712546,
+      "budget_lines": [
+        {
+          "code": "four_sushi_fixed",
+          "title": "Четверо второй категории: смены, старший, пт/сб, фонд",
+          "fixed_monthly": 320433.3333333333,
+          "per_order": 0.0,
+          "basis": "4 ежедневных места ×12ч; 2400/смена; 1 старший500; 1 сотрудник5%фонда. Средний календарь92/3 дня.",
+          "group": "payroll",
+          "amount": 320433.3333333333
+        },
+        {
+          "code": "other_fixed_payroll",
+          "title": "Остальной фиксированный ФОТ, премии, фонды, отпускной резерв",
+          "fixed_monthly": 719164.5866666666,
+          "per_order": 0.0,
+          "basis": "Полный ФОТ ОПиУ + отмена экономии от прочих штрафов − старые суши база/фонд − весь исторический процент; отпуска включены.",
+          "group": "payroll",
+          "amount": 719164.5866666666
+        },
+        {
+          "code": "roll_food",
+          "title": "Продукты роллов: FC33%",
+          "fixed_monthly": 0.0,
+          "per_order": 323.03875066314095,
+          "basis": "33% от распределённой net-выручки только роллов; раскрытие смешанных сетов.",
+          "group": "food",
+          "amount": 742989.1265252242
+        },
+        {
+          "code": "other_food",
+          "title": "Продукты остальных блюд: рецептуры прежние",
+          "fixed_monthly": 0.0,
+          "per_order": 236.79302319129633,
+          "basis": "Исходные сырьевые рубли прочих блюд / заказы квартала.",
+          "group": "food",
+          "amount": 544623.9533399815
+        },
+        {
+          "code": "writeoff_reserve",
+          "title": "Резерв списаний продуктов",
+          "fixed_monthly": 0.0,
+          "per_order": 43.73050332566224,
+          "basis": "Квартальные списания / квартальная рецептурная стоимость × будущая стоимость продуктов.",
+          "group": "losses",
+          "amount": 100580.15764902315
+        },
+        {
+          "code": "inventory_reserve",
+          "title": "Резерв результатов ревизий до удержаний с сотрудников",
+          "fixed_monthly": 0.0,
+          "per_order": 30.669578138228363,
+          "basis": "Компонент inventory до payroll-компенсаций, уже с учётом излишков. Удержания не планируем.",
+          "group": "losses",
+          "amount": 70540.02971792524
+        },
+        {
+          "code": "packaging_discrepancy",
+          "title": "Отклонения инвентаризации упаковки и напитков сверх техкарт",
+          "fixed_monthly": 0.0,
+          "per_order": 15.963386598874163,
+          "basis": "Упаковка в техкартах уже в продуктах. Здесь только отклонения; квартальный чистый излишек коробок не планируется.",
+          "group": "losses",
+          "amount": 36715.789177410574
+        },
+        {
+          "code": "courier_service",
+          "title": "Курьерская служба",
+          "fixed_monthly": 0.0,
+          "per_order": 143.42128200472126,
+          "basis": "Расход квартала / учётные заказы; бюджетный proxy при прежних долях доставки.",
+          "group": "delivery",
+          "amount": 329868.94861085893
+        },
+        {
+          "code": "consumables_maintenance",
+          "title": "Расходники и содержание точки",
+          "fixed_monthly": 29504.756666666664,
+          "per_order": 16.07304703105139,
+          "basis": "50% условно постоянных,50% на заказ; прежнее явно заданное допущение.",
+          "group": "operations",
+          "amount": 66472.76483808487
+        },
+        {
+          "code": "utilities",
+          "title": "Коммунальные расходы и вывоз мусора",
+          "fixed_monthly": 68023.85833333334,
+          "per_order": 32.29939077537679,
+          "basis": "Электричество/вода50% переменные,50% постоянные; вывоз мусора постоянный, включая3000июля из аренды.",
+          "group": "operations",
+          "amount": 142312.45711669995
+        },
+        {
+          "code": "rent",
+          "title": "Аренда точки и склада",
+          "fixed_monthly": 110000.0,
+          "per_order": 0.0,
+          "basis": "Аренда точки100000/мес, склада10000/мес.",
+          "group": "operations",
+          "amount": 110000.0
+        },
+        {
+          "code": "rent_unspecified_reserve",
+          "title": "Резерв нерасшифрованной добавки к аренде июля",
+          "fixed_monthly": 333.3333333333333,
+          "per_order": 0.0,
+          "basis": "1000₽ июля без назначения сохранены как333.33/мес; не объявлены экономией.",
+          "group": "operations",
+          "amount": 333.3333333333333
+        },
+        {
+          "code": "acquiring",
+          "title": "Эквайринг",
+          "fixed_monthly": 0.0,
+          "per_order": 24.948612674777557,
+          "basis": "Квартальная эффективная комиссия при прежнем среднем чеке.",
+          "group": "fees",
+          "amount": 57381.80915198838
+        },
+        {
+          "code": "starter",
+          "title": "Starter: сайт и приложение",
+          "fixed_monthly": 494.05366666667396,
+          "per_order": 42.10765189758489,
+          "basis": "Принятые в модели3% оборота Starter +494.05/мес эмпирического остатка счета. Это калибровка бюджета, не новый тариф.",
+          "group": "fees",
+          "amount": 97341.65303111191
+        },
+        {
+          "code": "yandex",
+          "title": "Комиссия Яндекса вне каскада ОПиУ",
+          "fixed_monthly": 0.0,
+          "per_order": 9.078264027601234,
+          "basis": "Плановые25% только доли Яндекса. Историческая меньшая комиссия не переносится как будущая скидка.",
+          "group": "fees",
+          "amount": 20880.00726348284
+        },
+        {
+          "code": "partner_refunds",
+          "title": "Комиссии прочим партнёрам и возвраты",
+          "fixed_monthly": 0.0,
+          "per_order": 21.100708189576903,
+          "basis": "Ровно один раз: модель использует iiko net до этих вычетов.",
+          "group": "fees",
+          "amount": 48531.62883602687
+        },
+        {
+          "code": "payroll_taxes",
+          "title": "Резерв налогов с зарплаты",
+          "fixed_monthly": 20013.93,
+          "per_order": 0.0,
+          "basis": "20013.93 по июлю/августу при прежней официальной схеме и конвенции ОПиУ; сентябрьский None сохранён в источнике.",
+          "group": "taxes",
+          "amount": 20013.93
+        },
+        {
+          "code": "business_taxes",
+          "title": "Налоги бизнеса",
+          "fixed_monthly": 4782.503133333317,
+          "per_order": 108.36071374614127,
+          "basis": "Прежняя модель6% выручки +4782.50/мес постоянной составляющей по источнику; без новой юридической трактовки.",
+          "group": "taxes",
+          "amount": 254012.14474945824
+        },
+        {
+          "code": "fuel_reserve",
+          "title": "Топливо: чистая сумма августовской аналитической поправки",
+          "fixed_monthly": 880.0,
+          "per_order": 0.0,
+          "basis": "2640₽ квартал /3; не потеряно при объединении.",
+          "group": "operations",
+          "amount": 880.0
+        },
+        {
+          "code": "transport",
+          "title": "Транспортные услуги",
+          "fixed_monthly": 7364.466666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 7364.466666666667
+        },
+        {
+          "code": "staff_meals",
+          "title": "Расходы на питание персонала",
+          "fixed_monthly": 28445.963333333333,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 28445.963333333333
+        },
+        {
+          "code": "automation",
+          "title": "Оплата систем автоматизации",
+          "fixed_monthly": 63049.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 63049.0
+        },
+        {
+          "code": "equipment_repair",
+          "title": "Ремонт оборудования",
+          "fixed_monthly": 3700.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3700.0
+        },
+        {
+          "code": "office_rent",
+          "title": "Аренда офиса",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "office_maintenance",
+          "title": "Содержание офиса",
+          "fixed_monthly": 116.66666666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 116.66666666666667
+        },
+        {
+          "code": "rko",
+          "title": "РКО",
+          "fixed_monthly": 5390.693333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 5390.693333333334
+        },
+        {
+          "code": "bank_fees",
+          "title": "Прочие банковские комиссии",
+          "fixed_monthly": 292.76,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 292.76
+        },
+        {
+          "code": "fd_nk_services",
+          "title": "Услуги ФД и НК",
+          "fixed_monthly": 3000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3000.0
+        },
+        {
+          "code": "staff_expenses",
+          "title": "Расходы на персонал",
+          "fixed_monthly": 3944.3199999999997,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3944.3199999999997
+        },
+        {
+          "code": "staff_training",
+          "title": "Обучение персонала",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "telecom",
+          "title": "Телекоммуникации",
+          "fixed_monthly": 14603.753333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 14603.753333333334
+        },
+        {
+          "code": "recruiting",
+          "title": "Поиск и найм персонала",
+          "fixed_monthly": 6899.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 6899.0
+        },
+        {
+          "code": "aggregator_commission",
+          "title": "Комиссия агрегатору",
+          "fixed_monthly": 2000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 2000.0
+        },
+        {
+          "code": "targeted_ads",
+          "title": "Таргетированная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "outdoor_ads",
+          "title": "Наружная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "yandex_maps_ads",
+          "title": "Реклама на Яндекс-картах",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "context_ads",
+          "title": "Контекстная реклама",
+          "fixed_monthly": 64666.666666666664,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 64666.666666666664
+        },
+        {
+          "code": "flyers",
+          "title": "Листовки",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "seo",
+          "title": "SEO - оптимизация",
+          "fixed_monthly": 13000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 13000.0
+        },
+        {
+          "code": "other_marketing",
+          "title": "Прочие маркетинговые услуги",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "other_expenses",
+          "title": "Прочие расходы",
+          "fixed_monthly": 3.046666666666681,
+          "per_order": 0.0,
+          "basis": "Среднее после исключения подтверждённой единичной потери1000₽ июля.",
+          "group": "operations",
+          "amount": 3.046666666666681
+        },
+        {
+          "code": "overdraft_fee",
+          "title": "Комиссия за овердрафт",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "depreciation",
+          "title": "Амортизация",
+          "fixed_monthly": 26928.49,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 26928.49
+        },
+        {
+          "code": "asset_disposal_loss",
+          "title": "Убыток от выбытия ОС",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "fines_penalties",
+          "title": "Штрафы и пени",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "company_percent_pool",
+          "title": "Единый процентный фонд всей кухни",
+          "amount": 175436.38187125477,
+          "group": "payroll",
+          "fixed_monthly": null,
+          "per_order": null,
+          "basis": "Действующие ступени применены к каждому из92 масштабированных дней, затем /3. Не четыре самостоятельных процента."
+        }
+      ]
+    },
+    "2500": {
+      "orders": 2500,
+      "orders_per_average_day": 81.52173913043478,
+      "revenue": 4515029.739422553,
+      "fixed_costs": 1517035.1818,
+      "variable_without_company_pool": 2618962.2806600835,
+      "company_pool": 198647.54964136553,
+      "costs_before_unknowns": 4334645.012101449,
+      "additional_future_cost": 0,
+      "profit_before_unknowns": 180384.72732110426,
+      "food": 1399579.4346360932,
+      "enterprise_recipe_fc": 0.30998232911198753,
+      "four_sushi_payroll_fixed_fund_percent": 424236.0,
+      "total_payroll_fixed_plus_pool_before_payrolltax": 1238245.4696413656,
+      "budget_lines": [
+        {
+          "code": "four_sushi_fixed",
+          "title": "Четверо второй категории: смены, старший, пт/сб, фонд",
+          "fixed_monthly": 320433.3333333333,
+          "per_order": 0.0,
+          "basis": "4 ежедневных места ×12ч; 2400/смена; 1 старший500; 1 сотрудник5%фонда. Средний календарь92/3 дня.",
+          "group": "payroll",
+          "amount": 320433.3333333333
+        },
+        {
+          "code": "other_fixed_payroll",
+          "title": "Остальной фиксированный ФОТ, премии, фонды, отпускной резерв",
+          "fixed_monthly": 719164.5866666666,
+          "per_order": 0.0,
+          "basis": "Полный ФОТ ОПиУ + отмена экономии от прочих штрафов − старые суши база/фонд − весь исторический процент; отпуска включены.",
+          "group": "payroll",
+          "amount": 719164.5866666666
+        },
+        {
+          "code": "roll_food",
+          "title": "Продукты роллов: FC33%",
+          "fixed_monthly": 0.0,
+          "per_order": 323.03875066314095,
+          "basis": "33% от распределённой net-выручки только роллов; раскрытие смешанных сетов.",
+          "group": "food",
+          "amount": 807596.8766578523
+        },
+        {
+          "code": "other_food",
+          "title": "Продукты остальных блюд: рецептуры прежние",
+          "fixed_monthly": 0.0,
+          "per_order": 236.79302319129633,
+          "basis": "Исходные сырьевые рубли прочих блюд / заказы квартала.",
+          "group": "food",
+          "amount": 591982.5579782408
+        },
+        {
+          "code": "writeoff_reserve",
+          "title": "Резерв списаний продуктов",
+          "fixed_monthly": 0.0,
+          "per_order": 43.73050332566224,
+          "basis": "Квартальные списания / квартальная рецептурная стоимость × будущая стоимость продуктов.",
+          "group": "losses",
+          "amount": 109326.2583141556
+        },
+        {
+          "code": "inventory_reserve",
+          "title": "Резерв результатов ревизий до удержаний с сотрудников",
+          "fixed_monthly": 0.0,
+          "per_order": 30.669578138228363,
+          "basis": "Компонент inventory до payroll-компенсаций, уже с учётом излишков. Удержания не планируем.",
+          "group": "losses",
+          "amount": 76673.94534557092
+        },
+        {
+          "code": "packaging_discrepancy",
+          "title": "Отклонения инвентаризации упаковки и напитков сверх техкарт",
+          "fixed_monthly": 0.0,
+          "per_order": 15.963386598874163,
+          "basis": "Упаковка в техкартах уже в продуктах. Здесь только отклонения; квартальный чистый излишек коробок не планируется.",
+          "group": "losses",
+          "amount": 39908.46649718541
+        },
+        {
+          "code": "courier_service",
+          "title": "Курьерская служба",
+          "fixed_monthly": 0.0,
+          "per_order": 143.42128200472126,
+          "basis": "Расход квартала / учётные заказы; бюджетный proxy при прежних долях доставки.",
+          "group": "delivery",
+          "amount": 358553.20501180313
+        },
+        {
+          "code": "consumables_maintenance",
+          "title": "Расходники и содержание точки",
+          "fixed_monthly": 29504.756666666664,
+          "per_order": 16.07304703105139,
+          "basis": "50% условно постоянных,50% на заказ; прежнее явно заданное допущение.",
+          "group": "operations",
+          "amount": 69687.37424429515
+        },
+        {
+          "code": "utilities",
+          "title": "Коммунальные расходы и вывоз мусора",
+          "fixed_monthly": 68023.85833333334,
+          "per_order": 32.29939077537679,
+          "basis": "Электричество/вода50% переменные,50% постоянные; вывоз мусора постоянный, включая3000июля из аренды.",
+          "group": "operations",
+          "amount": 148772.33527177532
+        },
+        {
+          "code": "rent",
+          "title": "Аренда точки и склада",
+          "fixed_monthly": 110000.0,
+          "per_order": 0.0,
+          "basis": "Аренда точки100000/мес, склада10000/мес.",
+          "group": "operations",
+          "amount": 110000.0
+        },
+        {
+          "code": "rent_unspecified_reserve",
+          "title": "Резерв нерасшифрованной добавки к аренде июля",
+          "fixed_monthly": 333.3333333333333,
+          "per_order": 0.0,
+          "basis": "1000₽ июля без назначения сохранены как333.33/мес; не объявлены экономией.",
+          "group": "operations",
+          "amount": 333.3333333333333
+        },
+        {
+          "code": "acquiring",
+          "title": "Эквайринг",
+          "fixed_monthly": 0.0,
+          "per_order": 24.948612674777557,
+          "basis": "Квартальная эффективная комиссия при прежнем среднем чеке.",
+          "group": "fees",
+          "amount": 62371.53168694389
+        },
+        {
+          "code": "starter",
+          "title": "Starter: сайт и приложение",
+          "fixed_monthly": 494.05366666667396,
+          "per_order": 42.10765189758489,
+          "basis": "Принятые в модели3% оборота Starter +494.05/мес эмпирического остатка счета. Это калибровка бюджета, не новый тариф.",
+          "group": "fees",
+          "amount": 105763.18341062889
+        },
+        {
+          "code": "yandex",
+          "title": "Комиссия Яндекса вне каскада ОПиУ",
+          "fixed_monthly": 0.0,
+          "per_order": 9.078264027601234,
+          "basis": "Плановые25% только доли Яндекса. Историческая меньшая комиссия не переносится как будущая скидка.",
+          "group": "fees",
+          "amount": 22695.660069003086
+        },
+        {
+          "code": "partner_refunds",
+          "title": "Комиссии прочим партнёрам и возвраты",
+          "fixed_monthly": 0.0,
+          "per_order": 21.100708189576903,
+          "basis": "Ровно один раз: модель использует iiko net до этих вычетов.",
+          "group": "fees",
+          "amount": 52751.770473942255
+        },
+        {
+          "code": "payroll_taxes",
+          "title": "Резерв налогов с зарплаты",
+          "fixed_monthly": 20013.93,
+          "per_order": 0.0,
+          "basis": "20013.93 по июлю/августу при прежней официальной схеме и конвенции ОПиУ; сентябрьский None сохранён в источнике.",
+          "group": "taxes",
+          "amount": 20013.93
+        },
+        {
+          "code": "business_taxes",
+          "title": "Налоги бизнеса",
+          "fixed_monthly": 4782.503133333317,
+          "per_order": 108.36071374614127,
+          "basis": "Прежняя модель6% выручки +4782.50/мес постоянной составляющей по источнику; без новой юридической трактовки.",
+          "group": "taxes",
+          "amount": 275684.28749868646
+        },
+        {
+          "code": "fuel_reserve",
+          "title": "Топливо: чистая сумма августовской аналитической поправки",
+          "fixed_monthly": 880.0,
+          "per_order": 0.0,
+          "basis": "2640₽ квартал /3; не потеряно при объединении.",
+          "group": "operations",
+          "amount": 880.0
+        },
+        {
+          "code": "transport",
+          "title": "Транспортные услуги",
+          "fixed_monthly": 7364.466666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 7364.466666666667
+        },
+        {
+          "code": "staff_meals",
+          "title": "Расходы на питание персонала",
+          "fixed_monthly": 28445.963333333333,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 28445.963333333333
+        },
+        {
+          "code": "automation",
+          "title": "Оплата систем автоматизации",
+          "fixed_monthly": 63049.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 63049.0
+        },
+        {
+          "code": "equipment_repair",
+          "title": "Ремонт оборудования",
+          "fixed_monthly": 3700.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3700.0
+        },
+        {
+          "code": "office_rent",
+          "title": "Аренда офиса",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "office_maintenance",
+          "title": "Содержание офиса",
+          "fixed_monthly": 116.66666666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 116.66666666666667
+        },
+        {
+          "code": "rko",
+          "title": "РКО",
+          "fixed_monthly": 5390.693333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 5390.693333333334
+        },
+        {
+          "code": "bank_fees",
+          "title": "Прочие банковские комиссии",
+          "fixed_monthly": 292.76,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 292.76
+        },
+        {
+          "code": "fd_nk_services",
+          "title": "Услуги ФД и НК",
+          "fixed_monthly": 3000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3000.0
+        },
+        {
+          "code": "staff_expenses",
+          "title": "Расходы на персонал",
+          "fixed_monthly": 3944.3199999999997,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3944.3199999999997
+        },
+        {
+          "code": "staff_training",
+          "title": "Обучение персонала",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "telecom",
+          "title": "Телекоммуникации",
+          "fixed_monthly": 14603.753333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 14603.753333333334
+        },
+        {
+          "code": "recruiting",
+          "title": "Поиск и найм персонала",
+          "fixed_monthly": 6899.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 6899.0
+        },
+        {
+          "code": "aggregator_commission",
+          "title": "Комиссия агрегатору",
+          "fixed_monthly": 2000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 2000.0
+        },
+        {
+          "code": "targeted_ads",
+          "title": "Таргетированная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "outdoor_ads",
+          "title": "Наружная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "yandex_maps_ads",
+          "title": "Реклама на Яндекс-картах",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "context_ads",
+          "title": "Контекстная реклама",
+          "fixed_monthly": 64666.666666666664,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 64666.666666666664
+        },
+        {
+          "code": "flyers",
+          "title": "Листовки",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "seo",
+          "title": "SEO - оптимизация",
+          "fixed_monthly": 13000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 13000.0
+        },
+        {
+          "code": "other_marketing",
+          "title": "Прочие маркетинговые услуги",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "other_expenses",
+          "title": "Прочие расходы",
+          "fixed_monthly": 3.046666666666681,
+          "per_order": 0.0,
+          "basis": "Среднее после исключения подтверждённой единичной потери1000₽ июля.",
+          "group": "operations",
+          "amount": 3.046666666666681
+        },
+        {
+          "code": "overdraft_fee",
+          "title": "Комиссия за овердрафт",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "depreciation",
+          "title": "Амортизация",
+          "fixed_monthly": 26928.49,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 26928.49
+        },
+        {
+          "code": "asset_disposal_loss",
+          "title": "Убыток от выбытия ОС",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "fines_penalties",
+          "title": "Штрафы и пени",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "company_percent_pool",
+          "title": "Единый процентный фонд всей кухни",
+          "amount": 198647.54964136553,
+          "group": "payroll",
+          "fixed_monthly": null,
+          "per_order": null,
+          "basis": "Действующие ступени применены к каждому из92 масштабированных дней, затем /3. Не четыре самостоятельных процента."
+        }
+      ]
+    },
+    "2950": {
+      "orders": 2950,
+      "orders_per_average_day": 96.19565217391305,
+      "revenue": 5327735.092518613,
+      "fixed_costs": 1517035.1818,
+      "variable_without_company_pool": 3090375.4911788986,
+      "company_pool": 256707.50311739603,
+      "costs_before_unknowns": 4864118.176096294,
+      "additional_future_cost": 0,
+      "profit_before_unknowns": 463616.9164223182,
+      "food": 1651503.73287059,
+      "enterprise_recipe_fc": 0.30998232911198753,
+      "four_sushi_payroll_fixed_fund_percent": 454817.3333333333,
+      "total_payroll_fixed_plus_pool_before_payrolltax": 1296305.423117396,
+      "budget_lines": [
+        {
+          "code": "four_sushi_fixed",
+          "title": "Четверо второй категории: смены, старший, пт/сб, фонд",
+          "fixed_monthly": 320433.3333333333,
+          "per_order": 0.0,
+          "basis": "4 ежедневных места ×12ч; 2400/смена; 1 старший500; 1 сотрудник5%фонда. Средний календарь92/3 дня.",
+          "group": "payroll",
+          "amount": 320433.3333333333
+        },
+        {
+          "code": "other_fixed_payroll",
+          "title": "Остальной фиксированный ФОТ, премии, фонды, отпускной резерв",
+          "fixed_monthly": 719164.5866666666,
+          "per_order": 0.0,
+          "basis": "Полный ФОТ ОПиУ + отмена экономии от прочих штрафов − старые суши база/фонд − весь исторический процент; отпуска включены.",
+          "group": "payroll",
+          "amount": 719164.5866666666
+        },
+        {
+          "code": "roll_food",
+          "title": "Продукты роллов: FC33%",
+          "fixed_monthly": 0.0,
+          "per_order": 323.03875066314095,
+          "basis": "33% от распределённой net-выручки только роллов; раскрытие смешанных сетов.",
+          "group": "food",
+          "amount": 952964.3144562658
+        },
+        {
+          "code": "other_food",
+          "title": "Продукты остальных блюд: рецептуры прежние",
+          "fixed_monthly": 0.0,
+          "per_order": 236.79302319129633,
+          "basis": "Исходные сырьевые рубли прочих блюд / заказы квартала.",
+          "group": "food",
+          "amount": 698539.4184143242
+        },
+        {
+          "code": "writeoff_reserve",
+          "title": "Резерв списаний продуктов",
+          "fixed_monthly": 0.0,
+          "per_order": 43.73050332566224,
+          "basis": "Квартальные списания / квартальная рецептурная стоимость × будущая стоимость продуктов.",
+          "group": "losses",
+          "amount": 129004.98481070361
+        },
+        {
+          "code": "inventory_reserve",
+          "title": "Резерв результатов ревизий до удержаний с сотрудников",
+          "fixed_monthly": 0.0,
+          "per_order": 30.669578138228363,
+          "basis": "Компонент inventory до payroll-компенсаций, уже с учётом излишков. Удержания не планируем.",
+          "group": "losses",
+          "amount": 90475.25550777368
+        },
+        {
+          "code": "packaging_discrepancy",
+          "title": "Отклонения инвентаризации упаковки и напитков сверх техкарт",
+          "fixed_monthly": 0.0,
+          "per_order": 15.963386598874163,
+          "basis": "Упаковка в техкартах уже в продуктах. Здесь только отклонения; квартальный чистый излишек коробок не планируется.",
+          "group": "losses",
+          "amount": 47091.99046667878
+        },
+        {
+          "code": "courier_service",
+          "title": "Курьерская служба",
+          "fixed_monthly": 0.0,
+          "per_order": 143.42128200472126,
+          "basis": "Расход квартала / учётные заказы; бюджетный proxy при прежних долях доставки.",
+          "group": "delivery",
+          "amount": 423092.7819139277
+        },
+        {
+          "code": "consumables_maintenance",
+          "title": "Расходники и содержание точки",
+          "fixed_monthly": 29504.756666666664,
+          "per_order": 16.07304703105139,
+          "basis": "50% условно постоянных,50% на заказ; прежнее явно заданное допущение.",
+          "group": "operations",
+          "amount": 76920.24540826827
+        },
+        {
+          "code": "utilities",
+          "title": "Коммунальные расходы и вывоз мусора",
+          "fixed_monthly": 68023.85833333334,
+          "per_order": 32.29939077537679,
+          "basis": "Электричество/вода50% переменные,50% постоянные; вывоз мусора постоянный, включая3000июля из аренды.",
+          "group": "operations",
+          "amount": 163307.06112069488
+        },
+        {
+          "code": "rent",
+          "title": "Аренда точки и склада",
+          "fixed_monthly": 110000.0,
+          "per_order": 0.0,
+          "basis": "Аренда точки100000/мес, склада10000/мес.",
+          "group": "operations",
+          "amount": 110000.0
+        },
+        {
+          "code": "rent_unspecified_reserve",
+          "title": "Резерв нерасшифрованной добавки к аренде июля",
+          "fixed_monthly": 333.3333333333333,
+          "per_order": 0.0,
+          "basis": "1000₽ июля без назначения сохранены как333.33/мес; не объявлены экономией.",
+          "group": "operations",
+          "amount": 333.3333333333333
+        },
+        {
+          "code": "acquiring",
+          "title": "Эквайринг",
+          "fixed_monthly": 0.0,
+          "per_order": 24.948612674777557,
+          "basis": "Квартальная эффективная комиссия при прежнем среднем чеке.",
+          "group": "fees",
+          "amount": 73598.4073905938
+        },
+        {
+          "code": "starter",
+          "title": "Starter: сайт и приложение",
+          "fixed_monthly": 494.05366666667396,
+          "per_order": 42.10765189758489,
+          "basis": "Принятые в модели3% оборота Starter +494.05/мес эмпирического остатка счета. Это калибровка бюджета, не новый тариф.",
+          "group": "fees",
+          "amount": 124711.62676454209
+        },
+        {
+          "code": "yandex",
+          "title": "Комиссия Яндекса вне каскада ОПиУ",
+          "fixed_monthly": 0.0,
+          "per_order": 9.078264027601234,
+          "basis": "Плановые25% только доли Яндекса. Историческая меньшая комиссия не переносится как будущая скидка.",
+          "group": "fees",
+          "amount": 26780.87888142364
+        },
+        {
+          "code": "partner_refunds",
+          "title": "Комиссии прочим партнёрам и возвраты",
+          "fixed_monthly": 0.0,
+          "per_order": 21.100708189576903,
+          "basis": "Ровно один раз: модель использует iiko net до этих вычетов.",
+          "group": "fees",
+          "amount": 62247.08915925186
+        },
+        {
+          "code": "payroll_taxes",
+          "title": "Резерв налогов с зарплаты",
+          "fixed_monthly": 20013.93,
+          "per_order": 0.0,
+          "basis": "20013.93 по июлю/августу при прежней официальной схеме и конвенции ОПиУ; сентябрьский None сохранён в источнике.",
+          "group": "taxes",
+          "amount": 20013.93
+        },
+        {
+          "code": "business_taxes",
+          "title": "Налоги бизнеса",
+          "fixed_monthly": 4782.503133333317,
+          "per_order": 108.36071374614127,
+          "basis": "Прежняя модель6% выручки +4782.50/мес постоянной составляющей по источнику; без новой юридической трактовки.",
+          "group": "taxes",
+          "amount": 324446.60868445004
+        },
+        {
+          "code": "fuel_reserve",
+          "title": "Топливо: чистая сумма августовской аналитической поправки",
+          "fixed_monthly": 880.0,
+          "per_order": 0.0,
+          "basis": "2640₽ квартал /3; не потеряно при объединении.",
+          "group": "operations",
+          "amount": 880.0
+        },
+        {
+          "code": "transport",
+          "title": "Транспортные услуги",
+          "fixed_monthly": 7364.466666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 7364.466666666667
+        },
+        {
+          "code": "staff_meals",
+          "title": "Расходы на питание персонала",
+          "fixed_monthly": 28445.963333333333,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 28445.963333333333
+        },
+        {
+          "code": "automation",
+          "title": "Оплата систем автоматизации",
+          "fixed_monthly": 63049.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 63049.0
+        },
+        {
+          "code": "equipment_repair",
+          "title": "Ремонт оборудования",
+          "fixed_monthly": 3700.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3700.0
+        },
+        {
+          "code": "office_rent",
+          "title": "Аренда офиса",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "office_maintenance",
+          "title": "Содержание офиса",
+          "fixed_monthly": 116.66666666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 116.66666666666667
+        },
+        {
+          "code": "rko",
+          "title": "РКО",
+          "fixed_monthly": 5390.693333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 5390.693333333334
+        },
+        {
+          "code": "bank_fees",
+          "title": "Прочие банковские комиссии",
+          "fixed_monthly": 292.76,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 292.76
+        },
+        {
+          "code": "fd_nk_services",
+          "title": "Услуги ФД и НК",
+          "fixed_monthly": 3000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3000.0
+        },
+        {
+          "code": "staff_expenses",
+          "title": "Расходы на персонал",
+          "fixed_monthly": 3944.3199999999997,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3944.3199999999997
+        },
+        {
+          "code": "staff_training",
+          "title": "Обучение персонала",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "telecom",
+          "title": "Телекоммуникации",
+          "fixed_monthly": 14603.753333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 14603.753333333334
+        },
+        {
+          "code": "recruiting",
+          "title": "Поиск и найм персонала",
+          "fixed_monthly": 6899.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 6899.0
+        },
+        {
+          "code": "aggregator_commission",
+          "title": "Комиссия агрегатору",
+          "fixed_monthly": 2000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 2000.0
+        },
+        {
+          "code": "targeted_ads",
+          "title": "Таргетированная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "outdoor_ads",
+          "title": "Наружная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "yandex_maps_ads",
+          "title": "Реклама на Яндекс-картах",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "context_ads",
+          "title": "Контекстная реклама",
+          "fixed_monthly": 64666.666666666664,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 64666.666666666664
+        },
+        {
+          "code": "flyers",
+          "title": "Листовки",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "seo",
+          "title": "SEO - оптимизация",
+          "fixed_monthly": 13000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 13000.0
+        },
+        {
+          "code": "other_marketing",
+          "title": "Прочие маркетинговые услуги",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "other_expenses",
+          "title": "Прочие расходы",
+          "fixed_monthly": 3.046666666666681,
+          "per_order": 0.0,
+          "basis": "Среднее после исключения подтверждённой единичной потери1000₽ июля.",
+          "group": "operations",
+          "amount": 3.046666666666681
+        },
+        {
+          "code": "overdraft_fee",
+          "title": "Комиссия за овердрафт",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "depreciation",
+          "title": "Амортизация",
+          "fixed_monthly": 26928.49,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 26928.49
+        },
+        {
+          "code": "asset_disposal_loss",
+          "title": "Убыток от выбытия ОС",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "fines_penalties",
+          "title": "Штрафы и пени",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "company_percent_pool",
+          "title": "Единый процентный фонд всей кухни",
+          "amount": 256707.50311739603,
+          "group": "payroll",
+          "fixed_monthly": null,
+          "per_order": null,
+          "basis": "Действующие ступени применены к каждому из92 масштабированных дней, затем /3. Не четыре самостоятельных процента."
+        }
+      ]
+    },
+    "3000": {
+      "orders": 3000,
+      "orders_per_average_day": 97.82608695652173,
+      "revenue": 5418035.6873070635,
+      "fixed_costs": 1517035.1818,
+      "variable_without_company_pool": 3142754.7367921,
+      "company_pool": 262163.81382785545,
+      "costs_before_unknowns": 4921953.732419956,
+      "additional_future_cost": 0,
+      "profit_before_unknowns": 496081.954887108,
+      "food": 1679495.3215633119,
+      "enterprise_recipe_fc": 0.30998232911198753,
+      "four_sushi_payroll_fixed_fund_percent": 457681.3333333333,
+      "total_payroll_fixed_plus_pool_before_payrolltax": 1301761.7338278554,
+      "budget_lines": [
+        {
+          "code": "four_sushi_fixed",
+          "title": "Четверо второй категории: смены, старший, пт/сб, фонд",
+          "fixed_monthly": 320433.3333333333,
+          "per_order": 0.0,
+          "basis": "4 ежедневных места ×12ч; 2400/смена; 1 старший500; 1 сотрудник5%фонда. Средний календарь92/3 дня.",
+          "group": "payroll",
+          "amount": 320433.3333333333
+        },
+        {
+          "code": "other_fixed_payroll",
+          "title": "Остальной фиксированный ФОТ, премии, фонды, отпускной резерв",
+          "fixed_monthly": 719164.5866666666,
+          "per_order": 0.0,
+          "basis": "Полный ФОТ ОПиУ + отмена экономии от прочих штрафов − старые суши база/фонд − весь исторический процент; отпуска включены.",
+          "group": "payroll",
+          "amount": 719164.5866666666
+        },
+        {
+          "code": "roll_food",
+          "title": "Продукты роллов: FC33%",
+          "fixed_monthly": 0.0,
+          "per_order": 323.03875066314095,
+          "basis": "33% от распределённой net-выручки только роллов; раскрытие смешанных сетов.",
+          "group": "food",
+          "amount": 969116.2519894228
+        },
+        {
+          "code": "other_food",
+          "title": "Продукты остальных блюд: рецептуры прежние",
+          "fixed_monthly": 0.0,
+          "per_order": 236.79302319129633,
+          "basis": "Исходные сырьевые рубли прочих блюд / заказы квартала.",
+          "group": "food",
+          "amount": 710379.069573889
+        },
+        {
+          "code": "writeoff_reserve",
+          "title": "Резерв списаний продуктов",
+          "fixed_monthly": 0.0,
+          "per_order": 43.73050332566224,
+          "basis": "Квартальные списания / квартальная рецептурная стоимость × будущая стоимость продуктов.",
+          "group": "losses",
+          "amount": 131191.5099769867
+        },
+        {
+          "code": "inventory_reserve",
+          "title": "Резерв результатов ревизий до удержаний с сотрудников",
+          "fixed_monthly": 0.0,
+          "per_order": 30.669578138228363,
+          "basis": "Компонент inventory до payroll-компенсаций, уже с учётом излишков. Удержания не планируем.",
+          "group": "losses",
+          "amount": 92008.7344146851
+        },
+        {
+          "code": "packaging_discrepancy",
+          "title": "Отклонения инвентаризации упаковки и напитков сверх техкарт",
+          "fixed_monthly": 0.0,
+          "per_order": 15.963386598874163,
+          "basis": "Упаковка в техкартах уже в продуктах. Здесь только отклонения; квартальный чистый излишек коробок не планируется.",
+          "group": "losses",
+          "amount": 47890.15979662249
+        },
+        {
+          "code": "courier_service",
+          "title": "Курьерская служба",
+          "fixed_monthly": 0.0,
+          "per_order": 143.42128200472126,
+          "basis": "Расход квартала / учётные заказы; бюджетный proxy при прежних долях доставки.",
+          "group": "delivery",
+          "amount": 430263.8460141638
+        },
+        {
+          "code": "consumables_maintenance",
+          "title": "Расходники и содержание точки",
+          "fixed_monthly": 29504.756666666664,
+          "per_order": 16.07304703105139,
+          "basis": "50% условно постоянных,50% на заказ; прежнее явно заданное допущение.",
+          "group": "operations",
+          "amount": 77723.89775982084
+        },
+        {
+          "code": "utilities",
+          "title": "Коммунальные расходы и вывоз мусора",
+          "fixed_monthly": 68023.85833333334,
+          "per_order": 32.29939077537679,
+          "basis": "Электричество/вода50% переменные,50% постоянные; вывоз мусора постоянный, включая3000июля из аренды.",
+          "group": "operations",
+          "amount": 164922.03065946372
+        },
+        {
+          "code": "rent",
+          "title": "Аренда точки и склада",
+          "fixed_monthly": 110000.0,
+          "per_order": 0.0,
+          "basis": "Аренда точки100000/мес, склада10000/мес.",
+          "group": "operations",
+          "amount": 110000.0
+        },
+        {
+          "code": "rent_unspecified_reserve",
+          "title": "Резерв нерасшифрованной добавки к аренде июля",
+          "fixed_monthly": 333.3333333333333,
+          "per_order": 0.0,
+          "basis": "1000₽ июля без назначения сохранены как333.33/мес; не объявлены экономией.",
+          "group": "operations",
+          "amount": 333.3333333333333
+        },
+        {
+          "code": "acquiring",
+          "title": "Эквайринг",
+          "fixed_monthly": 0.0,
+          "per_order": 24.948612674777557,
+          "basis": "Квартальная эффективная комиссия при прежнем среднем чеке.",
+          "group": "fees",
+          "amount": 74845.83802433267
+        },
+        {
+          "code": "starter",
+          "title": "Starter: сайт и приложение",
+          "fixed_monthly": 494.05366666667396,
+          "per_order": 42.10765189758489,
+          "basis": "Принятые в модели3% оборота Starter +494.05/мес эмпирического остатка счета. Это калибровка бюджета, не новый тариф.",
+          "group": "fees",
+          "amount": 126817.00935942134
+        },
+        {
+          "code": "yandex",
+          "title": "Комиссия Яндекса вне каскада ОПиУ",
+          "fixed_monthly": 0.0,
+          "per_order": 9.078264027601234,
+          "basis": "Плановые25% только доли Яндекса. Историческая меньшая комиссия не переносится как будущая скидка.",
+          "group": "fees",
+          "amount": 27234.792082803702
+        },
+        {
+          "code": "partner_refunds",
+          "title": "Комиссии прочим партнёрам и возвраты",
+          "fixed_monthly": 0.0,
+          "per_order": 21.100708189576903,
+          "basis": "Ровно один раз: модель использует iiko net до этих вычетов.",
+          "group": "fees",
+          "amount": 63302.12456873071
+        },
+        {
+          "code": "payroll_taxes",
+          "title": "Резерв налогов с зарплаты",
+          "fixed_monthly": 20013.93,
+          "per_order": 0.0,
+          "basis": "20013.93 по июлю/августу при прежней официальной схеме и конвенции ОПиУ; сентябрьский None сохранён в источнике.",
+          "group": "taxes",
+          "amount": 20013.93
+        },
+        {
+          "code": "business_taxes",
+          "title": "Налоги бизнеса",
+          "fixed_monthly": 4782.503133333317,
+          "per_order": 108.36071374614127,
+          "basis": "Прежняя модель6% выручки +4782.50/мес постоянной составляющей по источнику; без новой юридической трактовки.",
+          "group": "taxes",
+          "amount": 329864.64437175717
+        },
+        {
+          "code": "fuel_reserve",
+          "title": "Топливо: чистая сумма августовской аналитической поправки",
+          "fixed_monthly": 880.0,
+          "per_order": 0.0,
+          "basis": "2640₽ квартал /3; не потеряно при объединении.",
+          "group": "operations",
+          "amount": 880.0
+        },
+        {
+          "code": "transport",
+          "title": "Транспортные услуги",
+          "fixed_monthly": 7364.466666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 7364.466666666667
+        },
+        {
+          "code": "staff_meals",
+          "title": "Расходы на питание персонала",
+          "fixed_monthly": 28445.963333333333,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 28445.963333333333
+        },
+        {
+          "code": "automation",
+          "title": "Оплата систем автоматизации",
+          "fixed_monthly": 63049.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 63049.0
+        },
+        {
+          "code": "equipment_repair",
+          "title": "Ремонт оборудования",
+          "fixed_monthly": 3700.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3700.0
+        },
+        {
+          "code": "office_rent",
+          "title": "Аренда офиса",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "office_maintenance",
+          "title": "Содержание офиса",
+          "fixed_monthly": 116.66666666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 116.66666666666667
+        },
+        {
+          "code": "rko",
+          "title": "РКО",
+          "fixed_monthly": 5390.693333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 5390.693333333334
+        },
+        {
+          "code": "bank_fees",
+          "title": "Прочие банковские комиссии",
+          "fixed_monthly": 292.76,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 292.76
+        },
+        {
+          "code": "fd_nk_services",
+          "title": "Услуги ФД и НК",
+          "fixed_monthly": 3000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3000.0
+        },
+        {
+          "code": "staff_expenses",
+          "title": "Расходы на персонал",
+          "fixed_monthly": 3944.3199999999997,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3944.3199999999997
+        },
+        {
+          "code": "staff_training",
+          "title": "Обучение персонала",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "telecom",
+          "title": "Телекоммуникации",
+          "fixed_monthly": 14603.753333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 14603.753333333334
+        },
+        {
+          "code": "recruiting",
+          "title": "Поиск и найм персонала",
+          "fixed_monthly": 6899.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 6899.0
+        },
+        {
+          "code": "aggregator_commission",
+          "title": "Комиссия агрегатору",
+          "fixed_monthly": 2000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 2000.0
+        },
+        {
+          "code": "targeted_ads",
+          "title": "Таргетированная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "outdoor_ads",
+          "title": "Наружная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "yandex_maps_ads",
+          "title": "Реклама на Яндекс-картах",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "context_ads",
+          "title": "Контекстная реклама",
+          "fixed_monthly": 64666.666666666664,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 64666.666666666664
+        },
+        {
+          "code": "flyers",
+          "title": "Листовки",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "seo",
+          "title": "SEO - оптимизация",
+          "fixed_monthly": 13000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 13000.0
+        },
+        {
+          "code": "other_marketing",
+          "title": "Прочие маркетинговые услуги",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "other_expenses",
+          "title": "Прочие расходы",
+          "fixed_monthly": 3.046666666666681,
+          "per_order": 0.0,
+          "basis": "Среднее после исключения подтверждённой единичной потери1000₽ июля.",
+          "group": "operations",
+          "amount": 3.046666666666681
+        },
+        {
+          "code": "overdraft_fee",
+          "title": "Комиссия за овердрафт",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "depreciation",
+          "title": "Амортизация",
+          "fixed_monthly": 26928.49,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 26928.49
+        },
+        {
+          "code": "asset_disposal_loss",
+          "title": "Убыток от выбытия ОС",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "fines_penalties",
+          "title": "Штрафы и пени",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "company_percent_pool",
+          "title": "Единый процентный фонд всей кухни",
+          "amount": 262163.81382785545,
+          "group": "payroll",
+          "fixed_monthly": null,
+          "per_order": null,
+          "basis": "Действующие ступени применены к каждому из92 масштабированных дней, затем /3. Не четыре самостоятельных процента."
+        }
+      ]
+    },
+    "3050": {
+      "orders": 3050,
+      "orders_per_average_day": 99.45652173913044,
+      "revenue": 5508336.282095515,
+      "fixed_costs": 1517035.1818,
+      "variable_without_company_pool": 3195133.9824053016,
+      "company_pool": 266533.21072498633,
+      "costs_before_unknowns": 4978702.374930288,
+      "additional_future_cost": 0,
+      "profit_before_unknowns": 529633.9071652272,
+      "food": 1707486.9102560338,
+      "enterprise_recipe_fc": 0.30998232911198753,
+      "four_sushi_payroll_fixed_fund_percent": 459970.6666666666,
+      "total_payroll_fixed_plus_pool_before_payrolltax": 1306131.1307249863,
+      "budget_lines": [
+        {
+          "code": "four_sushi_fixed",
+          "title": "Четверо второй категории: смены, старший, пт/сб, фонд",
+          "fixed_monthly": 320433.3333333333,
+          "per_order": 0.0,
+          "basis": "4 ежедневных места ×12ч; 2400/смена; 1 старший500; 1 сотрудник5%фонда. Средний календарь92/3 дня.",
+          "group": "payroll",
+          "amount": 320433.3333333333
+        },
+        {
+          "code": "other_fixed_payroll",
+          "title": "Остальной фиксированный ФОТ, премии, фонды, отпускной резерв",
+          "fixed_monthly": 719164.5866666666,
+          "per_order": 0.0,
+          "basis": "Полный ФОТ ОПиУ + отмена экономии от прочих штрафов − старые суши база/фонд − весь исторический процент; отпуска включены.",
+          "group": "payroll",
+          "amount": 719164.5866666666
+        },
+        {
+          "code": "roll_food",
+          "title": "Продукты роллов: FC33%",
+          "fixed_monthly": 0.0,
+          "per_order": 323.03875066314095,
+          "basis": "33% от распределённой net-выручки только роллов; раскрытие смешанных сетов.",
+          "group": "food",
+          "amount": 985268.1895225799
+        },
+        {
+          "code": "other_food",
+          "title": "Продукты остальных блюд: рецептуры прежние",
+          "fixed_monthly": 0.0,
+          "per_order": 236.79302319129633,
+          "basis": "Исходные сырьевые рубли прочих блюд / заказы квартала.",
+          "group": "food",
+          "amount": 722218.7207334538
+        },
+        {
+          "code": "writeoff_reserve",
+          "title": "Резерв списаний продуктов",
+          "fixed_monthly": 0.0,
+          "per_order": 43.73050332566224,
+          "basis": "Квартальные списания / квартальная рецептурная стоимость × будущая стоимость продуктов.",
+          "group": "losses",
+          "amount": 133378.03514326984
+        },
+        {
+          "code": "inventory_reserve",
+          "title": "Резерв результатов ревизий до удержаний с сотрудников",
+          "fixed_monthly": 0.0,
+          "per_order": 30.669578138228363,
+          "basis": "Компонент inventory до payroll-компенсаций, уже с учётом излишков. Удержания не планируем.",
+          "group": "losses",
+          "amount": 93542.21332159652
+        },
+        {
+          "code": "packaging_discrepancy",
+          "title": "Отклонения инвентаризации упаковки и напитков сверх техкарт",
+          "fixed_monthly": 0.0,
+          "per_order": 15.963386598874163,
+          "basis": "Упаковка в техкартах уже в продуктах. Здесь только отклонения; квартальный чистый излишек коробок не планируется.",
+          "group": "losses",
+          "amount": 48688.3291265662
+        },
+        {
+          "code": "courier_service",
+          "title": "Курьерская служба",
+          "fixed_monthly": 0.0,
+          "per_order": 143.42128200472126,
+          "basis": "Расход квартала / учётные заказы; бюджетный proxy при прежних долях доставки.",
+          "group": "delivery",
+          "amount": 437434.91011439986
+        },
+        {
+          "code": "consumables_maintenance",
+          "title": "Расходники и содержание точки",
+          "fixed_monthly": 29504.756666666664,
+          "per_order": 16.07304703105139,
+          "basis": "50% условно постоянных,50% на заказ; прежнее явно заданное допущение.",
+          "group": "operations",
+          "amount": 78527.5501113734
+        },
+        {
+          "code": "utilities",
+          "title": "Коммунальные расходы и вывоз мусора",
+          "fixed_monthly": 68023.85833333334,
+          "per_order": 32.29939077537679,
+          "basis": "Электричество/вода50% переменные,50% постоянные; вывоз мусора постоянный, включая3000июля из аренды.",
+          "group": "operations",
+          "amount": 166537.00019823253
+        },
+        {
+          "code": "rent",
+          "title": "Аренда точки и склада",
+          "fixed_monthly": 110000.0,
+          "per_order": 0.0,
+          "basis": "Аренда точки100000/мес, склада10000/мес.",
+          "group": "operations",
+          "amount": 110000.0
+        },
+        {
+          "code": "rent_unspecified_reserve",
+          "title": "Резерв нерасшифрованной добавки к аренде июля",
+          "fixed_monthly": 333.3333333333333,
+          "per_order": 0.0,
+          "basis": "1000₽ июля без назначения сохранены как333.33/мес; не объявлены экономией.",
+          "group": "operations",
+          "amount": 333.3333333333333
+        },
+        {
+          "code": "acquiring",
+          "title": "Эквайринг",
+          "fixed_monthly": 0.0,
+          "per_order": 24.948612674777557,
+          "basis": "Квартальная эффективная комиссия при прежнем среднем чеке.",
+          "group": "fees",
+          "amount": 76093.26865807155
+        },
+        {
+          "code": "starter",
+          "title": "Starter: сайт и приложение",
+          "fixed_monthly": 494.05366666667396,
+          "per_order": 42.10765189758489,
+          "basis": "Принятые в модели3% оборота Starter +494.05/мес эмпирического остатка счета. Это калибровка бюджета, не новый тариф.",
+          "group": "fees",
+          "amount": 128922.39195430058
+        },
+        {
+          "code": "yandex",
+          "title": "Комиссия Яндекса вне каскада ОПиУ",
+          "fixed_monthly": 0.0,
+          "per_order": 9.078264027601234,
+          "basis": "Плановые25% только доли Яндекса. Историческая меньшая комиссия не переносится как будущая скидка.",
+          "group": "fees",
+          "amount": 27688.705284183765
+        },
+        {
+          "code": "partner_refunds",
+          "title": "Комиссии прочим партнёрам и возвраты",
+          "fixed_monthly": 0.0,
+          "per_order": 21.100708189576903,
+          "basis": "Ровно один раз: модель использует iiko net до этих вычетов.",
+          "group": "fees",
+          "amount": 64357.15997820955
+        },
+        {
+          "code": "payroll_taxes",
+          "title": "Резерв налогов с зарплаты",
+          "fixed_monthly": 20013.93,
+          "per_order": 0.0,
+          "basis": "20013.93 по июлю/августу при прежней официальной схеме и конвенции ОПиУ; сентябрьский None сохранён в источнике.",
+          "group": "taxes",
+          "amount": 20013.93
+        },
+        {
+          "code": "business_taxes",
+          "title": "Налоги бизнеса",
+          "fixed_monthly": 4782.503133333317,
+          "per_order": 108.36071374614127,
+          "basis": "Прежняя модель6% выручки +4782.50/мес постоянной составляющей по источнику; без новой юридической трактовки.",
+          "group": "taxes",
+          "amount": 335282.6800590642
+        },
+        {
+          "code": "fuel_reserve",
+          "title": "Топливо: чистая сумма августовской аналитической поправки",
+          "fixed_monthly": 880.0,
+          "per_order": 0.0,
+          "basis": "2640₽ квартал /3; не потеряно при объединении.",
+          "group": "operations",
+          "amount": 880.0
+        },
+        {
+          "code": "transport",
+          "title": "Транспортные услуги",
+          "fixed_monthly": 7364.466666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 7364.466666666667
+        },
+        {
+          "code": "staff_meals",
+          "title": "Расходы на питание персонала",
+          "fixed_monthly": 28445.963333333333,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 28445.963333333333
+        },
+        {
+          "code": "automation",
+          "title": "Оплата систем автоматизации",
+          "fixed_monthly": 63049.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 63049.0
+        },
+        {
+          "code": "equipment_repair",
+          "title": "Ремонт оборудования",
+          "fixed_monthly": 3700.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3700.0
+        },
+        {
+          "code": "office_rent",
+          "title": "Аренда офиса",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "office_maintenance",
+          "title": "Содержание офиса",
+          "fixed_monthly": 116.66666666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 116.66666666666667
+        },
+        {
+          "code": "rko",
+          "title": "РКО",
+          "fixed_monthly": 5390.693333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 5390.693333333334
+        },
+        {
+          "code": "bank_fees",
+          "title": "Прочие банковские комиссии",
+          "fixed_monthly": 292.76,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 292.76
+        },
+        {
+          "code": "fd_nk_services",
+          "title": "Услуги ФД и НК",
+          "fixed_monthly": 3000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3000.0
+        },
+        {
+          "code": "staff_expenses",
+          "title": "Расходы на персонал",
+          "fixed_monthly": 3944.3199999999997,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3944.3199999999997
+        },
+        {
+          "code": "staff_training",
+          "title": "Обучение персонала",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "telecom",
+          "title": "Телекоммуникации",
+          "fixed_monthly": 14603.753333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 14603.753333333334
+        },
+        {
+          "code": "recruiting",
+          "title": "Поиск и найм персонала",
+          "fixed_monthly": 6899.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 6899.0
+        },
+        {
+          "code": "aggregator_commission",
+          "title": "Комиссия агрегатору",
+          "fixed_monthly": 2000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 2000.0
+        },
+        {
+          "code": "targeted_ads",
+          "title": "Таргетированная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "outdoor_ads",
+          "title": "Наружная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "yandex_maps_ads",
+          "title": "Реклама на Яндекс-картах",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "context_ads",
+          "title": "Контекстная реклама",
+          "fixed_monthly": 64666.666666666664,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 64666.666666666664
+        },
+        {
+          "code": "flyers",
+          "title": "Листовки",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "seo",
+          "title": "SEO - оптимизация",
+          "fixed_monthly": 13000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 13000.0
+        },
+        {
+          "code": "other_marketing",
+          "title": "Прочие маркетинговые услуги",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "other_expenses",
+          "title": "Прочие расходы",
+          "fixed_monthly": 3.046666666666681,
+          "per_order": 0.0,
+          "basis": "Среднее после исключения подтверждённой единичной потери1000₽ июля.",
+          "group": "operations",
+          "amount": 3.046666666666681
+        },
+        {
+          "code": "overdraft_fee",
+          "title": "Комиссия за овердрафт",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "depreciation",
+          "title": "Амортизация",
+          "fixed_monthly": 26928.49,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 26928.49
+        },
+        {
+          "code": "asset_disposal_loss",
+          "title": "Убыток от выбытия ОС",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "fines_penalties",
+          "title": "Штрафы и пени",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "company_percent_pool",
+          "title": "Единый процентный фонд всей кухни",
+          "amount": 266533.21072498633,
+          "group": "payroll",
+          "fixed_monthly": null,
+          "per_order": null,
+          "basis": "Действующие ступени применены к каждому из92 масштабированных дней, затем /3. Не четыре самостоятельных процента."
+        }
+      ]
+    },
+    "3100": {
+      "orders": 3100,
+      "orders_per_average_day": 101.08695652173913,
+      "revenue": 5598636.876883966,
+      "fixed_costs": 1517035.1818,
+      "variable_without_company_pool": 3247513.2280185036,
+      "company_pool": 272177.5185082622,
+      "costs_before_unknowns": 5036725.928326766,
+      "additional_future_cost": 0,
+      "profit_before_unknowns": 561910.9485572001,
+      "food": 1735478.4989487557,
+      "enterprise_recipe_fc": 0.30998232911198753,
+      "four_sushi_payroll_fixed_fund_percent": 462897.3333333333,
+      "total_payroll_fixed_plus_pool_before_payrolltax": 1311775.4385082622,
+      "budget_lines": [
+        {
+          "code": "four_sushi_fixed",
+          "title": "Четверо второй категории: смены, старший, пт/сб, фонд",
+          "fixed_monthly": 320433.3333333333,
+          "per_order": 0.0,
+          "basis": "4 ежедневных места ×12ч; 2400/смена; 1 старший500; 1 сотрудник5%фонда. Средний календарь92/3 дня.",
+          "group": "payroll",
+          "amount": 320433.3333333333
+        },
+        {
+          "code": "other_fixed_payroll",
+          "title": "Остальной фиксированный ФОТ, премии, фонды, отпускной резерв",
+          "fixed_monthly": 719164.5866666666,
+          "per_order": 0.0,
+          "basis": "Полный ФОТ ОПиУ + отмена экономии от прочих штрафов − старые суши база/фонд − весь исторический процент; отпуска включены.",
+          "group": "payroll",
+          "amount": 719164.5866666666
+        },
+        {
+          "code": "roll_food",
+          "title": "Продукты роллов: FC33%",
+          "fixed_monthly": 0.0,
+          "per_order": 323.03875066314095,
+          "basis": "33% от распределённой net-выручки только роллов; раскрытие смешанных сетов.",
+          "group": "food",
+          "amount": 1001420.127055737
+        },
+        {
+          "code": "other_food",
+          "title": "Продукты остальных блюд: рецептуры прежние",
+          "fixed_monthly": 0.0,
+          "per_order": 236.79302319129633,
+          "basis": "Исходные сырьевые рубли прочих блюд / заказы квартала.",
+          "group": "food",
+          "amount": 734058.3718930186
+        },
+        {
+          "code": "writeoff_reserve",
+          "title": "Резерв списаний продуктов",
+          "fixed_monthly": 0.0,
+          "per_order": 43.73050332566224,
+          "basis": "Квартальные списания / квартальная рецептурная стоимость × будущая стоимость продуктов.",
+          "group": "losses",
+          "amount": 135564.56030955294
+        },
+        {
+          "code": "inventory_reserve",
+          "title": "Резерв результатов ревизий до удержаний с сотрудников",
+          "fixed_monthly": 0.0,
+          "per_order": 30.669578138228363,
+          "basis": "Компонент inventory до payroll-компенсаций, уже с учётом излишков. Удержания не планируем.",
+          "group": "losses",
+          "amount": 95075.69222850792
+        },
+        {
+          "code": "packaging_discrepancy",
+          "title": "Отклонения инвентаризации упаковки и напитков сверх техкарт",
+          "fixed_monthly": 0.0,
+          "per_order": 15.963386598874163,
+          "basis": "Упаковка в техкартах уже в продуктах. Здесь только отклонения; квартальный чистый излишек коробок не планируется.",
+          "group": "losses",
+          "amount": 49486.49845650991
+        },
+        {
+          "code": "courier_service",
+          "title": "Курьерская служба",
+          "fixed_monthly": 0.0,
+          "per_order": 143.42128200472126,
+          "basis": "Расход квартала / учётные заказы; бюджетный proxy при прежних долях доставки.",
+          "group": "delivery",
+          "amount": 444605.9742146359
+        },
+        {
+          "code": "consumables_maintenance",
+          "title": "Расходники и содержание точки",
+          "fixed_monthly": 29504.756666666664,
+          "per_order": 16.07304703105139,
+          "basis": "50% условно постоянных,50% на заказ; прежнее явно заданное допущение.",
+          "group": "operations",
+          "amount": 79331.20246292598
+        },
+        {
+          "code": "utilities",
+          "title": "Коммунальные расходы и вывоз мусора",
+          "fixed_monthly": 68023.85833333334,
+          "per_order": 32.29939077537679,
+          "basis": "Электричество/вода50% переменные,50% постоянные; вывоз мусора постоянный, включая3000июля из аренды.",
+          "group": "operations",
+          "amount": 168151.9697370014
+        },
+        {
+          "code": "rent",
+          "title": "Аренда точки и склада",
+          "fixed_monthly": 110000.0,
+          "per_order": 0.0,
+          "basis": "Аренда точки100000/мес, склада10000/мес.",
+          "group": "operations",
+          "amount": 110000.0
+        },
+        {
+          "code": "rent_unspecified_reserve",
+          "title": "Резерв нерасшифрованной добавки к аренде июля",
+          "fixed_monthly": 333.3333333333333,
+          "per_order": 0.0,
+          "basis": "1000₽ июля без назначения сохранены как333.33/мес; не объявлены экономией.",
+          "group": "operations",
+          "amount": 333.3333333333333
+        },
+        {
+          "code": "acquiring",
+          "title": "Эквайринг",
+          "fixed_monthly": 0.0,
+          "per_order": 24.948612674777557,
+          "basis": "Квартальная эффективная комиссия при прежнем среднем чеке.",
+          "group": "fees",
+          "amount": 77340.69929181042
+        },
+        {
+          "code": "starter",
+          "title": "Starter: сайт и приложение",
+          "fixed_monthly": 494.05366666667396,
+          "per_order": 42.10765189758489,
+          "basis": "Принятые в модели3% оборота Starter +494.05/мес эмпирического остатка счета. Это калибровка бюджета, не новый тариф.",
+          "group": "fees",
+          "amount": 131027.77454917983
+        },
+        {
+          "code": "yandex",
+          "title": "Комиссия Яндекса вне каскада ОПиУ",
+          "fixed_monthly": 0.0,
+          "per_order": 9.078264027601234,
+          "basis": "Плановые25% только доли Яндекса. Историческая меньшая комиссия не переносится как будущая скидка.",
+          "group": "fees",
+          "amount": 28142.618485563824
+        },
+        {
+          "code": "partner_refunds",
+          "title": "Комиссии прочим партнёрам и возвраты",
+          "fixed_monthly": 0.0,
+          "per_order": 21.100708189576903,
+          "basis": "Ровно один раз: модель использует iiko net до этих вычетов.",
+          "group": "fees",
+          "amount": 65412.1953876884
+        },
+        {
+          "code": "payroll_taxes",
+          "title": "Резерв налогов с зарплаты",
+          "fixed_monthly": 20013.93,
+          "per_order": 0.0,
+          "basis": "20013.93 по июлю/августу при прежней официальной схеме и конвенции ОПиУ; сентябрьский None сохранён в источнике.",
+          "group": "taxes",
+          "amount": 20013.93
+        },
+        {
+          "code": "business_taxes",
+          "title": "Налоги бизнеса",
+          "fixed_monthly": 4782.503133333317,
+          "per_order": 108.36071374614127,
+          "basis": "Прежняя модель6% выручки +4782.50/мес постоянной составляющей по источнику; без новой юридической трактовки.",
+          "group": "taxes",
+          "amount": 340700.7157463713
+        },
+        {
+          "code": "fuel_reserve",
+          "title": "Топливо: чистая сумма августовской аналитической поправки",
+          "fixed_monthly": 880.0,
+          "per_order": 0.0,
+          "basis": "2640₽ квартал /3; не потеряно при объединении.",
+          "group": "operations",
+          "amount": 880.0
+        },
+        {
+          "code": "transport",
+          "title": "Транспортные услуги",
+          "fixed_monthly": 7364.466666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 7364.466666666667
+        },
+        {
+          "code": "staff_meals",
+          "title": "Расходы на питание персонала",
+          "fixed_monthly": 28445.963333333333,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 28445.963333333333
+        },
+        {
+          "code": "automation",
+          "title": "Оплата систем автоматизации",
+          "fixed_monthly": 63049.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 63049.0
+        },
+        {
+          "code": "equipment_repair",
+          "title": "Ремонт оборудования",
+          "fixed_monthly": 3700.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3700.0
+        },
+        {
+          "code": "office_rent",
+          "title": "Аренда офиса",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "office_maintenance",
+          "title": "Содержание офиса",
+          "fixed_monthly": 116.66666666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 116.66666666666667
+        },
+        {
+          "code": "rko",
+          "title": "РКО",
+          "fixed_monthly": 5390.693333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 5390.693333333334
+        },
+        {
+          "code": "bank_fees",
+          "title": "Прочие банковские комиссии",
+          "fixed_monthly": 292.76,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 292.76
+        },
+        {
+          "code": "fd_nk_services",
+          "title": "Услуги ФД и НК",
+          "fixed_monthly": 3000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3000.0
+        },
+        {
+          "code": "staff_expenses",
+          "title": "Расходы на персонал",
+          "fixed_monthly": 3944.3199999999997,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3944.3199999999997
+        },
+        {
+          "code": "staff_training",
+          "title": "Обучение персонала",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "telecom",
+          "title": "Телекоммуникации",
+          "fixed_monthly": 14603.753333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 14603.753333333334
+        },
+        {
+          "code": "recruiting",
+          "title": "Поиск и найм персонала",
+          "fixed_monthly": 6899.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 6899.0
+        },
+        {
+          "code": "aggregator_commission",
+          "title": "Комиссия агрегатору",
+          "fixed_monthly": 2000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 2000.0
+        },
+        {
+          "code": "targeted_ads",
+          "title": "Таргетированная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "outdoor_ads",
+          "title": "Наружная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "yandex_maps_ads",
+          "title": "Реклама на Яндекс-картах",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "context_ads",
+          "title": "Контекстная реклама",
+          "fixed_monthly": 64666.666666666664,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 64666.666666666664
+        },
+        {
+          "code": "flyers",
+          "title": "Листовки",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "seo",
+          "title": "SEO - оптимизация",
+          "fixed_monthly": 13000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 13000.0
+        },
+        {
+          "code": "other_marketing",
+          "title": "Прочие маркетинговые услуги",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "other_expenses",
+          "title": "Прочие расходы",
+          "fixed_monthly": 3.046666666666681,
+          "per_order": 0.0,
+          "basis": "Среднее после исключения подтверждённой единичной потери1000₽ июля.",
+          "group": "operations",
+          "amount": 3.046666666666681
+        },
+        {
+          "code": "overdraft_fee",
+          "title": "Комиссия за овердрафт",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "depreciation",
+          "title": "Амортизация",
+          "fixed_monthly": 26928.49,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 26928.49
+        },
+        {
+          "code": "asset_disposal_loss",
+          "title": "Убыток от выбытия ОС",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "fines_penalties",
+          "title": "Штрафы и пени",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "company_percent_pool",
+          "title": "Единый процентный фонд всей кухни",
+          "amount": 272177.5185082622,
+          "group": "payroll",
+          "fixed_monthly": null,
+          "per_order": null,
+          "basis": "Действующие ступени применены к каждому из92 масштабированных дней, затем /3. Не четыре самостоятельных процента."
+        }
+      ]
+    },
+    "3200": {
+      "orders": 3200,
+      "orders_per_average_day": 104.34782608695652,
+      "revenue": 5779238.066460868,
+      "fixed_costs": 1517035.1818,
+      "variable_without_company_pool": 3352271.7192449067,
+      "company_pool": 283202.58856001456,
+      "costs_before_unknowns": 5152509.489604922,
+      "additional_future_cost": 0,
+      "profit_before_unknowns": 626728.5768559468,
+      "food": 1791461.6763341993,
+      "enterprise_recipe_fc": 0.30998232911198753,
+      "four_sushi_payroll_fixed_fund_percent": 468641.3333333333,
+      "total_payroll_fixed_plus_pool_before_payrolltax": 1322800.5085600144,
+      "budget_lines": [
+        {
+          "code": "four_sushi_fixed",
+          "title": "Четверо второй категории: смены, старший, пт/сб, фонд",
+          "fixed_monthly": 320433.3333333333,
+          "per_order": 0.0,
+          "basis": "4 ежедневных места ×12ч; 2400/смена; 1 старший500; 1 сотрудник5%фонда. Средний календарь92/3 дня.",
+          "group": "payroll",
+          "amount": 320433.3333333333
+        },
+        {
+          "code": "other_fixed_payroll",
+          "title": "Остальной фиксированный ФОТ, премии, фонды, отпускной резерв",
+          "fixed_monthly": 719164.5866666666,
+          "per_order": 0.0,
+          "basis": "Полный ФОТ ОПиУ + отмена экономии от прочих штрафов − старые суши база/фонд − весь исторический процент; отпуска включены.",
+          "group": "payroll",
+          "amount": 719164.5866666666
+        },
+        {
+          "code": "roll_food",
+          "title": "Продукты роллов: FC33%",
+          "fixed_monthly": 0.0,
+          "per_order": 323.03875066314095,
+          "basis": "33% от распределённой net-выручки только роллов; раскрытие смешанных сетов.",
+          "group": "food",
+          "amount": 1033724.0021220511
+        },
+        {
+          "code": "other_food",
+          "title": "Продукты остальных блюд: рецептуры прежние",
+          "fixed_monthly": 0.0,
+          "per_order": 236.79302319129633,
+          "basis": "Исходные сырьевые рубли прочих блюд / заказы квартала.",
+          "group": "food",
+          "amount": 757737.6742121483
+        },
+        {
+          "code": "writeoff_reserve",
+          "title": "Резерв списаний продуктов",
+          "fixed_monthly": 0.0,
+          "per_order": 43.73050332566224,
+          "basis": "Квартальные списания / квартальная рецептурная стоимость × будущая стоимость продуктов.",
+          "group": "losses",
+          "amount": 139937.61064211917
+        },
+        {
+          "code": "inventory_reserve",
+          "title": "Резерв результатов ревизий до удержаний с сотрудников",
+          "fixed_monthly": 0.0,
+          "per_order": 30.669578138228363,
+          "basis": "Компонент inventory до payroll-компенсаций, уже с учётом излишков. Удержания не планируем.",
+          "group": "losses",
+          "amount": 98142.65004233076
+        },
+        {
+          "code": "packaging_discrepancy",
+          "title": "Отклонения инвентаризации упаковки и напитков сверх техкарт",
+          "fixed_monthly": 0.0,
+          "per_order": 15.963386598874163,
+          "basis": "Упаковка в техкартах уже в продуктах. Здесь только отклонения; квартальный чистый излишек коробок не планируется.",
+          "group": "losses",
+          "amount": 51082.83711639732
+        },
+        {
+          "code": "courier_service",
+          "title": "Курьерская служба",
+          "fixed_monthly": 0.0,
+          "per_order": 143.42128200472126,
+          "basis": "Расход квартала / учётные заказы; бюджетный proxy при прежних долях доставки.",
+          "group": "delivery",
+          "amount": 458948.10241510806
+        },
+        {
+          "code": "consumables_maintenance",
+          "title": "Расходники и содержание точки",
+          "fixed_monthly": 29504.756666666664,
+          "per_order": 16.07304703105139,
+          "basis": "50% условно постоянных,50% на заказ; прежнее явно заданное допущение.",
+          "group": "operations",
+          "amount": 80938.50716603112
+        },
+        {
+          "code": "utilities",
+          "title": "Коммунальные расходы и вывоз мусора",
+          "fixed_monthly": 68023.85833333334,
+          "per_order": 32.29939077537679,
+          "basis": "Электричество/вода50% переменные,50% постоянные; вывоз мусора постоянный, включая3000июля из аренды.",
+          "group": "operations",
+          "amount": 171381.90881453909
+        },
+        {
+          "code": "rent",
+          "title": "Аренда точки и склада",
+          "fixed_monthly": 110000.0,
+          "per_order": 0.0,
+          "basis": "Аренда точки100000/мес, склада10000/мес.",
+          "group": "operations",
+          "amount": 110000.0
+        },
+        {
+          "code": "rent_unspecified_reserve",
+          "title": "Резерв нерасшифрованной добавки к аренде июля",
+          "fixed_monthly": 333.3333333333333,
+          "per_order": 0.0,
+          "basis": "1000₽ июля без назначения сохранены как333.33/мес; не объявлены экономией.",
+          "group": "operations",
+          "amount": 333.3333333333333
+        },
+        {
+          "code": "acquiring",
+          "title": "Эквайринг",
+          "fixed_monthly": 0.0,
+          "per_order": 24.948612674777557,
+          "basis": "Квартальная эффективная комиссия при прежнем среднем чеке.",
+          "group": "fees",
+          "amount": 79835.56055928818
+        },
+        {
+          "code": "starter",
+          "title": "Starter: сайт и приложение",
+          "fixed_monthly": 494.05366666667396,
+          "per_order": 42.10765189758489,
+          "basis": "Принятые в модели3% оборота Starter +494.05/мес эмпирического остатка счета. Это калибровка бюджета, не новый тариф.",
+          "group": "fees",
+          "amount": 135238.5397389383
+        },
+        {
+          "code": "yandex",
+          "title": "Комиссия Яндекса вне каскада ОПиУ",
+          "fixed_monthly": 0.0,
+          "per_order": 9.078264027601234,
+          "basis": "Плановые25% только доли Яндекса. Историческая меньшая комиссия не переносится как будущая скидка.",
+          "group": "fees",
+          "amount": 29050.44488832395
+        },
+        {
+          "code": "partner_refunds",
+          "title": "Комиссии прочим партнёрам и возвраты",
+          "fixed_monthly": 0.0,
+          "per_order": 21.100708189576903,
+          "basis": "Ровно один раз: модель использует iiko net до этих вычетов.",
+          "group": "fees",
+          "amount": 67522.26620664609
+        },
+        {
+          "code": "payroll_taxes",
+          "title": "Резерв налогов с зарплаты",
+          "fixed_monthly": 20013.93,
+          "per_order": 0.0,
+          "basis": "20013.93 по июлю/августу при прежней официальной схеме и конвенции ОПиУ; сентябрьский None сохранён в источнике.",
+          "group": "taxes",
+          "amount": 20013.93
+        },
+        {
+          "code": "business_taxes",
+          "title": "Налоги бизнеса",
+          "fixed_monthly": 4782.503133333317,
+          "per_order": 108.36071374614127,
+          "basis": "Прежняя модель6% выручки +4782.50/мес постоянной составляющей по источнику; без новой юридической трактовки.",
+          "group": "taxes",
+          "amount": 351536.78712098533
+        },
+        {
+          "code": "fuel_reserve",
+          "title": "Топливо: чистая сумма августовской аналитической поправки",
+          "fixed_monthly": 880.0,
+          "per_order": 0.0,
+          "basis": "2640₽ квартал /3; не потеряно при объединении.",
+          "group": "operations",
+          "amount": 880.0
+        },
+        {
+          "code": "transport",
+          "title": "Транспортные услуги",
+          "fixed_monthly": 7364.466666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 7364.466666666667
+        },
+        {
+          "code": "staff_meals",
+          "title": "Расходы на питание персонала",
+          "fixed_monthly": 28445.963333333333,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 28445.963333333333
+        },
+        {
+          "code": "automation",
+          "title": "Оплата систем автоматизации",
+          "fixed_monthly": 63049.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 63049.0
+        },
+        {
+          "code": "equipment_repair",
+          "title": "Ремонт оборудования",
+          "fixed_monthly": 3700.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3700.0
+        },
+        {
+          "code": "office_rent",
+          "title": "Аренда офиса",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "office_maintenance",
+          "title": "Содержание офиса",
+          "fixed_monthly": 116.66666666666667,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 116.66666666666667
+        },
+        {
+          "code": "rko",
+          "title": "РКО",
+          "fixed_monthly": 5390.693333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 5390.693333333334
+        },
+        {
+          "code": "bank_fees",
+          "title": "Прочие банковские комиссии",
+          "fixed_monthly": 292.76,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 292.76
+        },
+        {
+          "code": "fd_nk_services",
+          "title": "Услуги ФД и НК",
+          "fixed_monthly": 3000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3000.0
+        },
+        {
+          "code": "staff_expenses",
+          "title": "Расходы на персонал",
+          "fixed_monthly": 3944.3199999999997,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 3944.3199999999997
+        },
+        {
+          "code": "staff_training",
+          "title": "Обучение персонала",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "telecom",
+          "title": "Телекоммуникации",
+          "fixed_monthly": 14603.753333333334,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 14603.753333333334
+        },
+        {
+          "code": "recruiting",
+          "title": "Поиск и найм персонала",
+          "fixed_monthly": 6899.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 6899.0
+        },
+        {
+          "code": "aggregator_commission",
+          "title": "Комиссия агрегатору",
+          "fixed_monthly": 2000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 2000.0
+        },
+        {
+          "code": "targeted_ads",
+          "title": "Таргетированная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "outdoor_ads",
+          "title": "Наружная реклама",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "yandex_maps_ads",
+          "title": "Реклама на Яндекс-картах",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "context_ads",
+          "title": "Контекстная реклама",
+          "fixed_monthly": 64666.666666666664,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 64666.666666666664
+        },
+        {
+          "code": "flyers",
+          "title": "Листовки",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "seo",
+          "title": "SEO - оптимизация",
+          "fixed_monthly": 13000.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 13000.0
+        },
+        {
+          "code": "other_marketing",
+          "title": "Прочие маркетинговые услуги",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "marketing",
+          "amount": 0.0
+        },
+        {
+          "code": "other_expenses",
+          "title": "Прочие расходы",
+          "fixed_monthly": 3.046666666666681,
+          "per_order": 0.0,
+          "basis": "Среднее после исключения подтверждённой единичной потери1000₽ июля.",
+          "group": "operations",
+          "amount": 3.046666666666681
+        },
+        {
+          "code": "overdraft_fee",
+          "title": "Комиссия за овердрафт",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "depreciation",
+          "title": "Амортизация",
+          "fixed_monthly": 26928.49,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 26928.49
+        },
+        {
+          "code": "asset_disposal_loss",
+          "title": "Убыток от выбытия ОС",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "fines_penalties",
+          "title": "Штрафы и пени",
+          "fixed_monthly": 0.0,
+          "per_order": 0.0,
+          "basis": "Средний расход трёх закрытых месяцев. Нерегулярные потребности сохраняются резервом.",
+          "group": "operations",
+          "amount": 0.0
+        },
+        {
+          "code": "company_percent_pool",
+          "title": "Единый процентный фонд всей кухни",
+          "amount": 283202.58856001456,
+          "group": "payroll",
+          "fixed_monthly": null,
+          "per_order": null,
+          "basis": "Действующие ступени применены к каждому из92 масштабированных дней, затем /3. Не четыре самостоятельных процента."
+        }
+      ]
+    }
+  },
+  "additional_monthly_cost_sensitivity": {
+    "20000": {
+      "0": {
+        "first_crossing": 2250,
+        "safe_crossing_through8000": 2250,
+        "planning_orders": 2250,
+        "profit_at_safe": 450.83647254967946,
+        "profit_at_previous_order": -232.490646683058,
+        "profit_at_planning": 450.83647254967946,
+        "revenue_at_planning": 4063526.765480298
+      },
+      "500000": {
+        "first_crossing": 3036,
+        "safe_crossing_through8000": 3036,
+        "planning_orders": 3050,
+        "profit_at_safe": 500239.36052735406,
+        "profit_at_previous_order": 499568.3214817912,
+        "profit_at_planning": 509633.9071652272,
+        "revenue_at_planning": 5508336.282095515
+      }
+    },
+    "50000": {
+      "0": {
+        "first_crossing": 2298,
+        "safe_crossing_through8000": 2298,
+        "planning_orders": 2300,
+        "profit_at_safe": 546.1977987473656,
+        "profit_at_previous_order": -135.95249698706903,
+        "profit_at_planning": 1910.4983902171953,
+        "revenue_at_planning": 4153827.360268749
+      },
+      "500000": {
+        "first_crossing": 3083,
+        "safe_crossing_through8000": 3083,
+        "planning_orders": 3100,
+        "profit_at_safe": 500510.2762294352,
+        "profit_at_previous_order": 499839.6484454491,
+        "profit_at_planning": 511910.94855720014,
+        "revenue_at_planning": 5598636.876883966
+      }
+    },
+    "100000": {
+      "0": {
+        "first_crossing": 2374,
+        "safe_crossing_through8000": 2374,
+        "planning_orders": 2400,
+        "profit_at_safe": 627.034770875267,
+        "profit_at_previous_order": -54.37307098181918,
+        "profit_at_planning": 17240.037162906054,
+        "revenue_at_planning": 4334428.549845651
+      },
+      "500000": {
+        "first_crossing": 3161,
+        "safe_crossing_through8000": 3161,
+        "planning_orders": 3200,
+        "profit_at_safe": 500601.456047327,
+        "profit_at_previous_order": 499931.52987274795,
+        "profit_at_planning": 526728.5768559468,
+        "revenue_at_planning": 5779238.066460868
+      }
+    }
+  },
+  "normalization": {
+    "excluded_true_oneoff_cost": {
+      "quarter_amount": 1000,
+      "monthly_effect": 333.3333333333333,
+      "purpose": "July loss from wrongbankdetails, confirmed drill. Historical report not changed."
+    },
+    "excluded_favorable_otherincome_and_deposits_monthly": 5290.25,
+    "excluded_ordinary_employee_penalty_savings_monthly": 7105.333333333333,
+    "excluded_inventory_employee_recoveries_monthly_at_historical_food": 30479.103333333333,
+    "pizza_box_quarter_net_surplus_not_projected_as_income": -864.7600000000007,
+    "payroll_tax_future_provision": 20013.93,
+    "payroll_tax_increase_vs_report_mean": 6671.3099999999995,
+    "yandex_full_rate_addition_vs_old_anchored_cost_monthly": 4836.9366666666665,
+    "payroll_full_pool_difference_vs_historical_rounding": 94.33068333333358,
+    "inventory_loss_scaling": "Quarterwriteoffs andinventorybeforeemployeerecoveries / quarterrecipefoodcost ×futurefoodbudget; commonweightedrate."
+  },
+  "retained_irregular_reserves": {
+    "equipment_repair": 3700.0,
+    "recruiting": 6899.0,
+    "staff_expenses": 3944.3199999999997,
+    "transport": 7364.466666666667,
+    "aggregator_commission": 2000.0,
+    "bank_fees": 292.76,
+    "office_maintenance": 116.66666666666667
+  },
+  "unknown_future_costs": [
+    {
+      "code": "loan_interest",
+      "title": "Проценты по кредитам",
+      "observed": [
+        null,
+        null,
+        null
+      ],
+      "treatment": "В числовой итог не включено; статус не заменён подтверждённым нулём. Новое финансирование отдельно."
+    },
+    {
+      "code": "new_equipment",
+      "title": "Новая техника: амортизация, проценты, сервис, энергия, монтаж и обучение",
+      "treatment": "Цена покупки и оборотные вложения отдельно; месячная стоимость неизвестна, см. +20/50/100тыс."
+    },
+    {
+      "code": "extra_capacity",
+      "title": "Дополнительные смены, персонал, доставка при пиках",
+      "treatment": "Финансовый объём не доказывает производственную мощность; новые ступени расходов пока не оценены."
+    }
+  ],
+  "assumptions": [
+    "Средний месяц — 92/3 дня. Средний чек и состав заказов взвешены по 5 507 заказам. Результат не гарантирует 500 тысяч в каждом календарном месяце.",
+    "Фактические акции сохраняются; экономия прежнего упрощения акций не включена.",
+    "Четыре ежедневных места по 12 часов. Один старший с доплатой 500 рублей и фонд 5% одному из остальных — сохранённые допущения состава смены. Для смен нужны подмены и выходные.",
+    "Скидки и бонусы уже учтены в чистом чеке. Подарки и упаковка в техкартах включены в сырьевую стоимость; повторного вычитания нет.",
+    "Потери до удержаний с сотрудников сохранены. Экономия от автоматизации, улучшения качества и обучения пока не заложена.",
+    "Курьеры зависят от количества заказов. Для расходников, содержания, электричества и воды принято 50% переменной части. Это допущения бюджета.",
+    "Starter: 3% своей доли выручки и 494,05 рубля постоянного остатка. Яндекс: плановые 25% своей доли. Налог бизнеса: 6% выручки и постоянная часть 4 782,50 рубля по прежней модели.",
+    "Налоги с зарплаты: резерв 20 013,93 рубля по известной схеме и конвенции ОПиУ. Сентябрьское пустое поле и статус закрытого месяца сохранены.",
+    "Нерегулярные ремонты, найм, форма и транспорт сохранены в резервах. Отсутствие подробного назначения не считается доказанной экономией.",
+    "Новые неизвестные расходы финансирования, оборудования, запуска и пиковой мощности вынесены за числовой итог. Их влияние показано отдельно."
+  ],
+  "validation": {
+    "accepted_source_identity": {
+      "2026-07": {
+        "reported_profit": 150207.18,
+        "reconstructed_profit": 150207.1799999997,
+        "difference": -2.9103830456733704e-10,
+        "food_correction": -15.514611184131354
+      },
+      "2026-08": {
+        "reported_profit": -101039.26,
+        "reconstructed_profit": -101039.25999999978,
+        "difference": 2.1827872842550278e-10,
+        "food_correction": 115.20358974370174
+      },
+      "2026-09": {
+        "reported_profit": -109027.01,
+        "reconstructed_profit": -109027.01000000024,
+        "difference": -2.473825588822365e-10,
+        "food_correction": 0.004140671109780669
+      }
+    },
+    "quarter_daily_revenue_matches": true,
+    "audit_recoveries_removed_once": true,
+    "four_fixed_payroll_verified": true,
+    "all_thresholds_suffix_safe_through8000": true,
+    "no_business_system_mutations": true
+  }
+}
