@@ -1,0 +1,711 @@
+{
+  "as_of_local": "2026-10-19",
+  "business_timezone": "Europe/Moscow",
+  "source_authority": "Owner explicitly selected application P&L as the final July–September report source; closed status accepted. No sync, close, recognize or financial mutations performed.",
+  "source_read_utc": "2026-10-18T21:37:41.826245",
+  "scope": "Chernikova Department.Code=2; four daily category2 sushi positions; rolls only FC33%; other recipes unchanged.",
+  "offer_policy_for_three_month_model": "Each month actual observed offers retained. Simplified future policy replay is only available for August and is shown separately; not extrapolated as fact to July/Sep.",
+  "monthly": {
+    "2026-07": {
+      "calendar_days": 31,
+      "actual_orders": 1979,
+      "actual_net_check": 1817.475128852956,
+      "reported_net_profit": 150207.18,
+      "reported_pnl_revenue_after_partner_refunds": 3555892.68,
+      "iiko_net_before_partner_refunds": 3596783.28,
+      "analytic_bridge": {
+        "food_cost_correction": 15.514611184131354,
+        "yandex_outside_report": -8768.51,
+        "fuel_net_reclassification": -0.0
+      },
+      "analytical_profit_before_scenario": 141454.18461118412,
+      "report_component_statuses_preserved": {
+        "payroll_taxes": {
+          "amount": "20013.93",
+          "status": "ok"
+        },
+        "loan_interest": {
+          "amount": null,
+          "status": "not_configured"
+        }
+      },
+      "baseline_revenue_minus_costs_reconciles": true,
+      "actual_roll_fc": 0.29792524131173276,
+      "food33_increase_at_observed_volume": 61579.8702687762,
+      "nonroll_recipe_food_unchanged": true,
+      "staff_fixed_fund_delta": 87141.66,
+      "new_fixed_sushi_salary_fund": 324110,
+      "old_fixed_sushi_salary_fund": 236968.34,
+      "normalization_removed_gains": 13194.0,
+      "thresholds_current_actual_offers": {
+        "0": {
+          "first_crossing_orders": 2014,
+          "safe_orders_through8000": 2014,
+          "planning_orders_rounded50": 2050,
+          "profit_at_safe": 5.815284300973872,
+          "profit_at_previous_order": -735.395640468254,
+          "profit_at_planning": 26689.408575976646
+        },
+        "500000": {
+          "first_crossing_orders": 2742,
+          "safe_orders_through8000": 2742,
+          "planning_orders_rounded50": 2750,
+          "profit_at_safe": 500599.8272636152,
+          "profit_at_previous_order": 499872.8422838693,
+          "profit_at_planning": 506415.70710158383
+        }
+      },
+      "at3000": {
+        "orders": 3000,
+        "orders_per_day": 96.7741935483871,
+        "revenue_rub": 5452425.386558868,
+        "net_check_rub": 1817.475128852956,
+        "roll_fc": 0.33,
+        "food_rub": 1680879.2556709328,
+        "enterprise_fc": 0.30828101927163987,
+        "profit_rub": 680791.576595949,
+        "costs_rub": 4771633.809962919,
+        "delta_costs_vs_analytical_base": {
+          "food": 633639.1102821169,
+          "writeoffs_inventory": 56338.44984085003,
+          "separate_packaging": 10876.926073774634,
+          "consumables_maintenance": 11616.658372915614,
+          "courier_budget": 145585.10712481049,
+          "electricity_water": 31502.738314805454,
+          "acquiring": 25232.15511874684,
+          "starter_increment": 42593.09130848913,
+          "yandex_increment": 6017.657402728651,
+          "partner_refunds": 21096.16099039919,
+          "business_tax_increment": 111338.52639353207,
+          "single_company_percent_pool": 120132.4733509348,
+          "four_sushi_fixed_fund_replacement": 87141.66,
+          "remove_historical_favorable_penalties_and_income": 13194.0,
+          "additional_future_costs": 0
+        },
+        "sushi_payroll": {
+          "salary_fixed": 320300,
+          "fund": 3810,
+          "percent_sushi_all4": 136584.0,
+          "salary_plus_fund": 460694.0,
+          "company_percent_pool": 255976.5048509348,
+          "historical_sushi_vacation_retained_elsewhere": 0.0
+        }
+      },
+      "at_target_planning": {
+        "orders": 2750,
+        "orders_per_day": 88.70967741935483,
+        "revenue_rub": 4998056.604345629,
+        "net_check_rub": 1817.475128852956,
+        "roll_fc": 0.33,
+        "food_rub": 1540805.9843650218,
+        "enterprise_fc": 0.30828101927163987,
+        "profit_rub": 506415.70710158383,
+        "costs_rub": 4491640.8972440455,
+        "delta_costs_vs_analytical_base": {
+          "food": 493565.8389762059,
+          "writeoffs_inventory": 43884.18235411253,
+          "separate_packaging": 8213.62390096008,
+          "consumables_maintenance": 8772.22684183931,
+          "courier_budget": 109937.43153107628,
+          "electricity_water": 23789.041371904998,
+          "acquiring": 19053.860525517932,
+          "starter_increment": 32163.8329077817,
+          "yandex_increment": 4544.185952501262,
+          "partner_refunds": 15930.597574532589,
+          "business_tax_increment": 84076.39946073772,
+          "single_company_percent_pool": 92044.92045805961,
+          "four_sushi_fixed_fund_replacement": 87141.66,
+          "remove_historical_favorable_penalties_and_income": 13194.0,
+          "additional_future_costs": 0
+        },
+        "sushi_payroll": {
+          "salary_fixed": 320300,
+          "fund": 3810,
+          "percent_sushi_all4": 121468.0,
+          "salary_plus_fund": 445578.0,
+          "company_percent_pool": 227888.95195805962,
+          "historical_sushi_vacation_retained_elsewhere": 0.0
+        }
+      },
+      "additional_future_cost_sensitivity": {
+        "20000": {
+          "0": {
+            "first_crossing_orders": 2041,
+            "safe_orders_through8000": 2041,
+            "planning_orders_rounded50": 2050,
+            "profit_at_safe": 18.510253057436785,
+            "profit_at_previous_order": -722.7006717110926,
+            "profit_at_planning": 6689.408575976646
+          },
+          "500000": {
+            "first_crossing_orders": 2769,
+            "safe_orders_through8000": 2769,
+            "planning_orders_rounded50": 2800,
+            "profit_at_safe": 500228.4217167585,
+            "profit_at_previous_order": 499501.4367370126,
+            "profit_at_planning": 520857.44441632275
+          }
+        },
+        "50000": {
+          "0": {
+            "first_crossing_orders": 2084,
+            "safe_orders_through8000": 2084,
+            "planning_orders_rounded50": 2100,
+            "profit_at_safe": 470.8463303935132,
+            "profit_at_previous_order": -269.68334020645125,
+            "profit_at_planning": 12319.321059993585
+          },
+          "500000": {
+            "first_crossing_orders": 2813,
+            "safe_orders_through8000": 2813,
+            "planning_orders_rounded50": 2850,
+            "profit_at_safe": 500299.3928488274,
+            "profit_at_previous_order": 499573.0891232507,
+            "profit_at_planning": 527172.6306951866
+          }
+        },
+        "100000": {
+          "0": {
+            "first_crossing_orders": 2151,
+            "safe_orders_through8000": 2151,
+            "planning_orders_rounded50": 2200,
+            "profit_at_safe": 86.33426059340127,
+            "profit_at_previous_order": -654.195410007087,
+            "profit_at_planning": 33532.955224591424
+          },
+          "500000": {
+            "first_crossing_orders": 2882,
+            "safe_orders_through8000": 2882,
+            "planning_orders_rounded50": 2900,
+            "profit_at_safe": 500414.3499136581,
+            "profit_at_previous_order": 499688.0461880809,
+            "profit_at_planning": 512081.5148012345
+          }
+        }
+      }
+    },
+    "2026-08": {
+      "calendar_days": 31,
+      "actual_orders": 1819,
+      "actual_net_check": 1804.5248158328752,
+      "reported_net_profit": -101039.26,
+      "reported_pnl_revenue_after_partner_refunds": 3238717.64,
+      "iiko_net_before_partner_refunds": 3282430.64,
+      "analytic_bridge": {
+        "food_cost_correction": -115.20358974370174,
+        "yandex_outside_report": -12381.21,
+        "fuel_net_reclassification": -2640.0
+      },
+      "analytical_profit_before_scenario": -116175.6735897437,
+      "report_component_statuses_preserved": {
+        "payroll_taxes": {
+          "amount": "20013.93",
+          "status": "ok"
+        },
+        "loan_interest": {
+          "amount": null,
+          "status": "not_configured"
+        }
+      },
+      "baseline_revenue_minus_costs_reconciles": true,
+      "actual_roll_fc": 0.29879551851234903,
+      "food33_increase_at_observed_volume": 54562.59622065618,
+      "nonroll_recipe_food_unchanged": true,
+      "staff_fixed_fund_delta": 89353.78,
+      "new_fixed_sushi_salary_fund": 324110,
+      "old_fixed_sushi_salary_fund": 234756.22,
+      "normalization_removed_gains": 14693.75,
+      "thresholds_current_actual_offers": {
+        "0": {
+          "first_crossing_orders": 2256,
+          "safe_orders_through8000": 2256,
+          "planning_orders_rounded50": 2300,
+          "profit_at_safe": 488.8156561802607,
+          "profit_at_previous_order": -188.89927536062896,
+          "profit_at_planning": 28401.11871324666
+        },
+        "500000": {
+          "first_crossing_orders": 3043,
+          "safe_orders_through8000": 3043,
+          "planning_orders_rounded50": 3050,
+          "profit_at_safe": 500110.2227900522,
+          "profit_at_previous_order": 499443.595681051,
+          "profit_at_planning": 504776.6125530589
+        }
+      },
+      "at3000": {
+        "orders": 3000,
+        "orders_per_day": 96.7741935483871,
+        "revenue_rub": 5413574.447498626,
+        "net_check_rub": 1804.5248158328752,
+        "roll_fc": 0.33,
+        "food_rub": 1677628.762743925,
+        "enterprise_fc": 0.30989298826749917,
+        "profit_rub": 471445.2571030094,
+        "costs_rub": 4942129.190395617,
+        "delta_costs_vs_analytical_base": {
+          "food": 714989.1191541813,
+          "writeoffs_inventory": 84746.60786713962,
+          "separate_packaging": 23365.237718526667,
+          "consumables_maintenance": 20332.437509620675,
+          "courier_budget": 171185.91753710833,
+          "electricity_water": 41272.590090709185,
+          "acquiring": 29925.962160527768,
+          "starter_increment": 49719.75478960967,
+          "yandex_increment": 11616.196536558551,
+          "partner_refunds": 28381.007696536562,
+          "business_tax_increment": 127868.62844991757,
+          "single_company_percent_pool": 136071.88729543707,
+          "four_sushi_fixed_fund_replacement": 89353.78,
+          "remove_historical_favorable_penalties_and_income": 14693.75,
+          "additional_future_costs": 0
+        },
+        "sushi_payroll": {
+          "salary_fixed": 320300,
+          "fund": 3810,
+          "percent_sushi_all4": 136100.0,
+          "salary_plus_fund": 460210.0,
+          "company_percent_pool": 257790.56569543708,
+          "historical_sushi_vacation_retained_elsewhere": 0.0
+        }
+      },
+      "at_target_planning": {
+        "orders": 3050,
+        "orders_per_day": 98.38709677419355,
+        "revenue_rub": 5503800.688290269,
+        "net_check_rub": 1804.5248158328752,
+        "roll_fc": 0.33,
+        "food_rub": 1705589.2421229903,
+        "enterprise_fc": 0.30989298826749917,
+        "profit_rub": 504776.6125530589,
+        "costs_rub": 4999024.07573721,
+        "delta_costs_vs_analytical_base": {
+          "food": 742949.5985332467,
+          "writeoffs_inventory": 88060.72233159195,
+          "separate_packaging": 24354.451847168773,
+          "consumables_maintenance": 21193.251968114346,
+          "courier_budget": 178433.41616272676,
+          "electricity_water": 43019.947842220994,
+          "acquiring": 31192.937696536555,
+          "starter_increment": 51824.74017443649,
+          "yandex_increment": 12107.991478834523,
+          "partner_refunds": 29582.574491478834,
+          "business_tax_increment": 133282.20289741617,
+          "single_company_percent_pool": 140368.3967236943,
+          "four_sushi_fixed_fund_replacement": 89353.78,
+          "remove_historical_favorable_penalties_and_income": 14693.75,
+          "additional_future_costs": 0
+        },
+        "sushi_payroll": {
+          "salary_fixed": 320300,
+          "fund": 3810,
+          "percent_sushi_all4": 138368.0,
+          "salary_plus_fund": 462478.0,
+          "company_percent_pool": 262087.07512369432,
+          "historical_sushi_vacation_retained_elsewhere": 0.0
+        }
+      },
+      "additional_future_cost_sensitivity": {
+        "20000": {
+          "0": {
+            "first_crossing_orders": 2285,
+            "safe_orders_through8000": 2285,
+            "planning_orders_rounded50": 2300,
+            "profit_at_safe": 142.54867086512968,
+            "profit_at_previous_order": -535.16626067576,
+            "profit_at_planning": 8401.118713246658
+          },
+          "500000": {
+            "first_crossing_orders": 3076,
+            "safe_orders_through8000": 3076,
+            "planning_orders_rounded50": 3100,
+            "profit_at_safe": 500193.71844810736,
+            "profit_at_previous_order": 499527.7139655503,
+            "profit_at_planning": 516177.8260294972
+          }
+        },
+        "50000": {
+          "0": {
+            "first_crossing_orders": 2332,
+            "safe_orders_through8000": 2332,
+            "planning_orders_rounded50": 2350,
+            "profit_at_safe": 61.4622069967445,
+            "profit_at_previous_order": -615.4235271830112,
+            "profit_at_planning": 12245.405422229902
+          },
+          "500000": {
+            "first_crossing_orders": 3123,
+            "safe_orders_through8000": 3123,
+            "planning_orders_rounded50": 3150,
+            "profit_at_safe": 500092.43335592654,
+            "profit_at_previous_order": 499426.8782796366,
+            "profit_at_planning": 518062.4204157763
+          }
+        },
+        "100000": {
+          "0": {
+            "first_crossing_orders": 2408,
+            "safe_orders_through8000": 2410,
+            "planning_orders_rounded50": 2450,
+            "profit_at_safe": 46.83334326953627,
+            "profit_at_previous_order": -628.8857037196867,
+            "profit_at_planning": 27075.59522282565
+          },
+          "500000": {
+            "first_crossing_orders": 3198,
+            "safe_orders_through8000": 3198,
+            "planning_orders_rounded50": 3200,
+            "profit_at_safe": 500009.0640777305,
+            "profit_at_previous_order": 499343.5090014406,
+            "profit_at_planning": 501340.1742303129
+          }
+        }
+      }
+    },
+    "2026-09": {
+      "calendar_days": 30,
+      "actual_orders": 1709,
+      "actual_net_check": 1794.32041544763,
+      "reported_net_profit": -109027.01,
+      "reported_pnl_revenue_after_partner_refunds": 3034895.59,
+      "iiko_net_before_partner_refunds": 3066493.59,
+      "analytic_bridge": {
+        "food_cost_correction": -0.004140671109780669,
+        "yandex_outside_report": -14333.47,
+        "fuel_net_reclassification": -0.0
+      },
+      "analytical_profit_before_scenario": -123360.4841406711,
+      "report_component_statuses_preserved": {
+        "payroll_taxes": {
+          "amount": null,
+          "status": "no_data"
+        },
+        "loan_interest": {
+          "amount": null,
+          "status": "not_configured"
+        }
+      },
+      "baseline_revenue_minus_costs_reconciles": true,
+      "actual_roll_fc": 0.28862419183747867,
+      "food33_increase_at_observed_volume": 71265.51900772308,
+      "nonroll_recipe_food_unchanged": true,
+      "staff_fixed_fund_delta": 100853.19,
+      "new_fixed_sushi_salary_fund": 313080,
+      "old_fixed_sushi_salary_fund": 212226.81,
+      "normalization_removed_gains": 9299.0,
+      "thresholds_current_actual_offers": {
+        "0": {
+          "first_crossing_orders": 2180,
+          "safe_orders_through8000": 2180,
+          "planning_orders_rounded50": 2200,
+          "profit_at_safe": 397.0374092744896,
+          "profit_at_previous_order": -289.41478965152055,
+          "profit_at_planning": 14126.081387800514
+        },
+        "500000": {
+          "first_crossing_orders": 2947,
+          "safe_orders_through8000": 2947,
+          "planning_orders_rounded50": 2950,
+          "profit_at_safe": 500218.27446530596,
+          "profit_at_previous_order": 499540.878119627,
+          "profit_at_planning": 502250.4635023414
+        }
+      },
+      "at3000": {
+        "orders": 3000,
+        "orders_per_day": 100.0,
+        "revenue_rub": 5382961.24634289,
+        "net_check_rub": 1794.32041544763,
+        "roll_fc": 0.33,
+        "food_rub": 1679879.4437947238,
+        "enterprise_fc": 0.31207347906062133,
+        "profit_rub": 536120.2807862794,
+        "costs_rub": 4846840.96555661,
+        "delta_costs_vs_analytical_base": {
+          "food": 794173.6396540527,
+          "writeoffs_inventory": 77260.31353412243,
+          "separate_packaging": 22643.716968987716,
+          "consumables_maintenance": 26198.703405500295,
+          "courier_budget": 184297.99297834994,
+          "electricity_water": 40219.8585693388,
+          "acquiring": 32023.492954944413,
+          "starter_increment": 54955.85395506145,
+          "yandex_increment": 15439.498829724987,
+          "partner_refunds": 23869.524868344062,
+          "business_tax_increment": 138988.05938057342,
+          "single_company_percent_pool": 136764.0463169397,
+          "four_sushi_fixed_fund_replacement": 100853.19,
+          "remove_historical_favorable_penalties_and_income": 9299.0,
+          "additional_future_costs": 0
+        },
+        "sushi_payroll": {
+          "salary_fixed": 309400,
+          "fund": 3680,
+          "percent_sushi_all4": 128992.0,
+          "salary_plus_fund": 442072.0,
+          "company_percent_pool": 255794.3284669397,
+          "historical_sushi_vacation_retained_elsewhere": 16000.0
+        }
+      },
+      "at_target_planning": {
+        "orders": 2950,
+        "orders_per_day": 98.33333333333333,
+        "revenue_rub": 5293245.225570508,
+        "net_check_rub": 1794.32041544763,
+        "roll_fc": 0.33,
+        "food_rub": 1651881.4530648116,
+        "enterprise_fc": 0.3120734790606213,
+        "profit_rub": 502250.4635023414,
+        "costs_rub": 4790994.762068167,
+        "delta_costs_vs_analytical_base": {
+          "food": 766175.6489241405,
+          "writeoffs_inventory": 74536.55964188703,
+          "separate_packaging": 21766.733352837917,
+          "consumables_maintenance": 25184.036348741956,
+          "courier_budget": 177160.19309537744,
+          "electricity_water": 38662.156843183155,
+          "acquiring": 30783.233739028674,
+          "starter_increment": 52827.43203581042,
+          "yandex_increment": 14841.532182562903,
+          "partner_refunds": 22945.06612053833,
+          "business_tax_increment": 133605.09813423053,
+          "single_company_percent_pool": 132500.80750915737,
+          "four_sushi_fixed_fund_replacement": 100853.19,
+          "remove_historical_favorable_penalties_and_income": 9299.0,
+          "additional_future_costs": 0
+        },
+        "sushi_payroll": {
+          "salary_fixed": 309400,
+          "fund": 3680,
+          "percent_sushi_all4": 126848.0,
+          "salary_plus_fund": 439928.0,
+          "company_percent_pool": 251531.08965915738,
+          "historical_sushi_vacation_retained_elsewhere": 16000.0
+        }
+      },
+      "additional_future_cost_sensitivity": {
+        "20000": {
+          "0": {
+            "first_crossing_orders": 2209,
+            "safe_orders_through8000": 2209,
+            "planning_orders_rounded50": 2250,
+            "profit_at_safe": 304.1511781371664,
+            "profit_at_previous_order": -382.30102078965865,
+            "profit_at_planning": 25133.715383265633
+          },
+          "500000": {
+            "first_crossing_orders": 2977,
+            "safe_orders_through8000": 2977,
+            "planning_orders_rounded50": 3000,
+            "profit_at_safe": 500540.16483566817,
+            "profit_at_previous_order": 499862.7684899897,
+            "profit_at_planning": 516120.28078627936
+          }
+        },
+        "50000": {
+          "0": {
+            "first_crossing_orders": 2258,
+            "safe_orders_through8000": 2258,
+            "planning_orders_rounded50": 2300,
+            "profit_at_safe": 613.5463935174048,
+            "profit_at_previous_order": -71.43248276424129,
+            "profit_at_planning": 27975.621479374473
+          },
+          "500000": {
+            "first_crossing_orders": 3021,
+            "safe_orders_through8000": 3021,
+            "planning_orders_rounded50": 3050,
+            "profit_at_safe": 500345.6040455336,
+            "profit_at_previous_order": 499668.2076998551,
+            "profit_at_planning": 518076.5070111193
+          }
+        },
+        "100000": {
+          "0": {
+            "first_crossing_orders": 2335,
+            "safe_orders_through8000": 2335,
+            "planning_orders_rounded50": 2350,
+            "profit_at_safe": 516.5403370544082,
+            "profit_at_previous_order": -167.22210259758867,
+            "profit_at_planning": 10772.976931832265
+          },
+          "500000": {
+            "first_crossing_orders": 3098,
+            "safe_orders_through8000": 3098,
+            "planning_orders_rounded50": 3100,
+            "profit_at_safe": 500561.4160722769,
+            "profit_at_previous_order": 499884.6471335031,
+            "profit_at_planning": 501914.9539498261
+          }
+        }
+      }
+    }
+  },
+  "quarter_mean_current_offers": {
+    "calendar_days": 30.666666666666668,
+    "observed_orders_per_mean_month": 1835.6666666666667,
+    "weighted_net_check": 1806.0118957690213,
+    "thresholds": {
+      "0": {
+        "first_crossing_orders": 2145,
+        "safe_orders_through8000": 2145,
+        "planning_orders_rounded50": 2150,
+        "profit_at_safe": 274.4906960464432,
+        "profit_at_previous_order": -427.6260538274655,
+        "profit_at_planning": 3785.0744454155792
+      },
+      "500000": {
+        "first_crossing_orders": 2907,
+        "safe_orders_through8000": 2907,
+        "planning_orders_rounded50": 2950,
+        "profit_at_safe": 500274.1482377893,
+        "profit_at_previous_order": 499584.0759687761,
+        "profit_at_planning": 527561.1691701615
+      }
+    },
+    "profit_at3000": 560919.004393107,
+    "at_target": {
+      "0": {
+        "mean_orders": 2150,
+        "mean_revenue": 3882925.575903395,
+        "mean_profit": 3785.0744454155792,
+        "mean_sushi_payroll": 403780.0,
+        "modeled_calendar_cases": {
+          "2026-07": {
+            "orders": 2317.8772471400034,
+            "profit": 213539.89356215543
+          },
+          "2026-08": {
+            "orders": 2130.4793898674416,
+            "profit": -83251.88324216113
+          },
+          "2026-09": {
+            "orders": 2001.6433629925548,
+            "profit": -118932.78698374756
+          }
+        }
+      },
+      "500000": {
+        "mean_orders": 2950,
+        "mean_revenue": 5327735.092518612,
+        "mean_profit": 527561.1691701615,
+        "mean_sushi_payroll": 454817.3333333333,
+        "modeled_calendar_cases": {
+          "2026-07": {
+            "orders": 3180.343199564191,
+            "profit": 794972.793055845
+          },
+          "2026-08": {
+            "orders": 2923.2159070274197,
+            "profit": 420258.89918743307
+          },
+          "2026-09": {
+            "orders": 2746.440893408389,
+            "profit": 367451.8152672064
+          }
+        }
+      }
+    },
+    "additional_future_cost_sensitivity": {
+      "20000": {
+        "0": {
+          "first_crossing_orders": 2175,
+          "safe_orders_through8000": 2175,
+          "planning_orders_rounded50": 2200,
+          "profit_at_safe": 401.113818283,
+          "profit_at_previous_order": -300.57218245319746,
+          "profit_at_planning": 17303.1395403423
+        },
+        "500000": {
+          "first_crossing_orders": 2939,
+          "safe_orders_through8000": 2939,
+          "planning_orders_rounded50": 2950,
+          "profit_at_safe": 500610.83974152384,
+          "profit_at_previous_order": 499921.36142321,
+          "profit_at_planning": 507561.1691701615
+        }
+      },
+      "50000": {
+        "0": {
+          "first_crossing_orders": 2219,
+          "safe_orders_through8000": 2219,
+          "planning_orders_rounded50": 2250,
+          "profit_at_safe": 159.25991995857476,
+          "profit_at_previous_order": -541.9231344360524,
+          "profit_at_planning": 21895.934606214912
+        },
+        "500000": {
+          "first_crossing_orders": 2984,
+          "safe_orders_through8000": 2984,
+          "planning_orders_rounded50": 3000,
+          "profit_at_safe": 500529.23526478244,
+          "profit_at_previous_order": 499840.12830330513,
+          "profit_at_planning": 510919.004393107
+        }
+      },
+      "100000": {
+        "0": {
+          "first_crossing_orders": 2294,
+          "safe_orders_through8000": 2294,
+          "planning_orders_rounded50": 2300,
+          "profit_at_safe": 48.35589665088628,
+          "profit_at_previous_order": -651.650334247388,
+          "profit_at_planning": 4248.393282038858
+        },
+        "500000": {
+          "first_crossing_orders": 3057,
+          "safe_orders_through8000": 3057,
+          "planning_orders_rounded50": 3100,
+          "profit_at_safe": 500186.0182944598,
+          "profit_at_previous_order": 499497.1233137337,
+          "profit_at_planning": 528533.5915795104
+        }
+      }
+    }
+  },
+  "like_for_like_august_selected_simplified_offers": {
+    "old_exact_break_even": 2156,
+    "old_safe_target500k": 2910,
+    "old_planning_break_even": 2200,
+    "old_planning_target500k": 2950,
+    "new_thresholds": {
+      "0": {
+        "first_crossing_orders": 2156,
+        "safe_orders_through5000": 2156,
+        "planning_orders_rounded50": 2200,
+        "profit_at_safe": 559.7649482864057
+      },
+      "500000": {
+        "first_crossing_orders": 2910,
+        "safe_orders_through5000": 2910,
+        "planning_orders_rounded50": 2950,
+        "profit_at_safe": 500655.2764326149
+      }
+    },
+    "closed_report_amount_update_delta_profit": -0.0035897437046514824,
+    "daily_vs_month_roll_allocation_food_delta_at_base": -3.0865105824789225,
+    "old_profit_at3000": 563404.9887817651,
+    "new_profit_at3000": 563410.6790075331
+  },
+  "assumptions": [
+    "Four 12h sushi positions every day; other roles fixed structure retained; this is not four people working without days off.",
+    "One senior500/day, one nonsenior5%fund and others0%, retained historical sushi vacation separately; owner selected categories but not this individual staffing mix.",
+    "Single total daily production percentage recomputed with current revenue tiers and observed daily revenue shape; employee allocation only for FOT display. Pool distribution rounding retains historical rounding residual.",
+    "Product/roll/channel mix and net check stay at each observed month; no demand lift assumed.",
+    "Couriers and separate packaging scale with ordercount; consumables/maintenance50% variable; electricity/water50% variable; fixed waste retained. These are old model budget assumptions, not measured marginal tariffs.",
+    "Writeoffs/inventory scale with food budget as before; negative oneoff inventory component not independently promoted into savings.",
+    "Acquiring uses observed effective rate; Starter marginal3%, Yandex25%, business tax marginal6% as in previous model/app. No legal tax regime recommendation is made.",
+    "Other fixed costs retained; favorable historical penalties/otherincome removed from future profit, as in old model.",
+    "Unknown new equipment, financing, training, repair/downtime, additional capacity and other future deltas remain excluded from main result and shown as explicit +20/50/100k sensitivity.",
+    "Approved report total is preserved even where a component has no_data/not_configured; no missing field was converted to a confirmed zero. September payroll tax is not separately displayed; additional cost sensitivity is not a claim of missing expense.",
+    "Unclassified cash flows July/Sep are not automatically treated as expense/income."
+  ],
+  "validation": {
+    "iiko_control_read_fresh": true,
+    "monthly_roll_allocation_matches_fresh_controls": true,
+    "baseline_pnl_identity": true,
+    "old_aug_like_for_like_bridge_verified": true,
+    "all_months_closed_by_owner": true,
+    "calculation_is_conditional_forecast_not_capacity_or_demand_proof": true
+  }
+}

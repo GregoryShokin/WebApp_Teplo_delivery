@@ -1,0 +1,88 @@
+{
+  "as_of_local": "2026-10-19",
+  "private_archive": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-closed-rebase",
+  "source_authority": "Owner selected app P&L; July–September closed. No further closing requested.",
+  "read_only_production_transactions": true,
+  "business_mutations": 0,
+  "outreach": 0,
+  "source_files": [
+    {
+      "file": "collect_closed_pnl.py",
+      "sha256": "6160477634261121629d211eaea6ae2ea6f408a624caaa0f72001c8618da3d06",
+      "bytes": 5874
+    },
+    {
+      "file": "closed-pnl-private.json",
+      "sha256": "56b6340f9137c20ec3fb9878d609f10311b0e5e80af989469efbbdbce91409ad",
+      "bytes": 233190
+    },
+    {
+      "file": "collect_rates.py",
+      "sha256": "b9516f3017a0a47a3a72fcc38d2c051999b91b94e289e611dbe46749d32a8dcc",
+      "bytes": 2943
+    },
+    {
+      "file": "current-rates-private.json",
+      "sha256": "82019bdbcd5c3511224f733f9b0498404465e4a552b0a60feaae50febd48e0e8",
+      "bytes": 14575
+    },
+    {
+      "file": "collect_sushi_labor.py",
+      "sha256": "a9f39f42c379838bbe244b27b68fa33083ef95b75c7a38e749614def38316ee4",
+      "bytes": 10907
+    },
+    {
+      "file": "sushi-labor-private.json",
+      "sha256": "20df340b7179c7bc8321e401813af50fe371c7d2e73a200d43d2a2ad50489ef9",
+      "bytes": 99170
+    },
+    {
+      "file": "collect_utilities.py",
+      "sha256": "5ec3fa4516f9db153cbcc1f79e25eace763f440098ce8149e1fe740f2149c50e",
+      "bytes": 2004
+    },
+    {
+      "file": "utilities-private.json",
+      "sha256": "8c9d7ac32749fda3ce8a9d87371a24c010de346802c3ef4f2479ac063157771f",
+      "bytes": 7295
+    },
+    {
+      "file": "collect_iiko_controls.py",
+      "sha256": "b0ed95d90b4142dccc9ccbcc099ce3bf5d00f144230090f6a264759f88f3059b",
+      "bytes": 1903
+    },
+    {
+      "file": "iiko-controls-manifest.json",
+      "sha256": "690cd8b3cc17b048b5dfa9fa988a4faaf4db63ec076efbcae2520e4fc9a4396d",
+      "bytes": 1178
+    },
+    {
+      "file": "collect_iiko_channels.py",
+      "sha256": "944036270a899ce98edb0119066073881bba1878daf0f8800c8cc375c402cdfb",
+      "bytes": 2556
+    },
+    {
+      "file": "iiko-channels-manifest.json",
+      "sha256": "405bd1f919776c352b6799060a194126dfa239b494c36523d4adeb6df321e9cd",
+      "bytes": 3821
+    },
+    {
+      "file": "roll-food-allocation.json",
+      "sha256": "a78c8e266b6c4816ae167e8e340247ed5fbcfbaf41fc764757a383a025885bd5",
+      "bytes": 2368490
+    },
+    {
+      "file": "daily-sales-safe-aggregates.json",
+      "sha256": "38d1814d11a8e55f0782f185fdb95686bcdf43ac5d520dfce1e6ce7c11e2b377",
+      "bytes": 18137
+    },
+    {
+      "file": "recalculate.py",
+      "sha256": "6b885fdaa08b505b3ca3e860f6b59df5bca9fa74f16a7ba2c0182d0b14b2edf1",
+      "bytes": 15729
+    }
+  ],
+  "old_report_source": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/finance/unit-economics/kitchen-modernization/snapshots/2026-10-14/b-costs-baseline/data/pnl-snapshots.json",
+  "old_report_sha256": "d63302091ebb7f4a538b193dc1200518d91558d261908409fdda6760e863560d",
+  "recalculation_sha256": "c16b52e79326670b5299d34539adafe036d7c38356124e7e0f0e2ec9f604705f"
+}

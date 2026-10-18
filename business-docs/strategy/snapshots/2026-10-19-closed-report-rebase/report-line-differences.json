@@ -1,0 +1,80 @@
+{
+  "2026-07-01": {
+    "source_line_changes": [],
+    "all_changed_lines": []
+  },
+  "2026-08-01": {
+    "source_line_changes": [],
+    "all_changed_lines": []
+  },
+  "2026-09-01": {
+    "source_line_changes": [
+      {
+        "line_code": "utilities_chernikova",
+        "title": "Коммунальные платежи Черникова",
+        "kind": "source",
+        "old": "21469.08",
+        "new": "115605.08",
+        "delta": 94136.0
+      }
+    ],
+    "all_changed_lines": [
+      {
+        "line_code": "indirect_costs",
+        "title": "Косвенные расходы",
+        "kind": "subtotal",
+        "old": "543585.20",
+        "new": "637721.20",
+        "delta": 94136.0
+      },
+      {
+        "line_code": "admin_costs",
+        "title": "Административные",
+        "kind": "subtotal",
+        "old": "379479.20",
+        "new": "473615.20",
+        "delta": 94136.0
+      },
+      {
+        "line_code": "utilities_chernikova",
+        "title": "Коммунальные платежи Черникова",
+        "kind": "source",
+        "old": "21469.08",
+        "new": "115605.08",
+        "delta": 94136.0
+      },
+      {
+        "line_code": "ebitda",
+        "title": "Операционная прибыль (EBITDA)",
+        "kind": "subtotal",
+        "old": "198261.50",
+        "new": "104125.50",
+        "delta": -94136.0
+      },
+      {
+        "line_code": "ebitda_ratio",
+        "title": "Рентабельность по операционной прибыли, %",
+        "kind": "ratio",
+        "old": "0.0653",
+        "new": "0.0343",
+        "delta": -0.03
+      },
+      {
+        "line_code": "net_profit",
+        "title": "Чистая прибыль",
+        "kind": "subtotal",
+        "old": "-14891.01",
+        "new": "-109027.01",
+        "delta": -94136.0
+      },
+      {
+        "line_code": "net_profit_ratio",
+        "title": "Рентабельность по чистой прибыли, %",
+        "kind": "ratio",
+        "old": "-0.0049",
+        "new": "-0.0359",
+        "delta": -0.03
+      }
+    ]
+  }
+}
