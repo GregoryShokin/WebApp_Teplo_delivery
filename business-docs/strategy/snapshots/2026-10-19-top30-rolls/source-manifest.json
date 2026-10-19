@@ -1,0 +1,589 @@
+{
+  "as_of": "2026-10-19",
+  "scope": "Черникова Department.Code=2; historicalJuly–Sep; livecatalog/recipes/purchaseprices19Oct.",
+  "business_system_mutations": false,
+  "private_archive": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls",
+  "raw_and_analysis_files": [
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/sales/aggregate.py",
+      "sha256": "0cc80b5d792a3719b709c21632096cbc50e019eb55ad4cf7a7f955c63b2005b0",
+      "bytes": 14936
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/sales/allocation-trace.json",
+      "sha256": "4c8b27094df92304dbef6dd2e1b943a91a1e14ca3cd6604d246c1b748717e37a",
+      "bytes": 8697287
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/sales/build_selection.py",
+      "sha256": "785ec76fb2419ad058896ccaaf32bd70b425630d112ff75ae85d08ccb090dfda",
+      "bytes": 4346
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/sales/calculation-log.json",
+      "sha256": "86059fa610506903c215f5f0155ceefaa00bc9fca41f8ac6fc86a0442be234d6",
+      "bytes": 4741
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/sales/methods.md",
+      "sha256": "465faefc5ecf20c658351dd1fe4594e7c634c934c26a4a844ce9c4a87da7e48f",
+      "bytes": 3869
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/sales/owner-category-confirmation.json",
+      "sha256": "323d70f4caa4553b543bd15f789a0720b4fef720fa59e9a7bd7237854d1a7d40",
+      "bytes": 277
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/sales/sales-aggregates.json",
+      "sha256": "ee9d870f4e6e6600c2c484cf288efef01bf4c27fc709890ba05b92dd83f01cb4",
+      "bytes": 321470
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/sales/summary.json",
+      "sha256": "84d96ecf61848b3b697f8fac31f4551c47c85466bd1263fe2c2c88c5b78a8af1",
+      "bytes": 4080
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/sales/top30-sales.csv",
+      "sha256": "7b68fe9703ffc974873721c7df4d95ac57dba22d797d4fe5229f95d2d0a286d2",
+      "bytes": 8823
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/audit_sales.py",
+      "sha256": "652b57b29f9092ec3e27dc9b98dfa434713d4eeb4c92c9203f4d779dade4c60c",
+      "bytes": 6212
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/base.manifest.json",
+      "sha256": "c32f56c197bbda292a24c4e0cbb96ef83a5beb58775b9ed86683be61214e5964",
+      "bytes": 1060
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/build_recipes.py",
+      "sha256": "72faed31d38a766eb58c39283e633876ccaa484c153cdafda8c043d05665689e",
+      "bytes": 5451
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/cards.manifest.json",
+      "sha256": "a87d59321736d708c527ecdd4aaee32e72fb4f97d861c5bbf580cb8dad8ebabb",
+      "bytes": 14102
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/cards.plan.json",
+      "sha256": "0004819686cba8c4f45a9a22fd2977dd678a2761f6e887b51c5458c9fd15648e",
+      "bytes": 8526
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/category-map-preliminary.json",
+      "sha256": "343695f53912b6f3a7dd0954ba10d33b05ec4994877788c8c3b75678a6d08f18",
+      "bytes": 47558
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/category-map.json",
+      "sha256": "9c3a2de5736eba826d66671b211c2ff05b8e2933138c363140313d76fed901bb",
+      "bytes": 62865
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/collect.py",
+      "sha256": "0d26810372a666913034ebddefbc1757b4843d473beaeb44d0619f76888fe6b0",
+      "bytes": 1086
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/current-recipes.json",
+      "sha256": "6785e292da18e64620040bc87b15f852da833be2589414343b6dc666dcecd345",
+      "bytes": 625947
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/charts.json",
+      "sha256": "36a1c2bd3516e6812f2cea677aadc05453b015392b3846d3c2814250912d763b",
+      "bytes": 5929496
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/charts.source.json",
+      "sha256": "f049104eb0a0e1e3b933002b449f9528fa82eaea8c8197414a102148552614c3",
+      "bytes": 346
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/departments.source.json",
+      "sha256": "c310e366753d4060f222455df55bc1296d0a8d16c107012ea2d86bae6b753d7c",
+      "bytes": 247
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/departments.xml",
+      "sha256": "423274d3c8a8615b5e6fb9aeda435babde26014edf31e4bc970e28890b8a32da",
+      "bytes": 1875
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/groups.json",
+      "sha256": "bc66ed74d4c8b683fdb42d168cc5213cd644df35cfae3451a9bc5e6dde889897",
+      "bytes": 69325
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/groups.source.json",
+      "sha256": "5dd0d45679fd91e590ab35e5789ff9fd6a33fa31ce2acd58d2cebc98003eadee",
+      "bytes": 250
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/products.json",
+      "sha256": "ea502d62a051afcab38a89824ac891495ef504b8d16a5f4aa2a49ea82b7f1349",
+      "bytes": 1729112
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/products.source.json",
+      "sha256": "f1a89dbccd055e32e3618e7fe7f75bbf0770ca9e096925ba8f4fd5cfa71f1f33",
+      "bytes": 246
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/site-home.html",
+      "sha256": "d0db68a344d1ad23628a7baec8bdbdf58a763073717bd3cf01ebba3d3478e8ef",
+      "bytes": 13602
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/site-home.source.json",
+      "sha256": "22fca19dc21d61ca71ad22275f97d21f0d97c8694904b67953686df9fad4aba8",
+      "bytes": 182
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-0c8078b0-d1e3-48dc-924b-3d649bbc7621.json",
+      "sha256": "08b6c54486bba10adc8ab7b36614547d9a3973e9a9aa06d4e52c8019d79b80fb",
+      "bytes": 18468
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-0c8078b0-d1e3-48dc-924b-3d649bbc7621.source.json",
+      "sha256": "0875b92e88b62a983289eae2981054cc14b8d3eb29e656adf237ecfa5fa2ed54",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-10268e42-3a41-4adc-b33a-293016aa4849.json",
+      "sha256": "d8385b99c8612d524272eeb4a5cc75560f02aab821c45d95fadb0acd925caeae",
+      "bytes": 21820
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-10268e42-3a41-4adc-b33a-293016aa4849.source.json",
+      "sha256": "e8d95592e1241f73be33343f238b431c14cdc14052c837089959a32189331585",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-10365a6d-ee10-451f-898e-c9a8dbd5c1af.json",
+      "sha256": "9bc44936fa1b0595a2dc17ae850fc082ecee2e3e8d64597df561bbf52639805d",
+      "bytes": 21444
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-10365a6d-ee10-451f-898e-c9a8dbd5c1af.source.json",
+      "sha256": "5353c90e4d9d50d7039eeba02f7229be5e4713ef438cec1dac1e26b252d86771",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-1d051054-9c3c-477c-97cf-dfaf35d232ef.json",
+      "sha256": "3f331b894e76f8f587c479995b8c265b71f6e4316bff9a497139c665f7011489",
+      "bytes": 13133
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-1d051054-9c3c-477c-97cf-dfaf35d232ef.source.json",
+      "sha256": "1558793478f4022e3e0044cf280cabb1dbae2387bcb805c6ffbd0373f9134ee9",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-1e4d827e-e228-41f1-af37-e27d4fe8709c.json",
+      "sha256": "7f55932a035d3bb0b58e9bc137a3bef39bcebf56ddbe52cb4a24f5394008523f",
+      "bytes": 13769
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-1e4d827e-e228-41f1-af37-e27d4fe8709c.source.json",
+      "sha256": "245f960e0cc2dea937f17167595223a0954a2edf56e8b4c09d9591f43d98f8bf",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-1ef276ad-1877-4eba-a062-f4dc61ebb483.json",
+      "sha256": "f8eab448319a74fe995d54f283a012474fdc7a6febd9faf8fb90d783272e616e",
+      "bytes": 12995
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-1ef276ad-1877-4eba-a062-f4dc61ebb483.source.json",
+      "sha256": "8e46c28292d82a6d2ccbf60c45ea803587a423b427d963ebeae8ace1d4dc985c",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-2a3f7463-db4c-48bd-a384-a20e3238a72d.json",
+      "sha256": "30b2e19d7c95b6ece33b884f85fbfb474de4f3fe333a374ffcce50c75901462d",
+      "bytes": 11449
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-2a3f7463-db4c-48bd-a384-a20e3238a72d.source.json",
+      "sha256": "88e2f644bc249b8c5ca12f298578d50b873cf6a58fa24c4f6d68de63fe4244ea",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-2edfbbd1-102d-45e4-ac5f-25e632322b9d.json",
+      "sha256": "a12e843b0ebe99e8664ac78c99c6083915b185b6967d26b3aa248c345df89820",
+      "bytes": 15510
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-2edfbbd1-102d-45e4-ac5f-25e632322b9d.source.json",
+      "sha256": "d1b6ae683d59c2224d7d3af579ae423551f49775502575ca737c2f82876dc95f",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-366e1914-a0ed-4642-a7d1-aff42e4a0868.json",
+      "sha256": "ec4f3b227e5f28aa3d5e9078e82e6f4dd849f0b20a2f34718ca06942ea3a6027",
+      "bytes": 14764
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-366e1914-a0ed-4642-a7d1-aff42e4a0868.source.json",
+      "sha256": "be49b68383f540b5eb8da9edfa815ac9cc68ba79372a31c7dadfcdddcf597a75",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-4c5658c3-f279-4ac0-9853-94cf7a959aab.json",
+      "sha256": "824c15b9deb61a0710a8534af837547a7debc0df203def7846e0bfca1c1616f6",
+      "bytes": 15638
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-4c5658c3-f279-4ac0-9853-94cf7a959aab.source.json",
+      "sha256": "dd4b0a9672959918a7f2a8023e99ed78745f2757974e1d6ac4b5bf9692ec1069",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-5188e2e9-fae1-4f98-beb5-0d96327cdd9b.json",
+      "sha256": "43ab33bfa80b34bf8a750628d15f85be5abcc7a19f4fe38b4f92e0f639c281ff",
+      "bytes": 16896
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-5188e2e9-fae1-4f98-beb5-0d96327cdd9b.source.json",
+      "sha256": "f4dd101a192b0b79223953dcd87aeebf42aa8ebea982a212af0f36f7aa24ebfd",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-59b096dd-daa8-4157-b609-ab410d37850e.json",
+      "sha256": "e5b0d6556779fe37889d620a5670eff62e04a02486fae37edc87fa2ebb47e374",
+      "bytes": 10126
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-59b096dd-daa8-4157-b609-ab410d37850e.source.json",
+      "sha256": "7a46dc0f55793c815f7d71995f5bf030066bd90f71509a041b934cca91cf6a27",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-625a6ea2-af09-41de-aacd-4dbd41a9ec78.json",
+      "sha256": "cbfa52dd71e5b063ce1f151e7ecc1efd5b25cff471a02db6ce34b63edf0ca341",
+      "bytes": 14303
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-625a6ea2-af09-41de-aacd-4dbd41a9ec78.source.json",
+      "sha256": "cd40bace37cc04c06a5fdac784a3ca9fb69afac57b9bddfcd0fe09f51488e1b2",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-646a1d2c-a966-49ce-a408-4346b9ba21ca.json",
+      "sha256": "b5150596cfc8e9b0810a7aef3a69e2ee0eb8096927a514ea5ddfe166576a07a5",
+      "bytes": 12349
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-646a1d2c-a966-49ce-a408-4346b9ba21ca.source.json",
+      "sha256": "9eb9e72ffc7b1f77a7efdf01e9c096ae3553602f49a682a976293ff9ec0a8b81",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-6d53314d-4f7a-4da4-b0ad-8d7c188ce16d.json",
+      "sha256": "0730bf48db828d24093afcade028d4534682491c5a0a040c9c276e0ecfdef867",
+      "bytes": 20322
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-6d53314d-4f7a-4da4-b0ad-8d7c188ce16d.source.json",
+      "sha256": "f578e5be242d09bba592e269056ef753569541251cf14f087fe412cc0d7183ee",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-6fee7d56-2bf3-41ad-8efd-36ca5f85b662.json",
+      "sha256": "9e22d8499e6c36e0d31782b00893a4a70c392b40b00d87ee6f9ac4d780f09a15",
+      "bytes": 18373
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-6fee7d56-2bf3-41ad-8efd-36ca5f85b662.source.json",
+      "sha256": "75f83e9eeac147b54dca59591592e2e6e3e686e39a47e0b2a82d3787ad661ec7",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-704c0ccc-9a40-43c1-9bc8-e48dce390bd7.json",
+      "sha256": "409dc7323d49f981d42b4292d4094c2cbed5da632fa14bbbb90d88167c51c0ef",
+      "bytes": 17929
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-704c0ccc-9a40-43c1-9bc8-e48dce390bd7.source.json",
+      "sha256": "ae7861700d89e14ede555b7e081de72812fed674246b55586c8d9faa0b1e10a5",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-743a8b76-0d3b-4242-aa5e-fe1c783bafb8.json",
+      "sha256": "64a2ed95a26ad3cc6326f46dd47f6de6b3d71b5861cca80923ae746fb89de327",
+      "bytes": 14999
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-743a8b76-0d3b-4242-aa5e-fe1c783bafb8.source.json",
+      "sha256": "83b4be15adc80270ebcb84f358a03b460dbee25848dbbf4488bd7ebe719e9cf7",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-89b6e6ba-0ac7-4792-b217-8e207067d494.json",
+      "sha256": "4cb99b29010b217bf4e555308b9c94403c79e2835b38cf788ef20c4a45aa05ad",
+      "bytes": 11463
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-89b6e6ba-0ac7-4792-b217-8e207067d494.source.json",
+      "sha256": "d8bcfcb634d6636a648d4f69a417b3e3db8d495081fd7de6e3d5a60fc8f6dcf4",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-9039dc4b-73fe-463e-ba12-9a1a73017c0f.json",
+      "sha256": "6174a34f38fa141d24e0302d7d20c2521500cf44a8e8cb84fc4c09298d3db9c7",
+      "bytes": 12087
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-9039dc4b-73fe-463e-ba12-9a1a73017c0f.source.json",
+      "sha256": "db76a32b53f5f4496ca23b4e2789608e25b90d4d3d35c54b901b9fb18e1fdf9f",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-960ad600-15ac-458c-bdd0-e1a672217558.json",
+      "sha256": "56a2add25e374bbd920bc07c998d41298d211f0cd4b6f1299cd23b4db312ff9d",
+      "bytes": 16325
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-960ad600-15ac-458c-bdd0-e1a672217558.source.json",
+      "sha256": "21b41f704cfde5088efc2f63fed06b1667b57a84a7d57aa7022cc30a57a5988e",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-a792d828-e14f-4c29-ab6b-5958a0c9e1ae.json",
+      "sha256": "b42ffbca4bb0bcdd8dc768d82bce1a8d525776cc83882084d17c7c446ea4c0bd",
+      "bytes": 16172
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-a792d828-e14f-4c29-ab6b-5958a0c9e1ae.source.json",
+      "sha256": "f65dc9bf999c5582f925985b3b478ae6a7889c8f032c19f370dae5b4741ab01d",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-b5193a9f-205e-4f27-b157-0e40bb95ee41.json",
+      "sha256": "c5b9b9a2558054a98bd883343127fdb5b84df211d703a14515a93612851cd8b6",
+      "bytes": 18346
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-b5193a9f-205e-4f27-b157-0e40bb95ee41.source.json",
+      "sha256": "fde75d0b9e9d442a86912179d7132a43566290ac678d493c6d9b8a46700e60d6",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-bb5a375e-d25f-4272-9b53-0b8f6deec64e.json",
+      "sha256": "1cf5a02ab03911cfed750e2c7f79ab66a6fe04ce9ed2a14a9abfdc96f44d666a",
+      "bytes": 19033
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-bb5a375e-d25f-4272-9b53-0b8f6deec64e.source.json",
+      "sha256": "944d84351dc9c87fa4942a1ff26d86b6d3cc581426f44812e0da67def0c55d0d",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-bc257c1c-8b62-4881-8c34-e7b9c9c1f864.json",
+      "sha256": "3aef21f76139a9eb4244f736a1a4f2db22b63693c0b3012e9377199263bbe9f8",
+      "bytes": 21785
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-bc257c1c-8b62-4881-8c34-e7b9c9c1f864.source.json",
+      "sha256": "9f899f39b14eeddb849b1a524d17745561e624f8449720c7b344d2bcabb0883d",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-bd1e0a8b-febb-40fc-a7c3-9690f012dae6.json",
+      "sha256": "2b230dfb36ac73fe076a3030fc2a147560dd9928e72c5c1aa5fe3b0d772f996c",
+      "bytes": 11981
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-bd1e0a8b-febb-40fc-a7c3-9690f012dae6.source.json",
+      "sha256": "942415f0418da043d1be21afb2521207b18ffc35b60d5bd364c91e5deed3633c",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-bdcc40c7-6d51-4730-93eb-5014bb33edf6.json",
+      "sha256": "e8c597d49257cd48c6f180420ad2825cd6f1c5d3e32bcfdf15e2acf36a3e4771",
+      "bytes": 15631
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-bdcc40c7-6d51-4730-93eb-5014bb33edf6.source.json",
+      "sha256": "cd21aed715fbb7310a0a34a6b44e27b4cd2faef1dfd3a019e51fa82b6dfb53e2",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-c80e1f8e-1607-44e0-a712-b39361c1dc96.json",
+      "sha256": "21a2b6a35765cb498bfa5d3d05186aaa4181a54ed69f6e3e4f17d0ba212783ff",
+      "bytes": 11204
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-c80e1f8e-1607-44e0-a712-b39361c1dc96.source.json",
+      "sha256": "fb2e1c6a11c8b15bfa51c78f2a840e196218b4dba808641ecd1dbe5390f33ff7",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-cae0e338-a4e0-437c-8990-49caa257bcb4.json",
+      "sha256": "80708ac40245b05c98b7d0b89b481f49d7350aef6f83ccb2a35946ef89bae00d",
+      "bytes": 16105
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-cae0e338-a4e0-437c-8990-49caa257bcb4.source.json",
+      "sha256": "88d5378bcc831d2e0c12245c448e4520b4b7a237c0a28771126f08844f10969e",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-d264e747-e54f-45e3-b0a6-62054b452418.json",
+      "sha256": "e9888d015a1787b3cb36381b766e8626e68c29e6a06fe77cad9b1df961af966d",
+      "bytes": 14302
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-d264e747-e54f-45e3-b0a6-62054b452418.source.json",
+      "sha256": "f6ddd34c401ed35eef00d2900e9928bb0bedc54ff6a700bbabdd4e17de9fc091",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-ddbde351-3b86-40c5-a7ab-d49bc30b6ba8.json",
+      "sha256": "387abd6836ea91fa3ebe95889fc0a7d2425eca2781a64ecab28d242d3a09969a",
+      "bytes": 14296
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-ddbde351-3b86-40c5-a7ab-d49bc30b6ba8.source.json",
+      "sha256": "19060c242be8dd8f6dd71af0c45bffbce33dabecc8ef1c6523f8e70852832712",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-efc93f40-ac88-4480-b37d-0964c6a2f073.json",
+      "sha256": "b22193db0cfac41a54c640936cd6e59d2fd8768bd25aeca9602eae27c14b8b43",
+      "bytes": 18276
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-efc93f40-ac88-4480-b37d-0964c6a2f073.source.json",
+      "sha256": "74ae07ad21889de6c8e2188b12912d924b5261cad60d65f803cfd5fa4e437ade",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-f1d1137b-23a7-4521-bee6-c7b811a7d860.json",
+      "sha256": "e19ef2eb7f3606d90691761cd553194f3bb39cc787d8c7e29865562dd06f2013",
+      "bytes": 13933
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/tree-f1d1137b-23a7-4521-bee6-c7b811a7d860.source.json",
+      "sha256": "4c7f35557ad61200fa2e8992b66a4c8f1455d3b0529a933316dbae49d1f46063",
+      "bytes": 392
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/units.json",
+      "sha256": "87a75f145e646dae8eea0a2f00e99caa03df11474516e1f7996972cc75b1c223",
+      "bytes": 458
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/raw/units.source.json",
+      "sha256": "7bfa0c254b7d6df3aa9145c67ca7a0342820cf74eeedae387de62c809c48caa2",
+      "bytes": 235
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/run_fetch.py",
+      "sha256": "6f0066bb47f6ff4c10d32e7ffb22eb8be270dbad08b3c3abf2c4b1e827efc361",
+      "bytes": 1541
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/selected-candidates.json",
+      "sha256": "70f81764b997a58b1c78ff63a548361e9386e8366ab3a3e21e5141741b63e03f",
+      "bytes": 16013
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/recipes/source-summary.json",
+      "sha256": "35bf6d280a325daf6f4a967fa2ea84631c25160282d1c230206805349c504309",
+      "bytes": 1077
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/costing/README.md",
+      "sha256": "100136dbeb8b0e644c007f3d5a5505d67d7b6ee2a3e6b5118891b2c050369af6",
+      "bytes": 5729
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/costing/build_pricebook.py",
+      "sha256": "3195b8f31c081bf3171239c5630476664f021eb54800185464652ca9758f7853",
+      "bytes": 4713
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/costing/calculate_costs.py",
+      "sha256": "bdd03146f2ce1680f9ee85f63c9e906d7c42d149bf8f891170b12260744b0b11",
+      "bytes": 6946
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/costing/collect_purchase_remote.py",
+      "sha256": "88627da05ffc9745241dfc6b5a12a3d2189fedad364bc17833c160ebde6e13c6",
+      "bytes": 1292
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/costing/current-recipe-costs.json",
+      "sha256": "959a95f12f2ed51a6f98ff32d4ae6927fe419527f543a6bbca792fcf6fbc3d53",
+      "bytes": 466011
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/costing/mussels-price-check.json",
+      "sha256": "dde2c65fb61139e39539e77d59b959e8bfc0c2806f406ade9635cef60342392a",
+      "bytes": 35789
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/costing/pricebook.json",
+      "sha256": "67852c6df94666c5ac5365e6c5d41ebd5fd8f0f3773ed9d5a42f174b345e60b9",
+      "bytes": 225499
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/costing/purchase-lines.json",
+      "sha256": "fced56cd8058b74fdfea53142e6f2d790e44164303afb18778c99a20e877075e",
+      "bytes": 1315373
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/costing/raw/incoming-invoices.source.json",
+      "sha256": "8e4f49873eebe60e5ef87e3ff240517fe41d7f09b453c37521770f1c61b3580e",
+      "bytes": 311
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/costing/raw/incoming-invoices.xml",
+      "sha256": "b8e08df8092d11d91ccfebe5ffb5200a5c19992b6a060245e92d17a39f13e11b",
+      "bytes": 1360990
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/site/manifest.json",
+      "sha256": "398b765e57fecf948a1d628e9628d4f53d7ef4b655d7397de3fd854d09fb4474",
+      "bytes": 206
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-19-top30-rolls/site/site.html",
+      "sha256": "d0db68a344d1ad23628a7baec8bdbdf58a763073717bd3cf01ebba3d3478e8ef",
+      "bytes": 13602
+    }
+  ],
+  "historical_source_note": "SKUrows were retrieved14Oct, canonical monthly controls rechecked19Oct. Original historical sources and hashes are retained in sales/sales-aggregates.json and collector scripts.",
+  "owner_confirmation": "19Oct explicitasyncanswer: Крабик andТомаго чизмини bothbaked.",
+  "unavailable_source": "Publicwebsite retrieval yielded anti-bottechnicalHTML; no livecustomerprice/publication claims.",
+  "calculation_files": [
+    {
+      "name": "inputs.json",
+      "sha256": "3c3cbea9a358265920c615be335e33b41fa2f113267c22fc4d3de2cf4f9d3eda"
+    },
+    {
+      "name": "selection.json",
+      "sha256": "703865b03486e3c2d45981e3cd2c5c961df2929ce1381323b32ffb7146fa6fee"
+    },
+    {
+      "name": "build_selection.py",
+      "sha256": "5ef5439bff2359e8b385bbbbd9ab3899276a0ecfe442951d3168779eeb242a90"
+    },
+    {
+      "name": "build_report.py",
+      "sha256": "98a80c472a7c6941ea7aa7607c4f5c9554a8df1e06fa20d27e0718b6ba1a4501"
+    },
+    {
+      "name": "report.html",
+      "sha256": "eb9458c32a3f404c774e4eeb0e1c8288726b5072e93c3e81bda9b38149c6df78"
+    }
+  ],
+  "data_quality": "Allenterprise/rolllinecontrols reconciled; allphysicalquantities independentlyreconstructed; currentcards leafcheck passed; no nonwateringredientmissingprices; waterpriceunknown."
+}
