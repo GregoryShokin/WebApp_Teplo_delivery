@@ -1,0 +1,2520 @@
+{
+  "as_of": "2026-10-22",
+  "status": "conditional_ingredient_costing_not_confirmed_procurement_or_final_menu",
+  "new_recipes": [
+    {
+      "recipe": {
+        "group": "Холодные",
+        "base": {
+          "rice": 110,
+          "nori": 0.5
+        },
+        "inner": {
+          "tuna_plain": 40,
+          "cream_cheese": 40,
+          "cucumber": 20
+        },
+        "frying": {},
+        "id": "T1",
+        "name": "Тунец, сыр и огурец",
+        "sauce_hat": {},
+        "drizzle": {
+          "teriyaki": 5
+        },
+        "physical_portion_status": "target40g prepared tuna portion; no measured piece count/dose/yield. Other ready grams inherited as analytical template, not changed production recipes."
+      },
+      "food_subtotal_rub": 103.32157716606363,
+      "lines": [
+        {
+          "stage": "base",
+          "component": "rice",
+          "amount": 110,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.0577324802975482,
+          "cost_rub": 6.350572832730301
+        },
+        {
+          "stage": "base",
+          "component": "nori",
+          "amount": 0.5,
+          "unit": "sheet",
+          "unit_cost_rub": 9.4,
+          "cost_rub": 4.7
+        },
+        {
+          "stage": "inner",
+          "component": "tuna_plain",
+          "amount": 40,
+          "unit": "g_ready",
+          "unit_cost_rub": 1.6655555555555555,
+          "cost_rub": 66.62222222222222
+        },
+        {
+          "stage": "inner",
+          "component": "cream_cheese",
+          "amount": 40,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.5005,
+          "cost_rub": 20.019999999999996
+        },
+        {
+          "stage": "inner",
+          "component": "cucumber",
+          "amount": 20,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.23827160555555554,
+          "cost_rub": 4.765432111111111
+        },
+        {
+          "stage": "drizzle",
+          "component": "teriyaki",
+          "amount": 5,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.17267,
+          "cost_rub": 0.86335
+        }
+      ],
+      "unrounded_price_for35": 295.20450618875327,
+      "proposed_menu_price_rub": 300,
+      "fc_at_proposed_price": 0.3444052572202121,
+      "fc_at399": 0.2589513212182046,
+      "sensitivity": [
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 111.64935494384142,
+          "fc_at399": 0.27982294472140706,
+          "fc_at_base_proposed_price": 0.3721645164794714,
+          "unrounded_price_for35": 318.99815698240405
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 111.64935494384142,
+          "fc_at399": 0.27982294472140706,
+          "fc_at_base_proposed_price": 0.3721645164794714,
+          "unrounded_price_for35": 318.99815698240405
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 111.64935494384142,
+          "fc_at399": 0.27982294472140706,
+          "fc_at_base_proposed_price": 0.3721645164794714,
+          "unrounded_price_for35": 318.99815698240405
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 103.32157716606363,
+          "fc_at399": 0.2589513212182046,
+          "fc_at_base_proposed_price": 0.3444052572202121,
+          "unrounded_price_for35": 295.20450618875327
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 103.32157716606363,
+          "fc_at399": 0.2589513212182046,
+          "fc_at_base_proposed_price": 0.3444052572202121,
+          "unrounded_price_for35": 295.20450618875327
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 103.32157716606363,
+          "fc_at399": 0.2589513212182046,
+          "fc_at_base_proposed_price": 0.3444052572202121,
+          "unrounded_price_for35": 295.20450618875327
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 99.81514441752562,
+          "fc_at399": 0.25016326921685617,
+          "fc_at_base_proposed_price": 0.33271714805841873,
+          "unrounded_price_for35": 285.1861269072161
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 99.81514441752562,
+          "fc_at399": 0.25016326921685617,
+          "fc_at_base_proposed_price": 0.33271714805841873,
+          "unrounded_price_for35": 285.1861269072161
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 99.81514441752562,
+          "fc_at399": 0.25016326921685617,
+          "fc_at_base_proposed_price": 0.33271714805841873,
+          "unrounded_price_for35": 285.1861269072161
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 115.5993549438414,
+          "fc_at399": 0.28972269409484064,
+          "fc_at_base_proposed_price": 0.385331183146138,
+          "unrounded_price_for35": 330.28387126811833
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 115.5993549438414,
+          "fc_at399": 0.28972269409484064,
+          "fc_at_base_proposed_price": 0.385331183146138,
+          "unrounded_price_for35": 330.28387126811833
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 115.5993549438414,
+          "fc_at399": 0.28972269409484064,
+          "fc_at_base_proposed_price": 0.385331183146138,
+          "unrounded_price_for35": 330.28387126811833
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 106.83268827717475,
+          "fc_at399": 0.2677510984390345,
+          "fc_at_base_proposed_price": 0.35610896092391586,
+          "unrounded_price_for35": 305.2362522204993
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 106.83268827717475,
+          "fc_at399": 0.2677510984390345,
+          "fc_at_base_proposed_price": 0.35610896092391586,
+          "unrounded_price_for35": 305.2362522204993
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 106.83268827717475,
+          "fc_at399": 0.2677510984390345,
+          "fc_at_base_proposed_price": 0.35610896092391586,
+          "unrounded_price_for35": 305.2362522204993
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 103.14146020699931,
+          "fc_at399": 0.2584999002681687,
+          "fc_at_base_proposed_price": 0.3438048673566644,
+          "unrounded_price_for35": 294.6898863057123
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 103.14146020699931,
+          "fc_at399": 0.2584999002681687,
+          "fc_at_base_proposed_price": 0.3438048673566644,
+          "unrounded_price_for35": 294.6898863057123
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 103.14146020699931,
+          "fc_at399": 0.2584999002681687,
+          "fc_at_base_proposed_price": 0.3438048673566644,
+          "unrounded_price_for35": 294.6898863057123
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 176.1493549438414,
+          "fc_at399": 0.44147708005975284,
+          "fc_at_base_proposed_price": 0.5871645164794713,
+          "unrounded_price_for35": 503.2838712681183
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 176.1493549438414,
+          "fc_at399": 0.44147708005975284,
+          "fc_at_base_proposed_price": 0.5871645164794713,
+          "unrounded_price_for35": 503.2838712681183
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 176.1493549438414,
+          "fc_at399": 0.44147708005975284,
+          "fc_at_base_proposed_price": 0.5871645164794713,
+          "unrounded_price_for35": 503.2838712681183
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 160.65491049939695,
+          "fc_at399": 0.4026438859634009,
+          "fc_at_base_proposed_price": 0.5355163683313232,
+          "unrounded_price_for35": 459.014029998277
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 160.65491049939695,
+          "fc_at399": 0.4026438859634009,
+          "fc_at_base_proposed_price": 0.5355163683313232,
+          "unrounded_price_for35": 459.014029998277
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 160.65491049939695,
+          "fc_at399": 0.4026438859634009,
+          "fc_at_base_proposed_price": 0.5355163683313232,
+          "unrounded_price_for35": 459.014029998277
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 154.13093389120982,
+          "fc_at399": 0.38629306739651587,
+          "fc_at_base_proposed_price": 0.513769779637366,
+          "unrounded_price_for35": 440.3740968320281
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 154.13093389120982,
+          "fc_at399": 0.38629306739651587,
+          "fc_at_base_proposed_price": 0.513769779637366,
+          "unrounded_price_for35": 440.3740968320281
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 154.13093389120982,
+          "fc_at399": 0.38629306739651587,
+          "fc_at_base_proposed_price": 0.513769779637366,
+          "unrounded_price_for35": 440.3740968320281
+        }
+      ],
+      "unpriced": [
+        "sesame_if_used",
+        "water_in_rice",
+        "packaging_and_order_sidekit",
+        "process_specific_energy_labour_equipment"
+      ],
+      "status": "new_paper_candidate_not_production_recipe"
+    },
+    {
+      "recipe": {
+        "group": "Холодные",
+        "base": {
+          "rice": 110,
+          "nori": 0.5
+        },
+        "inner": {
+          "tuna_plain": 40,
+          "crab_mix": 40,
+          "tamago": 20
+        },
+        "frying": {},
+        "id": "T2",
+        "name": "Тунец, краб и тамаго",
+        "sauce_hat": {},
+        "drizzle": {
+          "teriyaki": 5
+        },
+        "physical_portion_status": "target40g prepared tuna portion; no measured piece count/dose/yield. Other ready grams inherited as analytical template, not changed production recipes."
+      },
+      "food_subtotal_rub": 100.47580819649882,
+      "lines": [
+        {
+          "stage": "base",
+          "component": "rice",
+          "amount": 110,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.0577324802975482,
+          "cost_rub": 6.350572832730301
+        },
+        {
+          "stage": "base",
+          "component": "nori",
+          "amount": 0.5,
+          "unit": "sheet",
+          "unit_cost_rub": 9.4,
+          "cost_rub": 4.7
+        },
+        {
+          "stage": "inner",
+          "component": "tuna_plain",
+          "amount": 40,
+          "unit": "g_ready",
+          "unit_cost_rub": 1.6655555555555555,
+          "cost_rub": 66.62222222222222
+        },
+        {
+          "stage": "inner",
+          "component": "crab_mix",
+          "amount": 40,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.4094109387755102,
+          "cost_rub": 16.37643755102041
+        },
+        {
+          "stage": "inner",
+          "component": "tamago",
+          "amount": 20,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.27816127952629466,
+          "cost_rub": 5.563225590525893
+        },
+        {
+          "stage": "drizzle",
+          "component": "teriyaki",
+          "amount": 5,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.17267,
+          "cost_rub": 0.86335
+        }
+      ],
+      "unrounded_price_for35": 287.07373770428234,
+      "proposed_menu_price_rub": 290,
+      "fc_at_proposed_price": 0.346468304125858,
+      "fc_at399": 0.25181906816165117,
+      "sensitivity": [
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 108.8035859742766,
+          "fc_at399": 0.27269069166485366,
+          "fc_at_base_proposed_price": 0.37518477922164345,
+          "unrounded_price_for35": 310.8673884979332
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 108.8035859742766,
+          "fc_at399": 0.27269069166485366,
+          "fc_at_base_proposed_price": 0.37518477922164345,
+          "unrounded_price_for35": 310.8673884979332
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 108.8035859742766,
+          "fc_at399": 0.27269069166485366,
+          "fc_at_base_proposed_price": 0.37518477922164345,
+          "unrounded_price_for35": 310.8673884979332
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 100.47580819649882,
+          "fc_at399": 0.25181906816165117,
+          "fc_at_base_proposed_price": 0.346468304125858,
+          "unrounded_price_for35": 287.07373770428234
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 100.47580819649882,
+          "fc_at399": 0.25181906816165117,
+          "fc_at_base_proposed_price": 0.346468304125858,
+          "unrounded_price_for35": 287.07373770428234
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 100.47580819649882,
+          "fc_at399": 0.25181906816165117,
+          "fc_at_base_proposed_price": 0.346468304125858,
+          "unrounded_price_for35": 287.07373770428234
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 96.96937544796081,
+          "fc_at399": 0.2430310161603028,
+          "fc_at_base_proposed_price": 0.33437715671710627,
+          "unrounded_price_for35": 277.0553584227452
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 96.96937544796081,
+          "fc_at399": 0.2430310161603028,
+          "fc_at_base_proposed_price": 0.33437715671710627,
+          "unrounded_price_for35": 277.0553584227452
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 96.96937544796081,
+          "fc_at399": 0.2430310161603028,
+          "fc_at_base_proposed_price": 0.33437715671710627,
+          "unrounded_price_for35": 277.0553584227452
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 112.75358597427659,
+          "fc_at399": 0.2825904410382872,
+          "fc_at_base_proposed_price": 0.38880546887681583,
+          "unrounded_price_for35": 322.1531027836474
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 112.75358597427659,
+          "fc_at399": 0.2825904410382872,
+          "fc_at_base_proposed_price": 0.38880546887681583,
+          "unrounded_price_for35": 322.1531027836474
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 112.75358597427659,
+          "fc_at399": 0.2825904410382872,
+          "fc_at_base_proposed_price": 0.38880546887681583,
+          "unrounded_price_for35": 322.1531027836474
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 103.98691930760994,
+          "fc_at399": 0.26061884538248103,
+          "fc_at_base_proposed_price": 0.3585755838193446,
+          "unrounded_price_for35": 297.1054837360284
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 103.98691930760994,
+          "fc_at399": 0.26061884538248103,
+          "fc_at_base_proposed_price": 0.3585755838193446,
+          "unrounded_price_for35": 297.1054837360284
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 103.98691930760994,
+          "fc_at399": 0.26061884538248103,
+          "fc_at_base_proposed_price": 0.3585755838193446,
+          "unrounded_price_for35": 297.1054837360284
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 100.2956912374345,
+          "fc_at399": 0.25136764721161525,
+          "fc_at_base_proposed_price": 0.3458472111635672,
+          "unrounded_price_for35": 286.55911782124144
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 100.2956912374345,
+          "fc_at399": 0.25136764721161525,
+          "fc_at_base_proposed_price": 0.3458472111635672,
+          "unrounded_price_for35": 286.55911782124144
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 100.2956912374345,
+          "fc_at399": 0.25136764721161525,
+          "fc_at_base_proposed_price": 0.3458472111635672,
+          "unrounded_price_for35": 286.55911782124144
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 173.3035859742766,
+          "fc_at399": 0.4343448270031995,
+          "fc_at_base_proposed_price": 0.5975985723250917,
+          "unrounded_price_for35": 495.1531027836474
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 173.3035859742766,
+          "fc_at399": 0.4343448270031995,
+          "fc_at_base_proposed_price": 0.5975985723250917,
+          "unrounded_price_for35": 495.1531027836474
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 173.3035859742766,
+          "fc_at399": 0.4343448270031995,
+          "fc_at_base_proposed_price": 0.5975985723250917,
+          "unrounded_price_for35": 495.1531027836474
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 157.80914152983215,
+          "fc_at399": 0.3955116329068475,
+          "fc_at_base_proposed_price": 0.5441694535511453,
+          "unrounded_price_for35": 450.8832615138062
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 157.80914152983215,
+          "fc_at399": 0.3955116329068475,
+          "fc_at_base_proposed_price": 0.5441694535511453,
+          "unrounded_price_for35": 450.8832615138062
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 157.80914152983215,
+          "fc_at399": 0.3955116329068475,
+          "fc_at_base_proposed_price": 0.5441694535511453,
+          "unrounded_price_for35": 450.8832615138062
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 151.28516492164502,
+          "fc_at399": 0.37916081433996246,
+          "fc_at_base_proposed_price": 0.5216729824884311,
+          "unrounded_price_for35": 432.2433283475572
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 151.28516492164502,
+          "fc_at399": 0.37916081433996246,
+          "fc_at_base_proposed_price": 0.5216729824884311,
+          "unrounded_price_for35": 432.2433283475572
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 151.28516492164502,
+          "fc_at399": 0.37916081433996246,
+          "fc_at_base_proposed_price": 0.5216729824884311,
+          "unrounded_price_for35": 432.2433283475572
+        }
+      ],
+      "unpriced": [
+        "sesame_if_used",
+        "water_in_rice",
+        "packaging_and_order_sidekit",
+        "process_specific_energy_labour_equipment"
+      ],
+      "status": "new_paper_candidate_not_production_recipe"
+    },
+    {
+      "recipe": {
+        "group": "Запечённые",
+        "base": {
+          "rice": 110,
+          "nori": 0.5
+        },
+        "inner": {
+          "tuna_plain": 40,
+          "tamago": 30,
+          "cream_cheese": 20,
+          "cucumber": 10
+        },
+        "frying": {},
+        "id": "T3",
+        "name": "Тунец яки",
+        "sauce_hat": {
+          "yaki": 75
+        },
+        "drizzle": {
+          "teriyaki": 5
+        },
+        "physical_portion_status": "target40g prepared tuna portion; no measured piece count/dose/yield. Other ready grams inherited as analytical template, not changed production recipes."
+      },
+      "food_subtotal_rub": 123.8069478829033,
+      "lines": [
+        {
+          "stage": "base",
+          "component": "rice",
+          "amount": 110,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.0577324802975482,
+          "cost_rub": 6.350572832730301
+        },
+        {
+          "stage": "base",
+          "component": "nori",
+          "amount": 0.5,
+          "unit": "sheet",
+          "unit_cost_rub": 9.4,
+          "cost_rub": 4.7
+        },
+        {
+          "stage": "inner",
+          "component": "tuna_plain",
+          "amount": 40,
+          "unit": "g_ready",
+          "unit_cost_rub": 1.6655555555555555,
+          "cost_rub": 66.62222222222222
+        },
+        {
+          "stage": "inner",
+          "component": "tamago",
+          "amount": 30,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.27816127952629466,
+          "cost_rub": 8.34483838578884
+        },
+        {
+          "stage": "inner",
+          "component": "cream_cheese",
+          "amount": 20,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.5005,
+          "cost_rub": 10.009999999999998
+        },
+        {
+          "stage": "inner",
+          "component": "cucumber",
+          "amount": 10,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.23827160555555554,
+          "cost_rub": 2.3827160555555555
+        },
+        {
+          "stage": "sauce_hat",
+          "component": "yaki",
+          "amount": 75.0,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.32710997848808515,
+          "cost_rub": 24.533248386606385
+        },
+        {
+          "stage": "drizzle",
+          "component": "teriyaki",
+          "amount": 5,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.17267,
+          "cost_rub": 0.86335
+        }
+      ],
+      "unrounded_price_for35": 353.73413680829515,
+      "proposed_menu_price_rub": 355,
+      "fc_at_proposed_price": 0.34875196586733326,
+      "fc_at399": 0.3102931024634168,
+      "sensitivity": [
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 130.49917576824066,
+          "fc_at399": 0.32706560342917457,
+          "fc_at_base_proposed_price": 0.3676033120232131,
+          "unrounded_price_for35": 372.8547879092591
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 132.13472566068108,
+          "fc_at399": 0.3311647259666193,
+          "fc_at_base_proposed_price": 0.37221049481881996,
+          "unrounded_price_for35": 377.527787601946
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 133.7702755531215,
+          "fc_at399": 0.33526384850406393,
+          "fc_at_base_proposed_price": 0.3768176776144268,
+          "unrounded_price_for35": 382.2007872946329
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 122.17139799046288,
+          "fc_at399": 0.30619397992597214,
+          "fc_at_base_proposed_price": 0.3441447830717264,
+          "unrounded_price_for35": 349.06113711560823
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 123.8069478829033,
+          "fc_at399": 0.3102931024634168,
+          "fc_at_base_proposed_price": 0.34875196586733326,
+          "unrounded_price_for35": 353.73413680829515
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 125.44249777534372,
+          "fc_at399": 0.31439222500086145,
+          "fc_at_base_proposed_price": 0.35335914866294005,
+          "unrounded_price_for35": 358.4071365009821
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 118.66496524192486,
+          "fc_at399": 0.2974059279246237,
+          "fc_at_base_proposed_price": 0.334267507723732,
+          "unrounded_price_for35": 339.04275783407104
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 120.30051513436528,
+          "fc_at399": 0.3015050504620684,
+          "fc_at_base_proposed_price": 0.33887469051933883,
+          "unrounded_price_for35": 343.71575752675795
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 121.93606502680572,
+          "fc_at399": 0.3056041729995131,
+          "fc_at_base_proposed_price": 0.3434818733149457,
+          "unrounded_price_for35": 348.3887572194449
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 134.44917576824065,
+          "fc_at399": 0.33696535280260814,
+          "fc_at_base_proposed_price": 0.37873007258659336,
+          "unrounded_price_for35": 384.1405021949733
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 136.08472566068107,
+          "fc_at399": 0.3410644753400528,
+          "fc_at_base_proposed_price": 0.3833372553822002,
+          "unrounded_price_for35": 388.8135018876602
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 137.7202755531215,
+          "fc_at399": 0.3451635978774975,
+          "fc_at_base_proposed_price": 0.38794443817780705,
+          "unrounded_price_for35": 393.4865015803472
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 125.682509101574,
+          "fc_at399": 0.314993757146802,
+          "fc_at_base_proposed_price": 0.35403523690584227,
+          "unrounded_price_for35": 359.0928831473543
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 127.31805899401442,
+          "fc_at399": 0.31909287968424666,
+          "fc_at_base_proposed_price": 0.35864241970144906,
+          "unrounded_price_for35": 363.76588284004123
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 128.95360888645484,
+          "fc_at399": 0.32319200222169137,
+          "fc_at_base_proposed_price": 0.3632496024970559,
+          "unrounded_price_for35": 368.43888253272814
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 121.99128103139856,
+          "fc_at399": 0.3057425589759362,
+          "fc_at_base_proposed_price": 0.34363741135605225,
+          "unrounded_price_for35": 348.54651723256734
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 123.62683092383898,
+          "fc_at399": 0.30984168151338093,
+          "fc_at_base_proposed_price": 0.3482445941516591,
+          "unrounded_price_for35": 353.21951692525425
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 125.2623808162794,
+          "fc_at399": 0.3139408040508256,
+          "fc_at_base_proposed_price": 0.35285177694726594,
+          "unrounded_price_for35": 357.89251661794117
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 194.99917576824063,
+          "fc_at399": 0.4887197387675204,
+          "fc_at_base_proposed_price": 0.5492934528682835,
+          "unrounded_price_for35": 557.1405021949732
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 196.63472566068106,
+          "fc_at399": 0.49281886130496505,
+          "fc_at_base_proposed_price": 0.5539006356638903,
+          "unrounded_price_for35": 561.8135018876602
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 198.2702755531215,
+          "fc_at399": 0.4969179838424098,
+          "fc_at_base_proposed_price": 0.5585078184594972,
+          "unrounded_price_for35": 566.4865015803472
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 179.5047313237962,
+          "fc_at399": 0.4498865446711684,
+          "fc_at_base_proposed_price": 0.5056471304895668,
+          "unrounded_price_for35": 512.870660925132
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 181.14028121623662,
+          "fc_at399": 0.45398566720861305,
+          "fc_at_base_proposed_price": 0.5102543132851736,
+          "unrounded_price_for35": 517.5436606178189
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 182.77583110867707,
+          "fc_at399": 0.4580847897460578,
+          "fc_at_base_proposed_price": 0.5148614960807805,
+          "unrounded_price_for35": 522.216660310506
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 172.98075471560907,
+          "fc_at399": 0.43353572610428337,
+          "fc_at_base_proposed_price": 0.487269731593265,
+          "unrounded_price_for35": 494.23072775888306
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 174.6163046080495,
+          "fc_at399": 0.437634848641728,
+          "fc_at_base_proposed_price": 0.4918769143888718,
+          "unrounded_price_for35": 498.90372745157
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 176.25185450048994,
+          "fc_at399": 0.4417339711791728,
+          "fc_at_base_proposed_price": 0.4964840971844787,
+          "unrounded_price_for35": 503.576727144257
+        }
+      ],
+      "unpriced": [
+        "sesame_if_used",
+        "water_in_rice",
+        "packaging_and_order_sidekit",
+        "process_specific_energy_labour_equipment"
+      ],
+      "status": "new_paper_candidate_not_production_recipe"
+    },
+    {
+      "recipe": {
+        "group": "Запечённые",
+        "base": {
+          "rice": 110,
+          "nori": 0.5
+        },
+        "inner": {
+          "tuna_plain": 40,
+          "mozzarella": 30,
+          "cream_cheese": 20,
+          "cucumber": 10
+        },
+        "frying": {},
+        "id": "T4",
+        "name": "Тунец с моцареллой",
+        "sauce_hat": {
+          "cheese_sauce": 75
+        },
+        "drizzle": {
+          "teriyaki": 5
+        },
+        "physical_portion_status": "target40g prepared tuna portion; no measured piece count/dose/yield. Other ready grams inherited as analytical template, not changed production recipes."
+      },
+      "food_subtotal_rub": 128.55201900524492,
+      "lines": [
+        {
+          "stage": "base",
+          "component": "rice",
+          "amount": 110,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.0577324802975482,
+          "cost_rub": 6.350572832730301
+        },
+        {
+          "stage": "base",
+          "component": "nori",
+          "amount": 0.5,
+          "unit": "sheet",
+          "unit_cost_rub": 9.4,
+          "cost_rub": 4.7
+        },
+        {
+          "stage": "inner",
+          "component": "tuna_plain",
+          "amount": 40,
+          "unit": "g_ready",
+          "unit_cost_rub": 1.6655555555555555,
+          "cost_rub": 66.62222222222222
+        },
+        {
+          "stage": "inner",
+          "component": "mozzarella",
+          "amount": 30,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.38,
+          "cost_rub": 11.4
+        },
+        {
+          "stage": "inner",
+          "component": "cream_cheese",
+          "amount": 20,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.5005,
+          "cost_rub": 10.009999999999998
+        },
+        {
+          "stage": "inner",
+          "component": "cucumber",
+          "amount": 10,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.23827160555555554,
+          "cost_rub": 2.3827160555555555
+        },
+        {
+          "stage": "sauce_hat",
+          "component": "cheese_sauce",
+          "amount": 75.0,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.3496421052631579,
+          "cost_rub": 26.223157894736843
+        },
+        {
+          "stage": "drizzle",
+          "component": "teriyaki",
+          "amount": 5,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.17267,
+          "cost_rub": 0.86335
+        }
+      ],
+      "unrounded_price_for35": 367.29148287212837,
+      "proposed_menu_price_rub": 370,
+      "fc_at_proposed_price": 0.34743788920336466,
+      "fc_at399": 0.32218551129134065,
+      "sensitivity": [
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 135.13158625670692,
+          "fc_at399": 0.3386756547787141,
+          "fc_at_base_proposed_price": 0.3652205033965052,
+          "unrounded_price_for35": 386.0902464477341
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 136.8797967830227,
+          "fc_at399": 0.3430571347945431,
+          "fc_at_base_proposed_price": 0.3699453967108722,
+          "unrounded_price_for35": 391.08513366577915
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 138.6280073093385,
+          "fc_at399": 0.3474386148103722,
+          "fc_at_base_proposed_price": 0.3746702900252392,
+          "unrounded_price_for35": 396.0800208838243
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 126.80380847892913,
+          "fc_at399": 0.3178040312755116,
+          "fc_at_base_proposed_price": 0.3427129958889976,
+          "unrounded_price_for35": 362.29659565408326
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 128.55201900524492,
+          "fc_at399": 0.32218551129134065,
+          "fc_at_base_proposed_price": 0.34743788920336466,
+          "unrounded_price_for35": 367.29148287212837
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 130.30022953156072,
+          "fc_at399": 0.3265669913071697,
+          "fc_at_base_proposed_price": 0.35216278251773164,
+          "unrounded_price_for35": 372.2863700901735
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 123.29737573039112,
+          "fc_at399": 0.30901597927416324,
+          "fc_at_base_proposed_price": 0.3332361506226787,
+          "unrounded_price_for35": 352.27821637254607
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 125.04558625670691,
+          "fc_at399": 0.31339745928999224,
+          "fc_at_base_proposed_price": 0.33796104393704574,
+          "unrounded_price_for35": 357.2731035905912
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 126.7937967830227,
+          "fc_at399": 0.3177789393058213,
+          "fc_at_base_proposed_price": 0.3426859372514127,
+          "unrounded_price_for35": 362.2679908086363
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 139.0815862567069,
+          "fc_at399": 0.34857540415214766,
+          "fc_at_base_proposed_price": 0.37589617907218087,
+          "unrounded_price_for35": 397.3759607334483
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 140.8297967830227,
+          "fc_at399": 0.35295688416797666,
+          "fc_at_base_proposed_price": 0.3806210723865478,
+          "unrounded_price_for35": 402.37084795149343
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 142.5780073093385,
+          "fc_at399": 0.3573383641838057,
+          "fc_at_base_proposed_price": 0.38534596570091484,
+          "unrounded_price_for35": 407.36573516953854
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 130.31491959004026,
+          "fc_at399": 0.3266038084963415,
+          "fc_at_base_proposed_price": 0.3522024853784872,
+          "unrounded_price_for35": 372.32834168582934
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 132.06313011635604,
+          "fc_at399": 0.3309852885121705,
+          "fc_at_base_proposed_price": 0.3569273786928541,
+          "unrounded_price_for35": 377.3232289038744
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 133.81134064267184,
+          "fc_at399": 0.33536676852799957,
+          "fc_at_base_proposed_price": 0.36165227200722116,
+          "unrounded_price_for35": 382.31811612191956
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 126.6236915198648,
+          "fc_at399": 0.3173526103254757,
+          "fc_at_base_proposed_price": 0.34222619329693194,
+          "unrounded_price_for35": 361.7819757710423
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 128.3719020461806,
+          "fc_at399": 0.32173409034130473,
+          "fc_at_base_proposed_price": 0.3469510866112989,
+          "unrounded_price_for35": 366.7768629890874
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 130.1201125724964,
+          "fc_at399": 0.32611557035713384,
+          "fc_at_base_proposed_price": 0.35167597992566596,
+          "unrounded_price_for35": 371.7717502071326
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 199.6315862567069,
+          "fc_at399": 0.5003297901170599,
+          "fc_at_base_proposed_price": 0.5395448277208295,
+          "unrounded_price_for35": 570.3759607334483
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 201.3797967830227,
+          "fc_at399": 0.504711270132889,
+          "fc_at_base_proposed_price": 0.5442697210351964,
+          "unrounded_price_for35": 575.3708479514935
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 203.12800730933847,
+          "fc_at399": 0.509092750148718,
+          "fc_at_base_proposed_price": 0.5489946143495634,
+          "unrounded_price_for35": 580.3657351695385
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 184.13714181226246,
+          "fc_at399": 0.4614965960207079,
+          "fc_at_base_proposed_price": 0.4976679508439526,
+          "unrounded_price_for35": 526.106119463607
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 185.88535233857826,
+          "fc_at399": 0.46587807603653697,
+          "fc_at_base_proposed_price": 0.5023928441583196,
+          "unrounded_price_for35": 531.1010066816522
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 187.63356286489403,
+          "fc_at399": 0.47025955605236597,
+          "fc_at_base_proposed_price": 0.5071177374726866,
+          "unrounded_price_for35": 536.0958938996972
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 177.61316520407533,
+          "fc_at399": 0.4451457774538229,
+          "fc_at_base_proposed_price": 0.48003558163263604,
+          "unrounded_price_for35": 507.4661862973581
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 179.36137573039113,
+          "fc_at399": 0.44952725746965194,
+          "fc_at_base_proposed_price": 0.4847604749470031,
+          "unrounded_price_for35": 512.4610735154033
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 181.1095862567069,
+          "fc_at399": 0.45390873748548094,
+          "fc_at_base_proposed_price": 0.48948536826137,
+          "unrounded_price_for35": 517.4559607334484
+        }
+      ],
+      "unpriced": [
+        "sesame_if_used",
+        "water_in_rice",
+        "packaging_and_order_sidekit",
+        "process_specific_energy_labour_equipment"
+      ],
+      "status": "new_paper_candidate_not_production_recipe"
+    },
+    {
+      "recipe": {
+        "group": "Жареные",
+        "base": {
+          "rice": 110,
+          "nori": 0.5
+        },
+        "inner": {
+          "tuna_plain": 40,
+          "crab_mix": 40,
+          "cucumber": 20
+        },
+        "frying": {
+          "batter": 25,
+          "crumbs": 15,
+          "oil": 5
+        },
+        "id": "T5",
+        "name": "Тунец и краб темпура",
+        "sauce_hat": {
+          "spice": 75
+        },
+        "drizzle": {
+          "unagi": 5
+        },
+        "physical_portion_status": "target40g prepared tuna portion; no measured piece count/dose/yield. Other ready grams inherited as analytical template, not changed production recipes."
+      },
+      "food_subtotal_rub": 128.32538228733813,
+      "lines": [
+        {
+          "stage": "base",
+          "component": "rice",
+          "amount": 110,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.0577324802975482,
+          "cost_rub": 6.350572832730301
+        },
+        {
+          "stage": "base",
+          "component": "nori",
+          "amount": 0.5,
+          "unit": "sheet",
+          "unit_cost_rub": 9.4,
+          "cost_rub": 4.7
+        },
+        {
+          "stage": "inner",
+          "component": "tuna_plain",
+          "amount": 40,
+          "unit": "g_ready",
+          "unit_cost_rub": 1.6655555555555555,
+          "cost_rub": 66.62222222222222
+        },
+        {
+          "stage": "inner",
+          "component": "crab_mix",
+          "amount": 40,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.4094109387755102,
+          "cost_rub": 16.37643755102041
+        },
+        {
+          "stage": "inner",
+          "component": "cucumber",
+          "amount": 20,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.23827160555555554,
+          "cost_rub": 4.765432111111111
+        },
+        {
+          "stage": "sauce_hat",
+          "component": "spice",
+          "amount": 75.0,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.32407647906657516,
+          "cost_rub": 24.305735929993137
+        },
+        {
+          "stage": "drizzle",
+          "component": "unagi",
+          "amount": 5,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.17267,
+          "cost_rub": 0.86335
+        },
+        {
+          "stage": "frying",
+          "component": "batter",
+          "amount": 25,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.029103103448275863,
+          "cost_rub": 0.7275775862068966
+        },
+        {
+          "stage": "frying",
+          "component": "crumbs",
+          "amount": 15,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.192,
+          "cost_rub": 2.88
+        },
+        {
+          "stage": "frying",
+          "component": "oil",
+          "amount": 5,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.14681081081081082,
+          "cost_rub": 0.7340540540540541
+        }
+      ],
+      "unrounded_price_for35": 366.6439493923947,
+      "proposed_menu_price_rub": 370,
+      "fc_at_proposed_price": 0.3468253575333463,
+      "fc_at399": 0.32161749946701285,
+      "sensitivity": [
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 135.03277766978303,
+          "fc_at399": 0.33842801420998253,
+          "fc_at_base_proposed_price": 0.36495345316157574,
+          "unrounded_price_for35": 385.8079361993801
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 136.6531600651159,
+          "fc_at399": 0.34248912297021533,
+          "fc_at_base_proposed_price": 0.36933286504085383,
+          "unrounded_price_for35": 390.4376001860455
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 138.2735424604488,
+          "fc_at399": 0.34655023173044813,
+          "fc_at_base_proposed_price": 0.37371227692013187,
+          "unrounded_price_for35": 395.06726417271085
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 126.70499989200525,
+          "fc_at399": 0.31755639070678005,
+          "fc_at_base_proposed_price": 0.3424459456540682,
+          "unrounded_price_for35": 362.0142854057293
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 128.32538228733813,
+          "fc_at399": 0.32161749946701285,
+          "fc_at_base_proposed_price": 0.3468253575333463,
+          "unrounded_price_for35": 366.6439493923947
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 129.945764682671,
+          "fc_at399": 0.32567860822724565,
+          "fc_at_base_proposed_price": 0.35120476941262435,
+          "unrounded_price_for35": 371.27361337906007
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 123.19856714346724,
+          "fc_at399": 0.3087683387054317,
+          "fc_at_base_proposed_price": 0.3329691003877493,
+          "unrounded_price_for35": 351.9959061241922
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 124.81894953880011,
+          "fc_at399": 0.31282944746566443,
+          "fc_at_base_proposed_price": 0.33734851226702733,
+          "unrounded_price_for35": 356.6255701108575
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 126.439331934133,
+          "fc_at399": 0.31689055622589724,
+          "fc_at_base_proposed_price": 0.3417279241463054,
+          "unrounded_price_for35": 361.2552340975229
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 138.98277766978302,
+          "fc_at399": 0.3483277635834161,
+          "fc_at_base_proposed_price": 0.3756291288372514,
+          "unrounded_price_for35": 397.0936504850944
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 140.6031600651159,
+          "fc_at399": 0.35238887234364885,
+          "fc_at_base_proposed_price": 0.38000854071652945,
+          "unrounded_price_for35": 401.72331447175975
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 142.22354246044878,
+          "fc_at399": 0.35644998110388165,
+          "fc_at_base_proposed_price": 0.38438795259580755,
+          "unrounded_price_for35": 406.3529784584251
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 130.21611100311637,
+          "fc_at399": 0.32635616792760996,
+          "fc_at_base_proposed_price": 0.35193543514355774,
+          "unrounded_price_for35": 372.04603143747534
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 131.83649339844925,
+          "fc_at399": 0.3304172766878427,
+          "fc_at_base_proposed_price": 0.35631484702283583,
+          "unrounded_price_for35": 376.6756954241407
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 133.45687579378213,
+          "fc_at399": 0.3344783854480755,
+          "fc_at_base_proposed_price": 0.3606942589021139,
+          "unrounded_price_for35": 381.3053594108061
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 126.52488293294093,
+          "fc_at399": 0.3171049697567442,
+          "fc_at_base_proposed_price": 0.3419591430620025,
+          "unrounded_price_for35": 361.49966552268836
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 128.1452653282738,
+          "fc_at399": 0.321166078516977,
+          "fc_at_base_proposed_price": 0.3463385549412806,
+          "unrounded_price_for35": 366.12932950935374
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 129.7656477236067,
+          "fc_at399": 0.32522718727720973,
+          "fc_at_base_proposed_price": 0.3507179668205586,
+          "unrounded_price_for35": 370.7589934960191
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 199.53277766978303,
+          "fc_at399": 0.5000821495483284,
+          "fc_at_base_proposed_price": 0.5392777774859001,
+          "unrounded_price_for35": 570.0936504850944
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 201.15316006511588,
+          "fc_at399": 0.5041432583085611,
+          "fc_at_base_proposed_price": 0.543657189365178,
+          "unrounded_price_for35": 574.7233144717597
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 202.77354246044877,
+          "fc_at399": 0.5082043670687939,
+          "fc_at_base_proposed_price": 0.5480366012444561,
+          "unrounded_price_for35": 579.3529784584251
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 184.0383332253386,
+          "fc_at399": 0.4612489554519764,
+          "fc_at_base_proposed_price": 0.4974009006090232,
+          "unrounded_price_for35": 525.8238092152532
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 185.65871562067144,
+          "fc_at399": 0.4653100642122091,
+          "fc_at_base_proposed_price": 0.5017803124883012,
+          "unrounded_price_for35": 530.4534732019184
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 187.27909801600433,
+          "fc_at399": 0.4693711729724419,
+          "fc_at_base_proposed_price": 0.5061597243675793,
+          "unrounded_price_for35": 535.0831371885838
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 177.51435661715146,
+          "fc_at399": 0.4448981368850914,
+          "fc_at_base_proposed_price": 0.47976853139770664,
+          "unrounded_price_for35": 507.1838760490042
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 179.13473901248432,
+          "fc_at399": 0.4489592456453241,
+          "fc_at_base_proposed_price": 0.4841479432769846,
+          "unrounded_price_for35": 511.8135400356695
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 180.7551214078172,
+          "fc_at399": 0.4530203544055569,
+          "fc_at_base_proposed_price": 0.4885273551562627,
+          "unrounded_price_for35": 516.4432040223348
+        }
+      ],
+      "unpriced": [
+        "sesame_if_used",
+        "water_in_rice",
+        "packaging_and_order_sidekit",
+        "process_specific_energy_labour_equipment"
+      ],
+      "status": "new_paper_candidate_not_production_recipe"
+    },
+    {
+      "recipe": {
+        "group": "Жареные",
+        "base": {
+          "rice": 110,
+          "nori": 0.5
+        },
+        "inner": {
+          "tuna_plain": 40,
+          "tamago": 30,
+          "cucumber": 30
+        },
+        "frying": {
+          "batter": 25,
+          "crumbs": 15,
+          "oil": 5
+        },
+        "id": "T6",
+        "name": "Тунец и тамаго темпура без шапки",
+        "sauce_hat": {},
+        "drizzle": {
+          "teriyaki": 5
+        },
+        "physical_portion_status": "target40g prepared tuna portion; no measured piece count/dose/yield. Other ready grams inherited as analytical template, not changed production recipes."
+      },
+      "food_subtotal_rub": 98.37076324766898,
+      "lines": [
+        {
+          "stage": "base",
+          "component": "rice",
+          "amount": 110,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.0577324802975482,
+          "cost_rub": 6.350572832730301
+        },
+        {
+          "stage": "base",
+          "component": "nori",
+          "amount": 0.5,
+          "unit": "sheet",
+          "unit_cost_rub": 9.4,
+          "cost_rub": 4.7
+        },
+        {
+          "stage": "inner",
+          "component": "tuna_plain",
+          "amount": 40,
+          "unit": "g_ready",
+          "unit_cost_rub": 1.6655555555555555,
+          "cost_rub": 66.62222222222222
+        },
+        {
+          "stage": "inner",
+          "component": "tamago",
+          "amount": 30,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.27816127952629466,
+          "cost_rub": 8.34483838578884
+        },
+        {
+          "stage": "inner",
+          "component": "cucumber",
+          "amount": 30,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.23827160555555554,
+          "cost_rub": 7.148148166666666
+        },
+        {
+          "stage": "drizzle",
+          "component": "teriyaki",
+          "amount": 5,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.17267,
+          "cost_rub": 0.86335
+        },
+        {
+          "stage": "frying",
+          "component": "batter",
+          "amount": 25,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.029103103448275863,
+          "cost_rub": 0.7275775862068966
+        },
+        {
+          "stage": "frying",
+          "component": "crumbs",
+          "amount": 15,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.192,
+          "cost_rub": 2.88
+        },
+        {
+          "stage": "frying",
+          "component": "oil",
+          "amount": 5,
+          "unit": "g_ready",
+          "unit_cost_rub": 0.14681081081081082,
+          "cost_rub": 0.7340540540540541
+        }
+      ],
+      "unrounded_price_for35": 281.05932356476853,
+      "proposed_menu_price_rub": 285,
+      "fc_at_proposed_price": 0.3451605727988385,
+      "fc_at399": 0.24654326628488465,
+      "sensitivity": [
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 106.69854102544676,
+          "fc_at399": 0.26741488978808714,
+          "fc_at_base_proposed_price": 0.374380845703322,
+          "unrounded_price_for35": 304.8529743584193
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 106.69854102544676,
+          "fc_at399": 0.26741488978808714,
+          "fc_at_base_proposed_price": 0.374380845703322,
+          "unrounded_price_for35": 304.8529743584193
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 106.69854102544676,
+          "fc_at399": 0.26741488978808714,
+          "fc_at_base_proposed_price": 0.374380845703322,
+          "unrounded_price_for35": 304.8529743584193
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 98.37076324766898,
+          "fc_at399": 0.24654326628488465,
+          "fc_at_base_proposed_price": 0.3451605727988385,
+          "unrounded_price_for35": 281.05932356476853
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 98.37076324766898,
+          "fc_at399": 0.24654326628488465,
+          "fc_at_base_proposed_price": 0.3451605727988385,
+          "unrounded_price_for35": 281.05932356476853
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 98.37076324766898,
+          "fc_at399": 0.24654326628488465,
+          "fc_at_base_proposed_price": 0.3451605727988385,
+          "unrounded_price_for35": 281.05932356476853
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 94.86433049913097,
+          "fc_at399": 0.23775521428353627,
+          "fc_at_base_proposed_price": 0.3328572999969508,
+          "unrounded_price_for35": 271.04094428323134
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 94.86433049913097,
+          "fc_at399": 0.23775521428353627,
+          "fc_at_base_proposed_price": 0.3328572999969508,
+          "unrounded_price_for35": 271.04094428323134
+        },
+        {
+          "tuna_price_scenario": "metro_plain_fillet_cached_card",
+          "tuna_price_rub_kg": 1499,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 94.86433049913097,
+          "fc_at399": 0.23775521428353627,
+          "fc_at_base_proposed_price": 0.3328572999969508,
+          "unrounded_price_for35": 271.04094428323134
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 110.64854102544675,
+          "fc_at399": 0.27731463916152066,
+          "fc_at_base_proposed_price": 0.38824049482612893,
+          "unrounded_price_for35": 316.1386886441336
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 110.64854102544675,
+          "fc_at399": 0.27731463916152066,
+          "fc_at_base_proposed_price": 0.38824049482612893,
+          "unrounded_price_for35": 316.1386886441336
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 110.64854102544675,
+          "fc_at399": 0.27731463916152066,
+          "fc_at_base_proposed_price": 0.38824049482612893,
+          "unrounded_price_for35": 316.1386886441336
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 101.8818743587801,
+          "fc_at399": 0.2553430435057145,
+          "fc_at_base_proposed_price": 0.35748026090800034,
+          "unrounded_price_for35": 291.09106959651456
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 101.8818743587801,
+          "fc_at399": 0.2553430435057145,
+          "fc_at_base_proposed_price": 0.35748026090800034,
+          "unrounded_price_for35": 291.09106959651456
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 101.8818743587801,
+          "fc_at399": 0.2553430435057145,
+          "fc_at_base_proposed_price": 0.35748026090800034,
+          "unrounded_price_for35": 291.09106959651456
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 98.19064628860465,
+          "fc_at399": 0.24609184533484876,
+          "fc_at_base_proposed_price": 0.3445285834687883,
+          "unrounded_price_for35": 280.5447036817276
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 98.19064628860465,
+          "fc_at399": 0.24609184533484876,
+          "fc_at_base_proposed_price": 0.3445285834687883,
+          "unrounded_price_for35": 280.5447036817276
+        },
+        {
+          "tuna_price_scenario": "metro_vkusart500g_cached_card",
+          "tuna_price_rub_kg": 1578,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 98.19064628860465,
+          "fc_at399": 0.24609184533484876,
+          "fc_at_base_proposed_price": 0.3445285834687883,
+          "unrounded_price_for35": 280.5447036817276
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 171.19854102544676,
+          "fc_at399": 0.42906902512643297,
+          "fc_at_base_proposed_price": 0.6006966351770062,
+          "unrounded_price_for35": 489.13868864413365
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 171.19854102544676,
+          "fc_at399": 0.42906902512643297,
+          "fc_at_base_proposed_price": 0.6006966351770062,
+          "unrounded_price_for35": 489.13868864413365
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.8,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 171.19854102544676,
+          "fc_at399": 0.42906902512643297,
+          "fc_at_base_proposed_price": 0.6006966351770062,
+          "unrounded_price_for35": 489.13868864413365
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 155.70409658100232,
+          "fc_at399": 0.39023583103008097,
+          "fc_at_base_proposed_price": 0.5463301634421134,
+          "unrounded_price_for35": 444.8688473742924
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 155.70409658100232,
+          "fc_at399": 0.39023583103008097,
+          "fc_at_base_proposed_price": 0.5463301634421134,
+          "unrounded_price_for35": 444.8688473742924
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.9,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 155.70409658100232,
+          "fc_at399": 0.39023583103008097,
+          "fc_at_base_proposed_price": 0.5463301634421134,
+          "unrounded_price_for35": 444.8688473742924
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 70,
+          "food_subtotal_rub": 149.1801199728152,
+          "fc_at399": 0.37388501246319594,
+          "fc_at_base_proposed_price": 0.5234390174484743,
+          "unrounded_price_for35": 426.2289142080434
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 75,
+          "food_subtotal_rub": 149.1801199728152,
+          "fc_at399": 0.37388501246319594,
+          "fc_at_base_proposed_price": 0.5234390174484743,
+          "unrounded_price_for35": 426.2289142080434
+        },
+        {
+          "tuna_price_scenario": "metro_taishan_sakuAAA_cached_card",
+          "tuna_price_rub_kg": 2789,
+          "assumed_yield": 0.95,
+          "hat_g_if_present": 80,
+          "food_subtotal_rub": 149.1801199728152,
+          "fc_at399": 0.37388501246319594,
+          "fc_at_base_proposed_price": 0.5234390174484743,
+          "unrounded_price_for35": 426.2289142080434
+        }
+      ],
+      "unpriced": [
+        "sesame_if_used",
+        "water_in_rice",
+        "packaging_and_order_sidekit",
+        "process_specific_energy_labour_equipment"
+      ],
+      "status": "new_paper_candidate_not_production_recipe"
+    }
+  ],
+  "source_sha256": {
+    "2026-10-22-chicken-rolls-and-sets/inputs.json": "94f9862e70d410c0cdfbd0eb3fc7e206f88bcbac396a90eacf817851b6b1c8da",
+    "2026-10-22-chicken-rolls-and-sets/results.json": "347110dd493b26cdefce2edb92ed01f33b9f4dbe91954b1e0002a04c9d8637d8",
+    "2026-10-22-sauce-hat-correction/inputs.json": "ae17a742eb1feca9c2c42654a03d148bd2933437b3eefb3d9bd3f0b0cc5b4f1f"
+  },
+  "limits": [
+    "No confirmed current METRO quote/region: search cache about3weeks-month old, direct open redirect loop. Do not present promotions or category price as current.",
+    "Ordinary tuna preparation and edible yield not confirmed. 90% assumed for baseline, 80/95% sensitivity. Not salmon or smoked tuna yield.",
+    "40g tuna means ready edible filling. Nominal grams not validated physical unit, no invented15g pieces or calibrated dose.",
+    "Cold/baked/fried group does not define specific fish processing, raw-use suitability, process labour or heat losses; not a ready production techcard.",
+    "Food cost denominator is proposed menu price before promotions. Historical399 cap is carried as scenario, not new permanent rule. Price formula cost/.35 rounded up5 unless399 is enough.",
+    "Only permitted sauce hats, total70–80g. 75g central analytical assumption; teriyaki/unagi5g separate proxy. T6 no hat is a new separate recipe.",
+    "Crab-mix80/20 counted by actual crab share; no inside cheese in T2/T5. No tuna cover or tartar added under previous allowed covers.",
+    "Other ingredient inputs dated21Oct unchanged; unknown water/sesame/packaging/sidekit/labour/equipment not assumed free. Frying25/15/5 proxy not measured use.",
+    "All previous recipes and set composition/prices unchanged. This is six new candidates, not approved menu, procurement or staffing/profit result."
+  ],
+  "checks": [
+    {
+      "check": "T1 inner100",
+      "status": "PASS"
+    },
+    {
+      "check": "T1 tuna40",
+      "status": "PASS"
+    },
+    {
+      "check": "T1 minimum primary30%",
+      "status": "PASS"
+    },
+    {
+      "check": "T1 rice110/nori0.5",
+      "status": "PASS"
+    },
+    {
+      "check": "T1 allowed hats only",
+      "status": "PASS"
+    },
+    {
+      "check": "T1 drizzles separate",
+      "status": "PASS"
+    },
+    {
+      "check": "T1 no unauthorized tuna covers or tartars",
+      "status": "PASS"
+    },
+    {
+      "check": "T1 price<=399 and FC<=35",
+      "status": "PASS"
+    },
+    {
+      "check": "T1 sensitivity monotonic yield",
+      "status": "PASS"
+    },
+    {
+      "check": "T1 sensitivity monotonic hat",
+      "status": "PASS"
+    },
+    {
+      "check": "T2 inner100",
+      "status": "PASS"
+    },
+    {
+      "check": "T2 tuna40",
+      "status": "PASS"
+    },
+    {
+      "check": "T2 minimum primary30%",
+      "status": "PASS"
+    },
+    {
+      "check": "T2 crab itself>=30%",
+      "status": "PASS"
+    },
+    {
+      "check": "T2 no cheese with crab",
+      "status": "PASS"
+    },
+    {
+      "check": "T2 rice110/nori0.5",
+      "status": "PASS"
+    },
+    {
+      "check": "T2 allowed hats only",
+      "status": "PASS"
+    },
+    {
+      "check": "T2 drizzles separate",
+      "status": "PASS"
+    },
+    {
+      "check": "T2 no unauthorized tuna covers or tartars",
+      "status": "PASS"
+    },
+    {
+      "check": "T2 price<=399 and FC<=35",
+      "status": "PASS"
+    },
+    {
+      "check": "T2 sensitivity monotonic yield",
+      "status": "PASS"
+    },
+    {
+      "check": "T2 sensitivity monotonic hat",
+      "status": "PASS"
+    },
+    {
+      "check": "T3 inner100",
+      "status": "PASS"
+    },
+    {
+      "check": "T3 tuna40",
+      "status": "PASS"
+    },
+    {
+      "check": "T3 minimum primary30%",
+      "status": "PASS"
+    },
+    {
+      "check": "T3 rice110/nori0.5",
+      "status": "PASS"
+    },
+    {
+      "check": "T3 allowed hats only",
+      "status": "PASS"
+    },
+    {
+      "check": "T3 drizzles separate",
+      "status": "PASS"
+    },
+    {
+      "check": "T3 no unauthorized tuna covers or tartars",
+      "status": "PASS"
+    },
+    {
+      "check": "T3 price<=399 and FC<=35",
+      "status": "PASS"
+    },
+    {
+      "check": "T3 sensitivity monotonic yield",
+      "status": "PASS"
+    },
+    {
+      "check": "T3 sensitivity monotonic hat",
+      "status": "PASS"
+    },
+    {
+      "check": "T4 inner100",
+      "status": "PASS"
+    },
+    {
+      "check": "T4 tuna40",
+      "status": "PASS"
+    },
+    {
+      "check": "T4 minimum primary30%",
+      "status": "PASS"
+    },
+    {
+      "check": "T4 rice110/nori0.5",
+      "status": "PASS"
+    },
+    {
+      "check": "T4 allowed hats only",
+      "status": "PASS"
+    },
+    {
+      "check": "T4 drizzles separate",
+      "status": "PASS"
+    },
+    {
+      "check": "T4 no unauthorized tuna covers or tartars",
+      "status": "PASS"
+    },
+    {
+      "check": "T4 price<=399 and FC<=35",
+      "status": "PASS"
+    },
+    {
+      "check": "T4 sensitivity monotonic yield",
+      "status": "PASS"
+    },
+    {
+      "check": "T4 sensitivity monotonic hat",
+      "status": "PASS"
+    },
+    {
+      "check": "T5 inner100",
+      "status": "PASS"
+    },
+    {
+      "check": "T5 tuna40",
+      "status": "PASS"
+    },
+    {
+      "check": "T5 minimum primary30%",
+      "status": "PASS"
+    },
+    {
+      "check": "T5 crab itself>=30%",
+      "status": "PASS"
+    },
+    {
+      "check": "T5 no cheese with crab",
+      "status": "PASS"
+    },
+    {
+      "check": "T5 rice110/nori0.5",
+      "status": "PASS"
+    },
+    {
+      "check": "T5 allowed hats only",
+      "status": "PASS"
+    },
+    {
+      "check": "T5 drizzles separate",
+      "status": "PASS"
+    },
+    {
+      "check": "T5 no unauthorized tuna covers or tartars",
+      "status": "PASS"
+    },
+    {
+      "check": "T5 price<=399 and FC<=35",
+      "status": "PASS"
+    },
+    {
+      "check": "T5 sensitivity monotonic yield",
+      "status": "PASS"
+    },
+    {
+      "check": "T5 sensitivity monotonic hat",
+      "status": "PASS"
+    },
+    {
+      "check": "T6 inner100",
+      "status": "PASS"
+    },
+    {
+      "check": "T6 tuna40",
+      "status": "PASS"
+    },
+    {
+      "check": "T6 minimum primary30%",
+      "status": "PASS"
+    },
+    {
+      "check": "T6 rice110/nori0.5",
+      "status": "PASS"
+    },
+    {
+      "check": "T6 allowed hats only",
+      "status": "PASS"
+    },
+    {
+      "check": "T6 drizzles separate",
+      "status": "PASS"
+    },
+    {
+      "check": "T6 no unauthorized tuna covers or tartars",
+      "status": "PASS"
+    },
+    {
+      "check": "T6 price<=399 and FC<=35",
+      "status": "PASS"
+    },
+    {
+      "check": "T6 sensitivity monotonic yield",
+      "status": "PASS"
+    },
+    {
+      "check": "T6 sensitivity monotonic hat",
+      "status": "PASS"
+    }
+  ]
+}

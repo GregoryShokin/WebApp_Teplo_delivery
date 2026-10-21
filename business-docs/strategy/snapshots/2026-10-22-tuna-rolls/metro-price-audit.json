@@ -1,0 +1,179 @@
+{
+  "retrieved_on": "2026-10-22",
+  "scope": "Official METRO online cards for ordinary non-smoked, non-canned tuna; web price orientation only.",
+  "verification_status": "official_search_index_or_cached_page_text; direct_open_redirect_loop; NOT confirmed live prices for2026-10-22",
+  "currency": "RUB",
+  "region": {
+    "product_card_region_confirmed": null,
+    "catalog_context_observed": "Москва, Ул. Ленинградское шоссе, д.71Г (м.Речной вокзал)",
+    "region_source_url": "https://online.metro-cc.ru/dynamic/tunec-11867",
+    "volgodonsk_or_rostov_store_not_selected": true,
+    "notice": "A default Moscow catalog header was visible in indexed category text; not proof that every independently cached card had the same selected store."
+  },
+  "products": [
+    {
+      "id": "271602",
+      "name": "Тунец филе без кожи без кости замороженный, ~1.5кг",
+      "url": "https://online.metro-cc.ru/products/file-tuntsa-svezhemorozhenoe-bez-kozhi-bez-kosti-zamorozhennoe-1-2kg",
+      "format": "замороженное филе без кожи и кости; без бренда",
+      "approx_pack_or_order_weight_kg": 1.5,
+      "packaging": "без упаковки, по карточке",
+      "country": "Вьетнам",
+      "price_unit": "кг покупного филе",
+      "online_reference_price_rub_per_kg": 1499,
+      "online_reference_type": "unstruck product-card reference price; cached, no current validity period shown",
+      "online_availability_note": "Card displayed online-price label but also Only in trading center; orderability not verified.",
+      "store_tiers": [
+        {
+          "minimum_kg": 1,
+          "rub_per_kg": 1329
+        },
+        {
+          "minimum_kg": 2,
+          "rub_per_kg": 1199
+        }
+      ],
+      "promotion_period": null,
+      "crawl_age_label": "3 weeks ago",
+      "short_source_excerpts": [
+        "Тунец филе без кожи без кости замороженный, ~1.5кг",
+        "1 499 д /кг",
+        "1 329 д /кг от 1 кг"
+      ],
+      "source_ref": "turn36search5",
+      "direct_open_result": "400 Redirect loop detected (turn39view0)",
+      "conflicting_category_caches": [
+        {
+          "regular_rub_per_kg": 1399,
+          "category_url": "https://online.metro-cc.ru/category/zamorozhennye-produkty/zamorozhennaya-ryba?page=3",
+          "source_ref": "turn35search5",
+          "treatment": "Do not replace direct-card1499 with a guaranteed current1399."
+        },
+        {
+          "discount_rub_per_kg": 1049,
+          "struck_rub_per_kg": 1399,
+          "category_url": "https://online.metro-cc.ru/category/zamorozhennye-produkty/zamorozhennaya-ryba/f/tip/tunets",
+          "source_ref": "turn35search2",
+          "treatment": "Promotion period not established; not used as activeprice."
+        }
+      ]
+    },
+    {
+      "id": "272837",
+      "name": "Тунец Вкусарт филе-кусок без кости замороженный, 500г",
+      "url": "https://online.metro-cc.ru/products/500g-tunets-vkusart-file-kusok-bk-zam",
+      "format": "замороженное филе-кусок; ВКУСАРТ",
+      "fixed_pack_weight_kg": 0.5,
+      "packaging": "пакет",
+      "country": "Китай",
+      "composition_as_listed": "Тунец желтоперый, вода.",
+      "online_reference_price_rub_per_pack": 789,
+      "online_reference_price_rub_per_kg_computed": 1578,
+      "store_tiers": [
+        {
+          "minimum_packs": 1,
+          "rub_per_pack": 699.01,
+          "rub_per_kg_computed": 1398.02
+        },
+        {
+          "minimum_packs": 2,
+          "rub_per_pack": 649,
+          "rub_per_kg_computed": 1298
+        }
+      ],
+      "online_reference_type": "unstruck product-card reference price; cached, no current validity period shown",
+      "promotion_period": null,
+      "crawl_age_label": "last month",
+      "short_source_excerpts": [
+        "Тунец Вкусарт филе-кусок без кости замороженный, 500г",
+        "789 д /шт",
+        "Тунец желтоперый, вода."
+      ],
+      "source_ref": "turn35search0",
+      "direct_open_result": "400 Redirect loop detected (turn39view1)",
+      "conflicting_category_caches": [
+        {
+          "discount_rub_per_pack": 649,
+          "struck_rub_per_pack": 789,
+          "store_discount_rub_per_pack": 579,
+          "category_url": "https://online.metro-cc.ru/dynamic/tunec-11867",
+          "source_ref": "turn32search2",
+          "treatment": "Unverified promotion period; not used as activeprice.649 as onlinecampaign price is distinct from649 as quantitytier storeprice."
+        }
+      ]
+    },
+    {
+      "id": "608525",
+      "name": "Тунец филе Taishan Саку ААА замороженный, ~650г",
+      "url": "https://online.metro-cc.ru/products/tunec-file-caku-svezhemorozhenyj",
+      "format": "замороженное филе, Саку ААА as productlabel; TAISHAN",
+      "approx_pack_or_order_weight_kg": 0.65,
+      "packaging": "вакуумная упаковка",
+      "country": "Китай",
+      "composition_as_listed": "Тунец филе.",
+      "online_reference_price_rub_per_kg": 2789,
+      "online_quantity_tiers": [
+        {
+          "minimum_kg": 3,
+          "rub_per_kg": 2519,
+          "displayed_discount_percent": 10
+        }
+      ],
+      "store_tiers": [
+        {
+          "minimum_kg": 1,
+          "rub_per_kg": 2829
+        },
+        {
+          "minimum_kg": 3,
+          "rub_per_kg": 2299
+        }
+      ],
+      "online_reference_type": "unstruck product-card price plus quantity-discount tier; cached, no calendar period shown",
+      "promotion_period": null,
+      "crawl_age_label": "last month",
+      "short_source_excerpts": [
+        "Тунец филе Taishan Саку ААА замороженный, ~650г",
+        "2 789 д /кг",
+        "2 519 д /кг от 3 кг"
+      ],
+      "source_ref": "turn32search0",
+      "direct_open_result": "400 Redirect loop detected (turn33view1)",
+      "conflicting_category_caches": [
+        {
+          "discount_rub_per_kg": 2229,
+          "struck_rub_per_kg": 2789,
+          "store_discount_rub_per_kg": 2269,
+          "category_url": "https://online.metro-cc.ru/category/zamorozhennye-produkty/zamorozhennaya-ryba/f/tip/tunets",
+          "source_ref": "turn35search2",
+          "treatment": "Unverified promotion period; not used as activeprice."
+        }
+      ]
+    }
+  ],
+  "excluded_expired_promotion": {
+    "id": "320046",
+    "name": "Тунец красный филе, ~950г",
+    "url": "https://online.metro-cc.ru/products/tunec-krasnyj-file-07-12kg",
+    "source_ref": "turn35search1",
+    "crawl_age_label": "last month",
+    "displayed_online_promo_rub_per_kg": 1579,
+    "displayed_struck_rub_per_kg": 1699.01,
+    "explicit_promotion_start": "2026-09-10",
+    "explicit_promotion_end": "2026-09-13",
+    "store_displayed_discount_rub_per_kg": 1449,
+    "short_source_excerpts": [
+      "Тунец красный филе, ~950г",
+      "Цена действует с 10 September 2026 по 13 September 2026"
+    ],
+    "reason": "Explicit September promotion expired before retrieval; neither1579 norassociateddiscountstore1449 is used as current price.1699.01 is only a struck historical reference, not verifiedcurrentnormalprice."
+  },
+  "interpretation_limits": [
+    "All prices are purchased-product prices, not ready rollfilling costs. Thawing, glazing, trimming and actual usable yield remain unknown.",
+    "No claim of raw-consumption suitability, safety, sensoryquality or sushi-grade status is made. AAA is only partof listedproductname.",
+    "Online and physicalstore prices/tier requirements are separate. No promotion is claimed active without confirmeddate.",
+    "No region selection was performed and no local stock or supplierquote was confirmed.",
+    "For the same product, category and productcard caches disagree. Prefer preserving both as datedreferences, not asserting real-timebestprice.",
+    "No business-system writes, orders or production changes."
+  ]
+}

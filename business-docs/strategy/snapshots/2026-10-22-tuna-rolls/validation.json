@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "calculator_checks": 64,
+  "independent_checks": 1117,
+  "scenarios": 162,
+  "independent_qa": "independent-qa.json",
+  "source_inputs_unchanged": true,
+  "menu_or_production_changed": false,
+  "price_current_live_confirmed": false,
+  "actual_tuna_yield": null,
+  "skill_validation": {
+    "repo": "PASS",
+    "installed": "PASS"
+  },
+  "semantic_review": "PASS: cached METRO prices and yield hypotheses explicit; allowed primary portions and hat/drizzle rules satisfied; no tuna covers or tartars; T6 new separate no-hat candidate; prior cards/sets unchanged.",
+  "git_diff_check": "PASS"
+}

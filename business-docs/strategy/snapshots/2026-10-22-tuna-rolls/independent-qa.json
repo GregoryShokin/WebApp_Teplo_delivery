@@ -1,0 +1,97 @@
+{
+  "as_of": "2026-10-22",
+  "status": "PASS",
+  "method": "Independent reconstruction from frozen Q29 unit costs and explicit tuna price/yield parameters. Did not execute repository calculate.py.",
+  "checks_executed": 1117,
+  "published_checks": 64,
+  "scenarios_audited": 162,
+  "errors": [],
+  "baseline": [
+    {
+      "id": "T1",
+      "food_subtotal_rub": 103.32157716606362,
+      "proposed_price_rub": 300,
+      "fc_base": 0.3444052572202121,
+      "fc_at399": 0.2589513212182046,
+      "materials_at80yield_80hat": 111.6493549438414,
+      "premium2789_y90_materials": 160.65491049939695,
+      "scenario_rows": 27
+    },
+    {
+      "id": "T2",
+      "food_subtotal_rub": 100.4758081964988,
+      "proposed_price_rub": 290,
+      "fc_base": 0.34646830412585794,
+      "fc_at399": 0.2518190681616511,
+      "materials_at80yield_80hat": 108.80358597427659,
+      "premium2789_y90_materials": 157.80914152983215,
+      "scenario_rows": 27
+    },
+    {
+      "id": "T3",
+      "food_subtotal_rub": 123.80694788290329,
+      "proposed_price_rub": 355,
+      "fc_base": 0.3487519658673332,
+      "fc_at399": 0.31029310246341674,
+      "materials_at80yield_80hat": 133.77027555312148,
+      "premium2789_y90_materials": 181.14028121623662,
+      "scenario_rows": 27
+    },
+    {
+      "id": "T4",
+      "food_subtotal_rub": 128.55201900524494,
+      "proposed_price_rub": 370,
+      "fc_base": 0.3474378892033647,
+      "fc_at399": 0.3221855112913407,
+      "materials_at80yield_80hat": 138.6280073093385,
+      "premium2789_y90_materials": 185.88535233857826,
+      "scenario_rows": 27
+    },
+    {
+      "id": "T5",
+      "food_subtotal_rub": 128.3253822873381,
+      "proposed_price_rub": 370,
+      "fc_base": 0.3468253575333462,
+      "fc_at399": 0.3216174994670128,
+      "materials_at80yield_80hat": 138.27354246044877,
+      "premium2789_y90_materials": 185.65871562067147,
+      "scenario_rows": 27
+    },
+    {
+      "id": "T6",
+      "food_subtotal_rub": 98.37076324766896,
+      "proposed_price_rub": 285,
+      "fc_base": 0.34516057279883844,
+      "fc_at399": 0.24654326628488463,
+      "materials_at80yield_80hat": 106.69854102544674,
+      "premium2789_y90_materials": 155.7040965810023,
+      "scenario_rows": 27
+    }
+  ],
+  "source_hashes_unchanged": {
+    "2026-10-22-chicken-rolls-and-sets/inputs.json": "94f9862e70d410c0cdfbd0eb3fc7e206f88bcbac396a90eacf817851b6b1c8da",
+    "2026-10-22-chicken-rolls-and-sets/results.json": "347110dd493b26cdefce2edb92ed01f33b9f4dbe91954b1e0002a04c9d8637d8",
+    "2026-10-22-sauce-hat-correction/inputs.json": "ae17a742eb1feca9c2c42654a03d148bd2933437b3eefb3d9bd3f0b0cc5b4f1f"
+  },
+  "price_and_yield_status": "1499/1578/2789 are indicative METRO card scenarios; region/live current quotation not confirmed. Actual tuna yield unknown,90% analytical assumption;80/95 sensitivity.",
+  "old_recipes_preserved": "Q29inputs/results and Q30inputs hashes match frozen provenance; newT6 nohat is a distinct recipe, no old recipe edited.",
+  "unknowns": "Sesame/water/orderpackaging/process labour not zero; omitted from material subtotal explicitly.",
+  "audited_files": {
+    "inputs.json": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-tuna-rolls/inputs.json",
+      "sha256": "ed3d0794a6b7ec218e80811d81d64da149b60cfdb72d83b0c74d435e79172155"
+    },
+    "results.json": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-tuna-rolls/results.json",
+      "sha256": "a03fa23e07e99abf727637e12945c0f62deb2bbe4086543e5b8ebbad64b2356b"
+    },
+    "calculate.py": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-tuna-rolls/calculate.py",
+      "sha256": "6495260b08097923a41e5c4a61ea356a4717cab208171b4a59b1c7d4f0c5f80d"
+    },
+    "report.md": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-tuna-rolls/report.md",
+      "sha256": "4299d873af5bdc06c5f012fe2a62a0f264539f2933397509f351c1c249a559d0"
+    }
+  }
+}

@@ -1,0 +1,180 @@
+{
+  "as_of": "2026-10-22",
+  "owner_decision": "Add ordinary non-smoked tuna as a primary ingredient; use METRO prices as indicative baseline. Canned tuna remains excluded.",
+  "components_source": "2026-10-22-chicken-rolls-and-sets/inputs.json",
+  "source_sha256": {
+    "2026-10-22-chicken-rolls-and-sets/inputs.json": "94f9862e70d410c0cdfbd0eb3fc7e206f88bcbac396a90eacf817851b6b1c8da",
+    "2026-10-22-chicken-rolls-and-sets/results.json": "347110dd493b26cdefce2edb92ed01f33b9f4dbe91954b1e0002a04c9d8637d8",
+    "2026-10-22-sauce-hat-correction/inputs.json": "ae17a742eb1feca9c2c42654a03d148bd2933437b3eefb3d9bd3f0b0cc5b4f1f"
+  },
+  "tuna_local_goods_id": "ae8d0a47-ab2f-4049-8f74-8903d6788bbb",
+  "tuna_price_base_rub_kg": 1499,
+  "tuna_price_scenarios_rub_kg": {
+    "metro_plain_fillet_cached_card": 1499,
+    "metro_vkusart500g_cached_card": 1578,
+    "metro_taishan_sakuAAA_cached_card": 2789
+  },
+  "tuna_price_status": "indicative cached official METRO product card, not live confirmed quote or own procurement; region unknown",
+  "yield_actual": null,
+  "yield_base_assumed": 0.9,
+  "yield_scenarios_assumed": [
+    0.8,
+    0.9,
+    0.95
+  ],
+  "hat_scenarios_g": [
+    70,
+    75,
+    80
+  ],
+  "new_recipes": [
+    {
+      "group": "Холодные",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "tuna_plain": 40,
+        "cream_cheese": 40,
+        "cucumber": 20
+      },
+      "frying": {},
+      "id": "T1",
+      "name": "Тунец, сыр и огурец",
+      "sauce_hat": {},
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "physical_portion_status": "target40g prepared tuna portion; no measured piece count/dose/yield. Other ready grams inherited as analytical template, not changed production recipes."
+    },
+    {
+      "group": "Холодные",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "tuna_plain": 40,
+        "crab_mix": 40,
+        "tamago": 20
+      },
+      "frying": {},
+      "id": "T2",
+      "name": "Тунец, краб и тамаго",
+      "sauce_hat": {},
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "physical_portion_status": "target40g prepared tuna portion; no measured piece count/dose/yield. Other ready grams inherited as analytical template, not changed production recipes."
+    },
+    {
+      "group": "Запечённые",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "tuna_plain": 40,
+        "tamago": 30,
+        "cream_cheese": 20,
+        "cucumber": 10
+      },
+      "frying": {},
+      "id": "T3",
+      "name": "Тунец яки",
+      "sauce_hat": {
+        "yaki": 75
+      },
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "physical_portion_status": "target40g prepared tuna portion; no measured piece count/dose/yield. Other ready grams inherited as analytical template, not changed production recipes."
+    },
+    {
+      "group": "Запечённые",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "tuna_plain": 40,
+        "mozzarella": 30,
+        "cream_cheese": 20,
+        "cucumber": 10
+      },
+      "frying": {},
+      "id": "T4",
+      "name": "Тунец с моцареллой",
+      "sauce_hat": {
+        "cheese_sauce": 75
+      },
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "physical_portion_status": "target40g prepared tuna portion; no measured piece count/dose/yield. Other ready grams inherited as analytical template, not changed production recipes."
+    },
+    {
+      "group": "Жареные",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "tuna_plain": 40,
+        "crab_mix": 40,
+        "cucumber": 20
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "id": "T5",
+      "name": "Тунец и краб темпура",
+      "sauce_hat": {
+        "spice": 75
+      },
+      "drizzle": {
+        "unagi": 5
+      },
+      "physical_portion_status": "target40g prepared tuna portion; no measured piece count/dose/yield. Other ready grams inherited as analytical template, not changed production recipes."
+    },
+    {
+      "group": "Жареные",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "tuna_plain": 40,
+        "tamago": 30,
+        "cucumber": 30
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "id": "T6",
+      "name": "Тунец и тамаго темпура без шапки",
+      "sauce_hat": {},
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "physical_portion_status": "target40g prepared tuna portion; no measured piece count/dose/yield. Other ready grams inherited as analytical template, not changed production recipes."
+    }
+  ],
+  "sesame_mass_g": null,
+  "limits": [
+    "No confirmed current METRO quote/region: search cache about3weeks-month old, direct open redirect loop. Do not present promotions or category price as current.",
+    "Ordinary tuna preparation and edible yield not confirmed. 90% assumed for baseline, 80/95% sensitivity. Not salmon or smoked tuna yield.",
+    "40g tuna means ready edible filling. Nominal grams not validated physical unit, no invented15g pieces or calibrated dose.",
+    "Cold/baked/fried group does not define specific fish processing, raw-use suitability, process labour or heat losses; not a ready production techcard.",
+    "Food cost denominator is proposed menu price before promotions. Historical399 cap is carried as scenario, not new permanent rule. Price formula cost/.35 rounded up5 unless399 is enough.",
+    "Only permitted sauce hats, total70–80g. 75g central analytical assumption; teriyaki/unagi5g separate proxy. T6 no hat is a new separate recipe.",
+    "Crab-mix80/20 counted by actual crab share; no inside cheese in T2/T5. No tuna cover or tartar added under previous allowed covers.",
+    "Other ingredient inputs dated21Oct unchanged; unknown water/sesame/packaging/sidekit/labour/equipment not assumed free. Frying25/15/5 proxy not measured use.",
+    "All previous recipes and set composition/prices unchanged. This is six new candidates, not approved menu, procurement or staffing/profit result."
+  ]
+}

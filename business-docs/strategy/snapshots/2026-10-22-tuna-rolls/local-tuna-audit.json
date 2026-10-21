@@ -1,0 +1,133 @@
+{
+  "as_of": "2026-10-22",
+  "source_snapshot_as_of": "2026-10-21",
+  "status": "read_only_local_preparation_audit_no_recipe_or_system_changes",
+  "entries": {
+    "plain": {
+      "product_id": "ae8d0a47-ab2f-4049-8f74-8903d6788bbb",
+      "name": "Тунец",
+      "type": "GOODS",
+      "deleted": false,
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "unitWeight": 1,
+      "coldLossPercent": 0,
+      "hotLossPercent": 0,
+      "purchase_price_rub_per_kg": null,
+      "price_date": null,
+      "purchase_unit": null,
+      "price_status": "unknown_in_local21Octpricebook",
+      "price_store_guid": null,
+      "standalone_preparation_charts": [],
+      "actual_edible_yield": null,
+      "cost_per_ready_kg": null,
+      "interpretation": "GOODS accounting unit and0% catalog losses do not establish a measured preparation yield. Smoked material is not the new ordinary tuna."
+    },
+    "smoked": {
+      "product_id": "a20e781a-d701-489e-8939-ae17c99cb922",
+      "name": "Тунец х/к",
+      "type": "GOODS",
+      "deleted": false,
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "unitWeight": 1,
+      "coldLossPercent": 0,
+      "hotLossPercent": 0,
+      "purchase_price_rub_per_kg": 1485.000334,
+      "price_date": "2026-09-18T16:11:00",
+      "purchase_unit": "кг",
+      "price_status": "lastpurchase_confirmed",
+      "price_store_guid": "8a55c561-2598-4150-ac28-1b03cf8a1835",
+      "standalone_preparation_charts": [],
+      "actual_edible_yield": null,
+      "cost_per_ready_kg": null,
+      "interpretation": "GOODS accounting unit and0% catalog losses do not establish a measured preparation yield. Smoked material is not the new ordinary tuna."
+    }
+  },
+  "ordinary_tuna_old_dish_example": {
+    "product_id": "f0109693-b397-4f7d-baa9-c010fb744696",
+    "name": "Горячий с тунцом",
+    "deleted": true,
+    "chart_id": "50970f4a-4e84-4d4b-a9fc-e9b780fa2078",
+    "date_from": "2022-03-04",
+    "tuna_amount_in_kg": 0.03,
+    "tuna_amount_middle_kg": 0.03,
+    "tuna_amount_out_kg": 0.03,
+    "interpretation": "An old deleted dish accounting30g->30g does not prove edible yield after thawing/cleaning/cooking."
+  },
+  "misleading_prepared_name": {
+    "product_id": "6ecd4f40-3961-4194-8d72-e10df03e6628",
+    "name": "Магуро кунсей",
+    "catalog_type": "PREPARED",
+    "catalog_main_unit": "кг",
+    "chart_id": "ff833c7e-5d49-4b2f-aa36-47999aa88459",
+    "chart_date_from": "2023-09-06",
+    "assembled_amount": 1,
+    "items": [
+      {
+        "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+        "name": "Нори",
+        "amount_in_purchase_or_ready_unit": 0.5,
+        "amount_out": 0.5
+      },
+      {
+        "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+        "name": "Рис для роллов пф",
+        "amount_in_purchase_or_ready_unit": 0.13,
+        "amount_out": 0.13
+      },
+      {
+        "product_id": "a20e781a-d701-489e-8939-ae17c99cb922",
+        "name": "Тунец х/к",
+        "amount_in_purchase_or_ready_unit": 0.03,
+        "amount_out": 0.03
+      },
+      {
+        "product_id": "3afb7b3f-7a70-4fda-bf4b-e8ce3d670c44",
+        "name": "Томаго",
+        "amount_in_purchase_or_ready_unit": 0.03,
+        "amount_out": 0.03
+      },
+      {
+        "product_id": "e9be1794-26e7-4d1d-95c9-48297896809d",
+        "name": "Соус Пикантный краб",
+        "amount_in_purchase_or_ready_unit": 0.04,
+        "amount_out": 0.04
+      },
+      {
+        "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+        "name": "Сыр творожный",
+        "amount_in_purchase_or_ready_unit": 0.02,
+        "amount_out": 0.02
+      }
+    ],
+    "interpretation": "This is a whole roll (rice,nori,smoked tuna,tamago,spicycrab,creamcheese), not a fish-only preparation; assembledAmount1 and catalogkg must not be treated as tuna processing yield."
+  },
+  "costing_rule": {
+    "formula": "q_ready_g * purchase_price_rub_per_kg / (1000 * measured_or_explicitly_assumed_yield)",
+    "actual_yield": null,
+    "numeric_model_scenarios": {
+      "base_assumed": 0.9,
+      "sensitivity_assumed": [
+        0.8,
+        0.95
+      ]
+    },
+    "prohibition": "Do not import salmon/smoked tuna yield or treat100% as fact. Store actual unknown separately from paper assumptions."
+  },
+  "sources": {
+    "products": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/recipes/raw/products.json",
+      "sha256": "ec329226e4c07027fed74bb2c9b7eca9b6495cdc63fa21c668f9c761a9a30eba"
+    },
+    "pricebook": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/costing/pricebook.json",
+      "sha256": "2f264f01a0f0c050e12e8c3eeab6672ee328e8d0031aa23b898652e8a6210876"
+    },
+    "charts21": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/root/raw/charts21.json",
+      "sha256": "70e8b18eee0734c4b43625577c27b9dddad1f21df2bb1161ec4e9178a92f6283"
+    }
+  },
+  "scope": "No METRO price validation performed in this local audit; external price evidence belongs to parent metro-price-audit.json."
+}
