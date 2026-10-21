@@ -1,0 +1,166 @@
+{
+  "as_of": "2026-10-21",
+  "status": "plan_only_no_final_recipes_or_production_changes",
+  "source": "Direct owner request and three async clarifications in current chat21Oct",
+  "confirmed_owner_inputs": {
+    "new_line_from_scratch": true,
+    "no_obligation_to_copy_existing_recipes": true,
+    "purchased_snow_crab_rub_per_kg": 450,
+    "crab_price_stage": "purchased product before any new filling mixture",
+    "cream_cheese_price_multiplier_vs_current": 1.3,
+    "rice_g": 110,
+    "ordinary_total_inside_filling_g_range": [
+      100,
+      110
+    ],
+    "hat_roll_total_inside_filling_g": "lower_than_ordinary; exact amount not yet selected",
+    "tartar_only_as_outer_hat": true,
+    "tartar_ready_hat_total_g_range": [
+      62,
+      80
+    ],
+    "tartar_mass_basis": "total ready mix, including sauce, not pure salmon mass",
+    "main_protein_categories": [
+      "лосось",
+      "креветка",
+      "мидии",
+      "угорь"
+    ],
+    "salmon_variants": [
+      "без копчения",
+      "холодного копчения"
+    ],
+    "tartar_salmon_variants": [
+      "без копчения",
+      "холодного копчения"
+    ],
+    "alternative_inner_bases": [
+      "творожный сыр",
+      "снежный краб"
+    ],
+    "cream_cheese_and_snow_crab_inside_same_roll": false,
+    "allowed_other_components": [
+      "тамаго",
+      "огурец",
+      "моцарелла",
+      "масаго"
+    ],
+    "allowed_main_sauces": [
+      "Spice",
+      "яки",
+      "сырный соус сверху"
+    ],
+    "allowed_thin_drizzles": [
+      "унаги",
+      "терияки"
+    ],
+    "fried_roll_components": [
+      "кляр",
+      "сухари",
+      "прочие реально используемые компоненты жарки, с отдельным учётом"
+    ]
+  },
+  "working_interpretations_not_additional_owner_rules": {
+    "main_protein_rule": "At least one of four categories per roll, combinations allowed; inferred from owner salmon+creamcheese and crab+salmon+shrimp examples, not all four simultaneously. Salmon tartar hat can provide the salmon accent.",
+    "rice_mass_basis": "cooked/prepared rice, inferred from previous prototype context",
+    "inside_filling_range_includes": "All inner ingredients combined: principal protein, filler, vegetables, tamago, mozzarella, inner sauce if used; excludes rice/nori and exterior hat/coating/drizzle.",
+    "cheese_crab_exclusion_scope": "Explicit exclusion concerns cream-cheese base plus snow crab inside; do not automatically extend to mozzarella or exterior cheese sauce.",
+    "paper_family_structure": "Consider cold/baked/fried constructions and hat rolls as a draft matrix; final assortment size not selected.",
+    "existing_sources_usage": "Current purchase book and preparation cards are dated reference inputs, not mandatory recipes for the new line. New mixtures must be explicitly designed.",
+    "sauce_bases": "Do not silently add old crab/tartar mayonnaise recipes or ingredients outside palette; any proposed mixture composition must be explicit."
+  },
+  "derived_price_scenario": {
+    "current_cream_cheese_rub_per_kg": 385,
+    "current_price_date": "2026-10-15T09:00:00",
+    "new_cream_cheese_rub_per_kg": 500.5,
+    "new_cheese_quote_status": "owner price uplift scenario, not supplier offer",
+    "direct_price_difference_vs_purchased_crab_rub_per_kg": 50.5,
+    "note": "Prices are close before mixture/yield effects; large savings from filler substitution are not proven."
+  },
+  "unresolved_parameters": [
+    {
+      "id": "N01",
+      "question": "Minimum meaningful grams of principal product for each category; and combined grams/split when two principal products share a roll.",
+      "kind": "design choice to propose and test; do not invent an approved minimum"
+    },
+    {
+      "id": "N02",
+      "question": "Exact total inside filling and composition for tartar-hat rolls below ordinary100–110g.",
+      "kind": "design choice; cannot automatically copy89g from Lava"
+    },
+    {
+      "id": "N03",
+      "question": "New crab mixture and each tartar mix proportions/yields; sauce and other components counted within62–80g hat.",
+      "kind": "design choice; current cards are reference only"
+    },
+    {
+      "id": "N04",
+      "question": "Applicability of ingredient form and preparation yield to the new raw material; especially eel53%, shrimp61.45%, mussels73% in current cards; mussel last price requires O13 check.",
+      "kind": "source/physical uncertainty; do not equate raw and ready prices"
+    },
+    {
+      "id": "N05",
+      "question": "Selling-price targets and proposed sets; calculate FC only after identifying net after applicable benefits.",
+      "kind": "owner commercial choice; can derive required prices from proposed compositions instead"
+    },
+    {
+      "id": "N06",
+      "question": "Future assortment quantities/sales mix and share of new line, final sizes and taste/delivery outcomes.",
+      "kind": "unobserved future outcomes; scenario weights only, no fabricated forecast"
+    }
+  ],
+  "work_plan": [
+    {
+      "step": 1,
+      "output": "Frozen brief and list of variables/interpretations; compare with owner request."
+    },
+    {
+      "step": 2,
+      "output": "Dated price and yield matrix for usable ingredients; apply crab450 at raw leaf, cheese+30% only at cream-cheese leaf; define new mixtures explicitly."
+    },
+    {
+      "step": 3,
+      "output": "Limited matrix of product families by principal protein, alternate inner base, cooking/construction; two salmon and two tartar variants. No automatic menu of every mathematical combination."
+    },
+    {
+      "step": 4,
+      "output": "Paper recipe alternatives: ordinary total inner100–110g, rice110g; hat total62–80g and separate smaller inner filling parameter. Explicit primary-protein share and exterior components."
+    },
+    {
+      "step": 5,
+      "output": "Per-variant material cost and alternative prices/FC under current and lighter benefits; whole sets counted once; mixture sales scenarios evaluate wholeline33%, not a33% ceiling per SKU."
+    },
+    {
+      "step": 6,
+      "output": "Candidate selection and future physical validation requirements: geometry, distribution, taste, delivered condition, portions and process effort. No kitchen trial initiated in this task."
+    }
+  ],
+  "economic_limits": [
+    "Existing8-prototype/Q19 wholeline30.05/28.05 results do not automatically apply after new crab/cheese/rice/menu changes.",
+    "33% remains a whole-rollline scenario target, not a hard ceiling for each recipe.",
+    "Without selling price no unique FC; without future sales weights no demonstrated weighted new-line FC.",
+    "A food-cost calculation alone does not prove500000 monthly net profit; full budget/capacity/demand update follows selection of offer."
+  ],
+  "no_changes_to": [
+    "production techcards",
+    "menu prices",
+    "promotions",
+    "orders or customer messaging",
+    "kitchen tests or equipment purchases"
+  ],
+  "source_sha256": {
+    "current_purchase_book": "2f264f01a0f0c050e12e8c3eeab6672ee328e8d0031aa23b898652e8a6210876"
+  },
+  "reference_sources": [
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/ingredient-unit-costs.json",
+      "sha256": "757e8ae62da3d1213d173458c8c0d945f4e43748250e903cc96dbc31ede15e59",
+      "role": "dated current21Oct reference only; not mandatory new recipe"
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/root/raw/charts21.json",
+      "sha256": "70e8b18eee0734c4b43625577c27b9dddad1f21df2bb1161ec4e9178a92f6283",
+      "role": "dated current21Oct reference only; not mandatory new recipe"
+    }
+  ]
+}
