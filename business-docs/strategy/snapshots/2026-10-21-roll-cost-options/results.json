@@ -54,7 +54,9 @@
         "salmon_plain": 0.3047619047619048
       },
       "note": "До минимума 31,5 г остаётся лишь 0,5 г; производственный допуск не доказан.",
-      "operational_status": "withdrawn_gram_shaving_not_executable"
+      "operational_status": "withdrawn_gram_shaving_not_executable",
+      "source_recipe_must_remain_unchanged": true,
+      "distinct_new_recipe_only_if_not_withdrawn": false
     },
     {
       "option_id": "A2",
@@ -96,7 +98,9 @@
         "salmon_plain": 0.3142857142857143
       },
       "note": "",
-      "operational_status": "withdrawn_gram_shaving_not_executable"
+      "operational_status": "withdrawn_gram_shaving_not_executable",
+      "source_recipe_must_remain_unchanged": true,
+      "distinct_new_recipe_only_if_not_withdrawn": false
     },
     {
       "option_id": "B1",
@@ -137,7 +141,9 @@
         "shrimp": 0.3047619047619048
       },
       "note": "Каждый основной 30,48%; краб здесь остаётся наполнителем. Запас лишь по 0,5 г.",
-      "operational_status": "withdrawn_gram_shaving_not_executable"
+      "operational_status": "withdrawn_gram_shaving_not_executable",
+      "source_recipe_must_remain_unchanged": true,
+      "distinct_new_recipe_only_if_not_withdrawn": false
     },
     {
       "option_id": "B2",
@@ -178,7 +184,9 @@
         "shrimp": 0.3142857142857143
       },
       "note": "",
-      "operational_status": "withdrawn_gram_shaving_not_executable"
+      "operational_status": "withdrawn_gram_shaving_not_executable",
+      "source_recipe_must_remain_unchanged": true,
+      "distinct_new_recipe_only_if_not_withdrawn": false
     },
     {
       "option_id": "C1",
@@ -221,7 +229,9 @@
         "crab_mix": 0.38095238095238093
       },
       "note": "40 г самого подготовленного краба; иной вкус, новый вариант карты.",
-      "operational_status": "mass_only_requires_defined_physical_portion"
+      "operational_status": "mass_only_requires_defined_physical_portion",
+      "source_recipe_must_remain_unchanged": true,
+      "distinct_new_recipe_only_if_not_withdrawn": true
     },
     {
       "option_id": "C2",
@@ -257,7 +267,9 @@
         "crab_mix": 0.49523809523809526
       },
       "note": "50 г лосося сверху сохранены. 52 г самого подготовленного краба внутри.",
-      "operational_status": "mass_only_requires_defined_physical_portion"
+      "operational_status": "mass_only_requires_defined_physical_portion",
+      "source_recipe_must_remain_unchanged": true,
+      "distinct_new_recipe_only_if_not_withdrawn": true
     },
     {
       "option_id": "D1",
@@ -293,7 +305,9 @@
       "inner_total_g": 90,
       "selected_main_fractions": {},
       "note": "Разрешённый диапазон 62–80 г; объём верха уменьшается, нужен визуальный контроль.",
-      "operational_status": "mass_only_requires_defined_physical_portion"
+      "operational_status": "mass_only_requires_defined_physical_portion",
+      "source_recipe_must_remain_unchanged": true,
+      "distinct_new_recipe_only_if_not_withdrawn": true
     },
     {
       "option_id": "D2",
@@ -329,7 +343,9 @@
       "inner_total_g": 90,
       "selected_main_fractions": {},
       "note": "Разрешённый диапазон 62–80 г; объём верха уменьшается, нужен визуальный контроль.",
-      "operational_status": "mass_only_requires_defined_physical_portion"
+      "operational_status": "mass_only_requires_defined_physical_portion",
+      "source_recipe_must_remain_unchanged": true,
+      "distinct_new_recipe_only_if_not_withdrawn": true
     },
     {
       "option_id": "E1",
@@ -370,7 +386,9 @@
         "mussels": 0.3333333333333333
       },
       "note": "Новая рецептура с другим названием и вкусом; мидии по книге цен 21.10, спорная закупка остаётся O13.",
-      "operational_status": "mass_only_requires_defined_physical_portion"
+      "operational_status": "mass_only_requires_defined_physical_portion",
+      "source_recipe_must_remain_unchanged": true,
+      "distinct_new_recipe_only_if_not_withdrawn": true
     },
     {
       "option_id": "F1",
@@ -410,7 +428,9 @@
         "crab_mix": 0.38095238095238093
       },
       "note": "Креветка исключена; новый ролл с лососем и крабом, а не прежний микс.",
-      "operational_status": "mass_only_requires_defined_physical_portion"
+      "operational_status": "mass_only_requires_defined_physical_portion",
+      "source_recipe_must_remain_unchanged": true,
+      "distinct_new_recipe_only_if_not_withdrawn": true
     },
     {
       "option_id": "F2",
@@ -450,7 +470,9 @@
         "crab_mix": 0.38095238095238093
       },
       "note": "Лосось исключён; новый ролл с креветкой и крабом, а не прежний микс.",
-      "operational_status": "mass_only_requires_defined_physical_portion"
+      "operational_status": "mass_only_requires_defined_physical_portion",
+      "source_recipe_must_remain_unchanged": true,
+      "distinct_new_recipe_only_if_not_withdrawn": true
     },
     {
       "option_id": "G1",
@@ -493,7 +515,9 @@
         "crab_mix": 0.40380952380952384
       },
       "note": "Эффекты пересчитаны вместе, не сложены из независимых вариантов; запас лосося 0,5 г.",
-      "operational_status": "withdrawn_gram_shaving_not_executable"
+      "operational_status": "withdrawn_gram_shaving_not_executable",
+      "source_recipe_must_remain_unchanged": true,
+      "distinct_new_recipe_only_if_not_withdrawn": false
     },
     {
       "option_id": "H1",
@@ -527,7 +551,9 @@
       "inner_total_g": 105,
       "selected_main_fractions": {},
       "note": "Иной вкус. Обе цены с выходами; свежий пересчёт старой книги, не новое предложение поставщика.",
-      "operational_status": "mass_only_requires_defined_physical_portion"
+      "operational_status": "mass_only_requires_defined_physical_portion",
+      "source_recipe_must_remain_unchanged": true,
+      "distinct_new_recipe_only_if_not_withdrawn": true
     }
   ],
   "new_crab_candidate": {
@@ -619,6 +645,12 @@
     "No physical trial, video timing, iiko/price/menu changes.",
     "New recipes do not inherit old profit thresholds without salesmix and paidcheck."
   ],
+  "owner_assortment_correction": {
+    "as_of": "2026-10-21",
+    "journal": "Q27",
+    "current_set_balancing_keeps_approved_recipes_and_weights": true,
+    "new_ingredients_are_candidates_not_approved_recipes": true
+  },
   "owner_portion_correction": {
     "as_of": "2026-10-21",
     "journal": "Q26",

@@ -1,0 +1,550 @@
+{
+  "as_of": "2026-10-21",
+  "status": "read_only_local_source_audit_no_live_requests_no_new_measurements_no_recipe_or_set_changes",
+  "scope": "Known accounting prices and current chart yields, not new supplier quotations or proven trial results. Absence means not found in the named local archives searched.",
+  "pricebook_period": {
+    "from": "2026-07-01T09:00:00",
+    "to": "2026-10-21T11:43:00",
+    "read_utc": "2026-10-21T09:56:31.063886+00:00"
+  },
+  "sources": {
+    "catalog": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/recipes/raw/products.json",
+      "sha256": "ec329226e4c07027fed74bb2c9b7eca9b6495cdc63fa21c668f9c761a9a30eba"
+    },
+    "pricebook": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/costing/pricebook.json",
+      "sha256": "2f264f01a0f0c050e12e8c3eeab6672ee328e8d0031aa23b898652e8a6210876"
+    },
+    "charts": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/root/raw/charts21.json",
+      "sha256": "70e8b18eee0734c4b43625577c27b9dddad1f21df2bb1161ec4e9178a92f6283"
+    },
+    "older_pricebook": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-14/a-private/work/pricebook-lastpurchase-2026-10-13.json",
+      "sha256": "a54273ceb72cb081145d22c7d59582ca772abde99a4e77d06ccf82ac0b53f65e"
+    }
+  },
+  "items": [
+    {
+      "key": "squid_carcass",
+      "name": "кальмар тушка",
+      "product_id": "2af4fd35-88bb-47f3-b384-9d5e9bdd0698",
+      "chart_id": null,
+      "unit": "kg of purchased product",
+      "purchase_unit": null,
+      "purchase_price_rub": null,
+      "price_date": null,
+      "price_status": "unknown_no_confirmed_purchase_in_archives_searched",
+      "yield": null,
+      "prepared_cost_rub_per_kg": null,
+      "source_refs": [
+        "catalog",
+        "pricebook"
+      ],
+      "notes": [
+        "Catalog entry only. No current preparation chart; no confirmed purchase price or cooked edible yield."
+      ]
+    },
+    {
+      "key": "chicken_raw",
+      "name": "Курица",
+      "product_id": "9d3c28d2-2f6e-483c-b637-e8781ad50a9c",
+      "chart_id": null,
+      "unit": "kg of purchased product",
+      "purchase_unit": "кг",
+      "purchase_price_rub": 499.0,
+      "price_date": "2026-10-17T13:17:00",
+      "price_status": "lastpurchase_confirmed",
+      "yield": null,
+      "prepared_cost_rub_per_kg": null,
+      "source_refs": [
+        "catalog",
+        "pricebook"
+      ],
+      "notes": []
+    },
+    {
+      "key": "chicken_smoked_raw",
+      "name": "Курица копченая",
+      "product_id": "164e3648-b063-408d-bb49-7583b016116b",
+      "chart_id": null,
+      "unit": "kg of purchased product",
+      "purchase_unit": "кг",
+      "purchase_price_rub": 465.0,
+      "price_date": "2026-10-15T12:00:00",
+      "price_status": "lastpurchase_confirmed",
+      "yield": null,
+      "prepared_cost_rub_per_kg": null,
+      "source_refs": [
+        "catalog",
+        "pricebook"
+      ],
+      "notes": []
+    },
+    {
+      "key": "chicken_smoked_ready",
+      "name": "Курица копченая п/ф",
+      "product_id": "f20c377d-a9f8-422e-b382-55a106207ee6",
+      "chart_id": "86076820-de39-43cd-a63b-07681343d11f",
+      "chart_effective_from": "2026-09-14",
+      "chart_effective_to": null,
+      "unit": "kg of named finished preparation",
+      "price_date": null,
+      "yield": {
+        "assembled_amount_kg": 0.74,
+        "basis": "per current chart batch, with explicit inputs below; do not apply yield again"
+      },
+      "prepared_cost_rub_per_kg": 628.3783783783783,
+      "batch_materials_cost_rub": 465.0,
+      "inputs": [
+        {
+          "name": "Курица копченая",
+          "product_id": "164e3648-b063-408d-bb49-7583b016116b",
+          "input_amount_in_purchase_units": 1,
+          "purchase_unit": "кг",
+          "purchase_price_rub": 465.0,
+          "price_date": "2026-10-15T12:00:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 465.0,
+          "amount_middle": 0.74,
+          "amount_out": 0.74
+        }
+      ],
+      "source_refs": [
+        "catalog",
+        "pricebook",
+        "charts"
+      ],
+      "notes": [
+        "1 kg purchased smoked chicken -> 0.74 kg finished; ready cost already includes 74% yield."
+      ]
+    },
+    {
+      "key": "chicken_baked_ready",
+      "name": "Курица запеченная",
+      "product_id": "e0cd329b-9b53-4521-b3b4-3ef2d862b9f0",
+      "chart_id": "95285c5f-23c1-4560-843b-ee6719ec2614",
+      "chart_effective_from": "2025-12-15",
+      "chart_effective_to": null,
+      "unit": "kg of named finished preparation",
+      "price_date": null,
+      "yield": {
+        "assembled_amount_kg": 0.7678,
+        "basis": "per current chart batch, with explicit inputs below; do not apply yield again"
+      },
+      "prepared_cost_rub_per_kg": 672.049791612399,
+      "batch_materials_cost_rub": 515.99983,
+      "inputs": [
+        {
+          "name": "Курица",
+          "product_id": "9d3c28d2-2f6e-483c-b637-e8781ad50a9c",
+          "input_amount_in_purchase_units": 1,
+          "purchase_unit": "кг",
+          "purchase_price_rub": 499.0,
+          "price_date": "2026-10-17T13:17:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 499.0,
+          "amount_middle": 0.9,
+          "amount_out": 0.711
+        },
+        {
+          "name": "Соевый соус ",
+          "product_id": "c8001807-881c-4f87-bdaf-a1a661d5827d",
+          "input_amount_in_purchase_units": 0.05,
+          "purchase_unit": "л",
+          "purchase_price_rub": 97.5,
+          "price_date": "2026-10-15T09:00:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 4.875,
+          "amount_middle": 0.05,
+          "amount_out": 0.0025
+        },
+        {
+          "name": "Масло растительное",
+          "product_id": "c33018ee-a46d-4bfc-b224-3b62a1f69dd0",
+          "input_amount_in_purchase_units": 0.05,
+          "purchase_unit": "л",
+          "purchase_price_rub": 135.8,
+          "price_date": "2026-10-12T15:45:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 6.790000000000001,
+          "amount_middle": 0.05,
+          "amount_out": 0.05
+        },
+        {
+          "name": "Перец черный молотый",
+          "product_id": "6050aee7-03f5-4cfb-bb66-284de0fb8ad8",
+          "input_amount_in_purchase_units": 0.003,
+          "purchase_unit": "кг",
+          "purchase_price_rub": 361.61,
+          "price_date": "2026-10-03T15:00:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 1.08483,
+          "amount_middle": 0.003,
+          "amount_out": 0.003
+        },
+        {
+          "name": "Чеснок сушеный",
+          "product_id": "2488405a-e71e-4a84-971c-1bc752c89640",
+          "input_amount_in_purchase_units": 0.005,
+          "purchase_unit": "кг",
+          "purchase_price_rub": 850.0,
+          "price_date": "2026-10-11T11:05:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 4.25,
+          "amount_middle": 0.005,
+          "amount_out": 0.005
+        }
+      ],
+      "source_refs": [
+        "catalog",
+        "pricebook",
+        "charts"
+      ],
+      "notes": [
+        "Chart uses 1 kg raw chicken plus marinade/spices -> 0.7678 kg finished preparation. Chicken component after heat is 0.711 kg; these are distinct quantities. Oil and soy prices applied per litre, as purchased, not per kg."
+      ]
+    },
+    {
+      "key": "tuna_smoked_analog",
+      "name": "Тунец х/к",
+      "product_id": "a20e781a-d701-489e-8939-ae17c99cb922",
+      "chart_id": null,
+      "unit": "kg of purchased product",
+      "purchase_unit": "кг",
+      "purchase_price_rub": 1485.000334,
+      "price_date": "2026-09-18T16:11:00",
+      "price_status": "lastpurchase_confirmed",
+      "yield": null,
+      "prepared_cost_rub_per_kg": null,
+      "source_refs": [
+        "catalog",
+        "pricebook"
+      ],
+      "notes": [
+        "Cold smoked tuna; not canned tuna. No standalone current preparation yield found."
+      ]
+    },
+    {
+      "key": "tuna_unspecified",
+      "name": "Тунец",
+      "product_id": "ae8d0a47-ab2f-4049-8f74-8903d6788bbb",
+      "chart_id": null,
+      "unit": "kg of purchased product",
+      "purchase_unit": null,
+      "purchase_price_rub": null,
+      "price_date": null,
+      "price_status": "unknown_no_confirmed_purchase_in_archives_searched",
+      "yield": null,
+      "prepared_cost_rub_per_kg": null,
+      "source_refs": [
+        "catalog",
+        "pricebook"
+      ],
+      "notes": [
+        "Catalog name does not prove canned form."
+      ]
+    },
+    {
+      "key": "mushrooms_raw",
+      "name": "Шампиньоны",
+      "product_id": "a4062203-2a05-485d-ae1b-01045f7fce89",
+      "chart_id": null,
+      "unit": "kg of purchased product",
+      "purchase_unit": "кг",
+      "purchase_price_rub": 300.0,
+      "price_date": "2026-10-17T11:25:00",
+      "price_status": "lastpurchase_confirmed",
+      "yield": null,
+      "prepared_cost_rub_per_kg": null,
+      "source_refs": [
+        "catalog",
+        "pricebook"
+      ],
+      "notes": [
+        "No standalone cooked mushroom preparation chart. Mushroom sauce chart uses 0.3 kg raw -> 0.18 kg mushroom amountOut, but 60% is recipe-specific, not a validated yield for a new roll. Do not label raw 300/kg as cooked 300/kg."
+      ]
+    },
+    {
+      "key": "carrot_raw",
+      "name": "Морковь",
+      "product_id": "3b1be2a8-6667-486f-b5a7-60a34369868f",
+      "chart_id": null,
+      "unit": "kg of purchased product",
+      "purchase_unit": "кг",
+      "purchase_price_rub": 50.0,
+      "price_date": "2026-10-19T14:40:00",
+      "price_status": "lastpurchase_confirmed",
+      "yield": null,
+      "prepared_cost_rub_per_kg": null,
+      "source_refs": [
+        "catalog",
+        "pricebook"
+      ],
+      "notes": []
+    },
+    {
+      "key": "carrot_korean_ready",
+      "name": "Морковь по-корейски полуфабрикат",
+      "product_id": "7b120814-c975-4c14-a548-91f4639699a1",
+      "chart_id": "97396dfe-74ec-4dbd-a177-d1dc9578bf39",
+      "chart_effective_from": "2023-10-20",
+      "chart_effective_to": null,
+      "unit": "kg of named finished preparation",
+      "price_date": null,
+      "yield": {
+        "assembled_amount_kg": 1.86,
+        "basis": "per current chart batch, with explicit inputs below; do not apply yield again"
+      },
+      "prepared_cost_rub_per_kg": 94.458064516129,
+      "batch_materials_cost_rub": 175.69199999999995,
+      "inputs": [
+        {
+          "name": "Чеснок свежий",
+          "product_id": "1f69d3e0-bbfc-4244-a847-dced085647e1",
+          "input_amount_in_purchase_units": 0.03,
+          "purchase_unit": "кг",
+          "purchase_price_rub": 400.0,
+          "price_date": "2026-10-19T14:40:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 12.0,
+          "amount_middle": 0.03,
+          "amount_out": 0.03
+        },
+        {
+          "name": "Соль",
+          "product_id": "15cd4416-d60a-4715-8ea6-7322d91ef043",
+          "input_amount_in_purchase_units": 0.015,
+          "purchase_unit": "кг",
+          "purchase_price_rub": 31.04,
+          "price_date": "2026-10-12T15:45:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 0.46559999999999996,
+          "amount_middle": 0.015,
+          "amount_out": 0.015
+        },
+        {
+          "name": "Перец черный молотый",
+          "product_id": "6050aee7-03f5-4cfb-bb66-284de0fb8ad8",
+          "input_amount_in_purchase_units": 0.005,
+          "purchase_unit": "кг",
+          "purchase_price_rub": 361.61,
+          "price_date": "2026-10-03T15:00:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 1.8080500000000002,
+          "amount_middle": 0.005,
+          "amount_out": 0.005
+        },
+        {
+          "name": "Кориандр",
+          "product_id": "33ceb5ba-d63f-477a-9df8-da4eb3052cbe",
+          "input_amount_in_purchase_units": 0.002,
+          "purchase_unit": "кг",
+          "purchase_price_rub": 970.0,
+          "price_date": "2026-07-20T12:41:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 1.94,
+          "amount_middle": 0.002,
+          "amount_out": 0.002
+        },
+        {
+          "name": "Приправа для моркови",
+          "product_id": "4c287060-6288-4d2f-a211-a96d4fc48be8",
+          "input_amount_in_purchase_units": 0.015,
+          "purchase_unit": "кг",
+          "purchase_price_rub": 905.33,
+          "price_date": "2026-09-17T16:07:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 13.57995,
+          "amount_middle": 0.015,
+          "amount_out": 0.015
+        },
+        {
+          "name": "Морковь",
+          "product_id": "3b1be2a8-6667-486f-b5a7-60a34369868f",
+          "input_amount_in_purchase_units": 1.9,
+          "purchase_unit": "кг",
+          "purchase_price_rub": 50.0,
+          "price_date": "2026-10-19T14:40:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 95.0,
+          "amount_middle": 1.33,
+          "amount_out": 1.33
+        },
+        {
+          "name": "Уксус",
+          "product_id": "5316c104-2409-464d-8e86-2d192776dc06",
+          "input_amount_in_purchase_units": 0.08,
+          "purchase_unit": "л",
+          "purchase_price_rub": 45.105,
+          "price_date": "2026-09-28T11:37:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 3.6083999999999996,
+          "amount_middle": 0.08,
+          "amount_out": 0.08
+        },
+        {
+          "name": "Чеснок сушеный",
+          "product_id": "2488405a-e71e-4a84-971c-1bc752c89640",
+          "input_amount_in_purchase_units": 0.002,
+          "purchase_unit": "кг",
+          "purchase_price_rub": 850.0,
+          "price_date": "2026-10-11T11:05:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 1.7,
+          "amount_middle": 0.002,
+          "amount_out": 0.002
+        },
+        {
+          "name": "Сахар",
+          "product_id": "2760a59c-85ae-4b38-abfe-870bc8fe4ec5",
+          "input_amount_in_purchase_units": 0.15,
+          "purchase_unit": "кг",
+          "purchase_price_rub": 77.6,
+          "price_date": "2026-10-12T15:45:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 11.639999999999999,
+          "amount_middle": 0.15,
+          "amount_out": 0.15
+        },
+        {
+          "name": "Масло растительное",
+          "product_id": "c33018ee-a46d-4bfc-b224-3b62a1f69dd0",
+          "input_amount_in_purchase_units": 0.25,
+          "purchase_unit": "л",
+          "purchase_price_rub": 135.8,
+          "price_date": "2026-10-12T15:45:00",
+          "price_status": "lastpurchase_confirmed",
+          "line_cost_rub": 33.95,
+          "amount_middle": 0.25,
+          "amount_out": 0.25
+        }
+      ],
+      "source_refs": [
+        "catalog",
+        "pricebook",
+        "charts"
+      ],
+      "notes": [
+        "1.9 kg raw carrot -> 1.33 kg carrot in chart (70%); complete seasoned batch output 1.86 kg. Ready cost includes all priced ingredients and current card yields; do not apply losses again. Some seasoning prices are older: coriander last purchased 20 July, carrot seasoning 17 September."
+      ]
+    },
+    {
+      "key": "bell_pepper_raw",
+      "name": "Перец болгарский",
+      "product_id": "da72fdb2-51b5-407d-b145-9909987d3a8b",
+      "chart_id": null,
+      "unit": "kg of purchased product",
+      "purchase_unit": null,
+      "purchase_price_rub": null,
+      "price_date": null,
+      "price_status": "unknown_no_confirmed_purchase_in_archives_searched",
+      "yield": null,
+      "prepared_cost_rub_per_kg": null,
+      "source_refs": [
+        "catalog",
+        "pricebook"
+      ],
+      "notes": []
+    },
+    {
+      "key": "chili_pepper_analog",
+      "name": "Перец чили",
+      "product_id": "83f53898-0dfb-4111-8bb7-da7ee1248c99",
+      "chart_id": null,
+      "unit": "kg of purchased product",
+      "purchase_unit": "кг",
+      "purchase_price_rub": 789.692308,
+      "price_date": "2026-10-02T12:40:00",
+      "price_status": "lastpurchase_confirmed",
+      "yield": null,
+      "prepared_cost_rub_per_kg": null,
+      "source_refs": [
+        "catalog",
+        "pricebook"
+      ],
+      "notes": [
+        "Chili is a different product from bell pepper and should not be substituted silently."
+      ]
+    },
+    {
+      "key": "tuna_canned",
+      "name": "Консервированный тунец",
+      "product_id": null,
+      "chart_id": null,
+      "price_date": null,
+      "unit": null,
+      "purchase_price_rub": null,
+      "yield": null,
+      "prepared_cost_rub_per_kg": null,
+      "status": "unknown_not_found_in_catalog_or_confirmed_purchase_data_searched",
+      "source_refs": [
+        "catalog",
+        "pricebook",
+        "older_pricebook"
+      ]
+    },
+    {
+      "key": "shiitake",
+      "name": "Шиитаке",
+      "product_id": null,
+      "chart_id": null,
+      "price_date": null,
+      "unit": null,
+      "purchase_price_rub": null,
+      "yield": null,
+      "prepared_cost_rub_per_kg": null,
+      "status": "unknown_not_found_in_catalog_or_confirmed_purchase_data_searched",
+      "source_refs": [
+        "catalog",
+        "pricebook",
+        "older_pricebook"
+      ]
+    },
+    {
+      "key": "daikon_takuan",
+      "name": "Дайкон / такуан",
+      "product_id": null,
+      "chart_id": null,
+      "price_date": null,
+      "unit": null,
+      "purchase_price_rub": null,
+      "yield": null,
+      "prepared_cost_rub_per_kg": null,
+      "status": "unknown_not_found_in_catalog_or_confirmed_purchase_data_searched",
+      "source_refs": [
+        "catalog",
+        "pricebook",
+        "older_pricebook"
+      ]
+    },
+    {
+      "key": "corn",
+      "name": "Кукуруза",
+      "product_id": null,
+      "chart_id": null,
+      "price_date": null,
+      "unit": null,
+      "purchase_price_rub": null,
+      "yield": null,
+      "prepared_cost_rub_per_kg": null,
+      "status": "unknown_not_found_in_catalog_or_confirmed_purchase_data_searched",
+      "source_refs": [
+        "catalog",
+        "pricebook",
+        "older_pricebook"
+      ]
+    }
+  ],
+  "search_notes": [
+    "Target product GUIDs for squid, unspecified tuna and bell pepper absent from local archived pricebooks, purchase-lines and incoming-invoice XML searched.",
+    "No shiitake, daikon/takuan, corn or explicitly canned tuna product names found in the current catalog (including deleted names).",
+    "Deleted older squid item 229bcfb7-7fba-4305-ba6c-d65838131099 has no confirmed price in purchase archives searched.",
+    "No assumption of 100% yield for raw mushrooms, tuna, squid or bell pepper."
+  ],
+  "warnings": [
+    "All costs are ingredients only; exclude labour, packaging, utilities, taxes, delivery, discounts and other order costs.",
+    "No existing recipes or gram weights changed. No new roll or set was calculated."
+  ]
+}
