@@ -53,7 +53,8 @@
       "selected_main_fractions": {
         "salmon_plain": 0.3047619047619048
       },
-      "note": "До минимума 31,5 г остаётся лишь 0,5 г; производственный допуск не доказан."
+      "note": "До минимума 31,5 г остаётся лишь 0,5 г; производственный допуск не доказан.",
+      "operational_status": "withdrawn_gram_shaving_not_executable"
     },
     {
       "option_id": "A2",
@@ -94,7 +95,8 @@
       "selected_main_fractions": {
         "salmon_plain": 0.3142857142857143
       },
-      "note": ""
+      "note": "",
+      "operational_status": "withdrawn_gram_shaving_not_executable"
     },
     {
       "option_id": "B1",
@@ -134,7 +136,8 @@
         "salmon_plain": 0.3047619047619048,
         "shrimp": 0.3047619047619048
       },
-      "note": "Каждый основной 30,48%; краб здесь остаётся наполнителем. Запас лишь по 0,5 г."
+      "note": "Каждый основной 30,48%; краб здесь остаётся наполнителем. Запас лишь по 0,5 г.",
+      "operational_status": "withdrawn_gram_shaving_not_executable"
     },
     {
       "option_id": "B2",
@@ -174,7 +177,8 @@
         "salmon_plain": 0.3142857142857143,
         "shrimp": 0.3142857142857143
       },
-      "note": ""
+      "note": "",
+      "operational_status": "withdrawn_gram_shaving_not_executable"
     },
     {
       "option_id": "C1",
@@ -216,7 +220,8 @@
         "salmon_plain": 0.3333333333333333,
         "crab_mix": 0.38095238095238093
       },
-      "note": "40 г самого подготовленного краба; иной вкус, новый вариант карты."
+      "note": "40 г самого подготовленного краба; иной вкус, новый вариант карты.",
+      "operational_status": "mass_only_requires_defined_physical_portion"
     },
     {
       "option_id": "C2",
@@ -251,7 +256,8 @@
       "selected_main_fractions": {
         "crab_mix": 0.49523809523809526
       },
-      "note": "50 г лосося сверху сохранены. 52 г самого подготовленного краба внутри."
+      "note": "50 г лосося сверху сохранены. 52 г самого подготовленного краба внутри.",
+      "operational_status": "mass_only_requires_defined_physical_portion"
     },
     {
       "option_id": "D1",
@@ -286,7 +292,8 @@
       "frying_unchanged": {},
       "inner_total_g": 90,
       "selected_main_fractions": {},
-      "note": "Разрешённый диапазон 62–80 г; объём верха уменьшается, нужен визуальный контроль."
+      "note": "Разрешённый диапазон 62–80 г; объём верха уменьшается, нужен визуальный контроль.",
+      "operational_status": "mass_only_requires_defined_physical_portion"
     },
     {
       "option_id": "D2",
@@ -321,7 +328,8 @@
       "frying_unchanged": {},
       "inner_total_g": 90,
       "selected_main_fractions": {},
-      "note": "Разрешённый диапазон 62–80 г; объём верха уменьшается, нужен визуальный контроль."
+      "note": "Разрешённый диапазон 62–80 г; объём верха уменьшается, нужен визуальный контроль.",
+      "operational_status": "mass_only_requires_defined_physical_portion"
     },
     {
       "option_id": "E1",
@@ -361,7 +369,8 @@
         "salmon_plain": 0.3333333333333333,
         "mussels": 0.3333333333333333
       },
-      "note": "Новая рецептура с другим названием и вкусом; мидии по книге цен 21.10, спорная закупка остаётся O13."
+      "note": "Новая рецептура с другим названием и вкусом; мидии по книге цен 21.10, спорная закупка остаётся O13.",
+      "operational_status": "mass_only_requires_defined_physical_portion"
     },
     {
       "option_id": "F1",
@@ -400,7 +409,8 @@
         "salmon_plain": 0.3333333333333333,
         "crab_mix": 0.38095238095238093
       },
-      "note": "Креветка исключена; новый ролл с лососем и крабом, а не прежний микс."
+      "note": "Креветка исключена; новый ролл с лососем и крабом, а не прежний микс.",
+      "operational_status": "mass_only_requires_defined_physical_portion"
     },
     {
       "option_id": "F2",
@@ -439,7 +449,8 @@
         "shrimp": 0.3333333333333333,
         "crab_mix": 0.38095238095238093
       },
-      "note": "Лосось исключён; новый ролл с креветкой и крабом, а не прежний микс."
+      "note": "Лосось исключён; новый ролл с креветкой и крабом, а не прежний микс.",
+      "operational_status": "mass_only_requires_defined_physical_portion"
     },
     {
       "option_id": "G1",
@@ -481,7 +492,8 @@
         "salmon_plain": 0.3047619047619048,
         "crab_mix": 0.40380952380952384
       },
-      "note": "Эффекты пересчитаны вместе, не сложены из независимых вариантов; запас лосося 0,5 г."
+      "note": "Эффекты пересчитаны вместе, не сложены из независимых вариантов; запас лосося 0,5 г.",
+      "operational_status": "withdrawn_gram_shaving_not_executable"
     },
     {
       "option_id": "H1",
@@ -514,7 +526,8 @@
       "frying_unchanged": {},
       "inner_total_g": 105,
       "selected_main_fractions": {},
-      "note": "Иной вкус. Обе цены с выходами; свежий пересчёт старой книги, не новое предложение поставщика."
+      "note": "Иной вкус. Обе цены с выходами; свежий пересчёт старой книги, не новое предложение поставщика.",
+      "operational_status": "mass_only_requires_defined_physical_portion"
     }
   ],
   "new_crab_candidate": {
@@ -535,7 +548,8 @@
     "recipe_materials_rub": 43.119445306059916,
     "actual_prepared_crab_g": 32,
     "actual_crab_share_inner": 0.32,
-    "status": "costed_idea_not_approved_recipe"
+    "status": "costed_idea_not_approved_recipe",
+    "operational_status": "mass_only_requires_defined_physical_portion"
   },
   "previous_set_repeat_audit": [
     {
@@ -604,5 +618,22 @@
     "No eel savings claimed without full fillet/sauce output and usage balance.",
     "No physical trial, video timing, iiko/price/menu changes.",
     "New recipes do not inherit old profit thresholds without salesmix and paidcheck."
-  ]
+  ],
+  "owner_portion_correction": {
+    "as_of": "2026-10-21",
+    "journal": "Q26",
+    "salmon_piece_g_range_owner_estimate": [
+      10,
+      15
+    ],
+    "fixed_piece_weight_or_universal_step_not_defined": true,
+    "withdrawn_option_ids": [
+      "A1",
+      "A2",
+      "B1",
+      "B2",
+      "G1"
+    ],
+    "no_automatic_recipe_or_profit_recalculation": true
+  }
 }
