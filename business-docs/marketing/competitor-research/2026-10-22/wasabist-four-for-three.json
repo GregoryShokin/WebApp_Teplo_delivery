@@ -1,0 +1,115 @@
+{
+  "observed_on": "2026-10-22",
+  "competitor": "WASABIST",
+  "city": "Волгодонск",
+  "branch_published": "б-р Великой победы40",
+  "channel": "official direct website",
+  "scope": "one set visual identification demonstration; not full catalogue or costing",
+  "set": {
+    "name": "ЧЕТЫРЕ ПО ЦЕНЕ ТРЕХ",
+    "price_rub": 1189,
+    "weight_g": 850,
+    "pieces_count": 32,
+    "roll_portions_count": 4,
+    "composition_published": [
+      "Токио",
+      "Сузуки",
+      "Калифорния классика",
+      "Теплая классика с крабом"
+    ],
+    "source_url": "https://volgodonsk.wasabist.ru/shop/nabory.html",
+    "verification": "Current IAB DOM/AX matches source text; live category differs from older web-parser listings elsewhere."
+  },
+  "photo": {
+    "url": "https://api.wasabi23.ru/storage/items/cc/products/500x500/330/1757182039667_n-4-po-cene-3-x.jpg",
+    "observed_dimensions_px": [
+      500,
+      333
+    ],
+    "source": "src of IMG in current set DOM",
+    "visually_inspected": true,
+    "inspection_method": "IAB original image screenshot, not names-only inference",
+    "limits": "Advertising photo, limited detail, no calibrated scale or weighed ingredient information."
+  },
+  "rolls": [
+    {
+      "name": "Калифорния классик",
+      "photo_location": "central red-coated pieces",
+      "photo_observation": "red granular outside, rice-out roll, white and green filling visible",
+      "identity_status": "photo_matching_to_published_menu_inference",
+      "published_ingredients": [
+        "снежный краб",
+        "огурец",
+        "майонез",
+        "красная масаго"
+      ],
+      "ingredients_basis": "current official category DOM, not all identifiable from photo",
+      "single_menu_weight_g": 220,
+      "single_menu_price_rub": 399,
+      "source_url": "https://volgodonsk.wasabist.ru/shop/rolly-xolodnye.html"
+    },
+    {
+      "name": "Токио",
+      "photo_location": "right orange-coated rice-out pieces with baked-looking top",
+      "photo_observation": "orange exterior, light golden topping, dark thin drizzle and seedlike sprinkles",
+      "identity_status": "photo_matching_to_published_menu_inference",
+      "published_ingredients": [
+        "лосось гриль",
+        "сыр Cremette",
+        "огурец",
+        "оранжевая масаго",
+        "сырный соус",
+        "унаги",
+        "кунжут"
+      ],
+      "ingredients_basis": "current official category DOM, fish species and sauce recipe not established visually",
+      "single_menu_weight_g": 240,
+      "single_menu_price_rub": 399,
+      "source_url": "https://volgodonsk.wasabist.ru/shop/rolly-teplye.html"
+    },
+    {
+      "name": "Сузуки",
+      "photo_location": "far/back plain nori-out small pieces without baked hat, proposed matching",
+      "photo_observation": "nori outside, rice and light/green filling, no large exterior fish cover visible",
+      "identity_status": "tentative spatial matching, published roll membership confirmed",
+      "published_ingredients": [
+        "креветка",
+        "сыр Cremette",
+        "огурец"
+      ],
+      "ingredients_basis": "current official category DOM, shrimp identity cannot be proven from this set photo alone",
+      "single_menu_weight_g": 220,
+      "single_menu_price_rub": 399,
+      "source_url": "https://volgodonsk.wasabist.ru/shop/rolly-xolodnye.html"
+    },
+    {
+      "name": "Теплая классика с крабом",
+      "photo_location": "left/front small nori-out pieces with intermittent baked-looking hats, proposed matching",
+      "photo_observation": "small maki-like pieces; some visible cuts have light golden topping and dark drizzle",
+      "identity_status": "tentative spatial matching, published roll membership confirmed",
+      "published_ingredients": null,
+      "inferred_construction": [
+        "rice/nori base",
+        "crab filling suggested by published name",
+        "baked-looking sauce hat; exact sauce unknown"
+      ],
+      "single_menu_weight_g": null,
+      "single_menu_price_rub": null,
+      "source_url": "https://volgodonsk.wasabist.ru/shop/nabory.html"
+    }
+  ],
+  "unknowns": [
+    "ingredient masses and actual set component weights",
+    "exact recipe/quantity of sauce on warm crab roll",
+    "published individual portions need not match set portions",
+    "actual delivered portion, flavour, quality and product grades",
+    "competitor procurement, food cost and profit"
+  ],
+  "not_performed": [
+    "recipe gram reconstruction",
+    "costing",
+    "orders or messaging",
+    "assumption that Teplo sauce hats70–80g apply to competitor",
+    "derivation of fourth weight as850 minus other singles"
+  ]
+}
