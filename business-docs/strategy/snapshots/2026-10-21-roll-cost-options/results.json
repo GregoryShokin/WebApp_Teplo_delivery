@@ -1,0 +1,608 @@
+{
+  "as_of": "2026-10-21",
+  "status": "costed_ideas_not_accepted_changes",
+  "cost_basis": "recipe materials only; same frozen21Oct inputs and owner crab450/cheese+30%; before packaging, labour, discounts and other order costs; water unpriced",
+  "source_sha256": {
+    "2026-10-21-new-roll-line-v1/inputs.json": "5a098888513b149bea04ca49606f30f0c9e8d5c2a4601a684c9578f978f81e48",
+    "2026-10-21-new-roll-line-v1/results.json": "20676e8a2ea6991b5f3296ff6bbf26a138c754d64c14734dd927628f9738f902",
+    "2026-10-21-sets-quality-first/results.json": "e0b5aef51460fe3d3fa0c6b51979c030bf51feb07be97488c1f4857b3439d848"
+  },
+  "owner_rules": {
+    "max_identical_rolls_per_set": 2,
+    "crab_allowed_as_main": true,
+    "new_primary_crab_options_no_cheese_inside": true
+  },
+  "interpretation": "Existing30% inside rule applied to actual preparedcrab, not mayonnaise;40g80/20mix contains32gcrab.",
+  "options": [
+    {
+      "option_id": "A1",
+      "source_recipe": "F01",
+      "title": "Лосось 35→32 г; сыр 50→53 г",
+      "old_name": "Лосось спайси",
+      "old_cost_rub": 135.54033667825436,
+      "new_cost_rub": 129.92645206286974,
+      "saving_rub": 5.61388461538462,
+      "old_inner": {
+        "salmon_plain": 35,
+        "cream_cheese": 50,
+        "cucumber": 20
+      },
+      "new_inner": {
+        "salmon_plain": 32,
+        "cream_cheese": 53,
+        "cucumber": 20
+      },
+      "old_top": {
+        "spice": 20,
+        "unagi": 5
+      },
+      "new_top": {
+        "spice": 20,
+        "unagi": 5
+      },
+      "base_unchanged": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying_unchanged": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "inner_total_g": 105,
+      "selected_main_fractions": {
+        "salmon_plain": 0.3047619047619048
+      },
+      "note": "До минимума 31,5 г остаётся лишь 0,5 г; производственный допуск не доказан."
+    },
+    {
+      "option_id": "A2",
+      "source_recipe": "F01",
+      "title": "Лосось 35→33 г; сыр 50→52 г",
+      "old_name": "Лосось спайси",
+      "old_cost_rub": 135.54033667825436,
+      "new_cost_rub": 131.79774693466462,
+      "saving_rub": 3.742589743589747,
+      "old_inner": {
+        "salmon_plain": 35,
+        "cream_cheese": 50,
+        "cucumber": 20
+      },
+      "new_inner": {
+        "salmon_plain": 33,
+        "cream_cheese": 52,
+        "cucumber": 20
+      },
+      "old_top": {
+        "spice": 20,
+        "unagi": 5
+      },
+      "new_top": {
+        "spice": 20,
+        "unagi": 5
+      },
+      "base_unchanged": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying_unchanged": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "inner_total_g": 105,
+      "selected_main_fractions": {
+        "salmon_plain": 0.3142857142857143
+      },
+      "note": ""
+    },
+    {
+      "option_id": "B1",
+      "source_recipe": "B01",
+      "title": "Лосось и креветка по 35→32 г; крабовая смесь 20→26 г",
+      "old_name": "Лосось и креветка",
+      "old_cost_rub": 174.52009481687236,
+      "new_cost_rub": 165.02841503139268,
+      "saving_rub": 9.491679785479676,
+      "old_inner": {
+        "salmon_plain": 35,
+        "shrimp": 35,
+        "crab_mix": 20,
+        "cucumber": 15
+      },
+      "new_inner": {
+        "salmon_plain": 32,
+        "shrimp": 32,
+        "crab_mix": 26,
+        "cucumber": 15
+      },
+      "old_top": {
+        "yaki": 35,
+        "teriyaki": 5
+      },
+      "new_top": {
+        "yaki": 35,
+        "teriyaki": 5
+      },
+      "base_unchanged": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying_unchanged": {},
+      "inner_total_g": 105,
+      "selected_main_fractions": {
+        "salmon_plain": 0.3047619047619048,
+        "shrimp": 0.3047619047619048
+      },
+      "note": "Каждый основной 30,48%; краб здесь остаётся наполнителем. Запас лишь по 0,5 г."
+    },
+    {
+      "option_id": "B2",
+      "source_recipe": "B01",
+      "title": "Лосось и креветка по 35→33 г; крабовая смесь 20→24 г",
+      "old_name": "Лосось и креветка",
+      "old_cost_rub": 174.52009481687236,
+      "new_cost_rub": 168.19230829321924,
+      "saving_rub": 6.327786523653117,
+      "old_inner": {
+        "salmon_plain": 35,
+        "shrimp": 35,
+        "crab_mix": 20,
+        "cucumber": 15
+      },
+      "new_inner": {
+        "salmon_plain": 33,
+        "shrimp": 33,
+        "crab_mix": 24,
+        "cucumber": 15
+      },
+      "old_top": {
+        "yaki": 35,
+        "teriyaki": 5
+      },
+      "new_top": {
+        "yaki": 35,
+        "teriyaki": 5
+      },
+      "base_unchanged": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying_unchanged": {},
+      "inner_total_g": 105,
+      "selected_main_fractions": {
+        "salmon_plain": 0.3142857142857143,
+        "shrimp": 0.3142857142857143
+      },
+      "note": ""
+    },
+    {
+      "option_id": "C1",
+      "source_recipe": "F01",
+      "title": "Творожный сыр 50 г → крабовая смесь 50 г",
+      "old_name": "Лосось спайси",
+      "old_cost_rub": 135.54033667825436,
+      "new_cost_rub": 130.98588361702986,
+      "saving_rub": 4.554453061224507,
+      "old_inner": {
+        "salmon_plain": 35,
+        "cream_cheese": 50,
+        "cucumber": 20
+      },
+      "new_inner": {
+        "salmon_plain": 35,
+        "crab_mix": 50,
+        "cucumber": 20
+      },
+      "old_top": {
+        "spice": 20,
+        "unagi": 5
+      },
+      "new_top": {
+        "spice": 20,
+        "unagi": 5
+      },
+      "base_unchanged": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying_unchanged": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "inner_total_g": 105,
+      "selected_main_fractions": {
+        "salmon_plain": 0.3333333333333333,
+        "crab_mix": 0.38095238095238093
+      },
+      "note": "40 г самого подготовленного краба; иной вкус, новый вариант карты."
+    },
+    {
+      "option_id": "C2",
+      "source_recipe": "C01",
+      "title": "Под крышкой: сыр 65 г → крабовая смесь 65 г",
+      "old_name": "Лосось — крышка",
+      "old_cost_rub": 172.5014741241109,
+      "new_cost_rub": 166.58068514451907,
+      "saving_rub": 5.920788979591833,
+      "old_inner": {
+        "cream_cheese": 65,
+        "cucumber": 20,
+        "tamago": 20
+      },
+      "new_inner": {
+        "crab_mix": 65,
+        "cucumber": 20,
+        "tamago": 20
+      },
+      "old_top": {
+        "salmon_plain": 50
+      },
+      "new_top": {
+        "salmon_plain": 50
+      },
+      "base_unchanged": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying_unchanged": {},
+      "inner_total_g": 105,
+      "selected_main_fractions": {
+        "crab_mix": 0.49523809523809526
+      },
+      "note": "50 г лосося сверху сохранены. 52 г самого подготовленного краба внутри."
+    },
+    {
+      "option_id": "D1",
+      "source_recipe": "C05",
+      "title": "Готовая тартарная шапка 70→62 г",
+      "old_name": "Тартар из лосося",
+      "old_cost_rub": 179.68798497709042,
+      "new_cost_rub": 164.55422446935063,
+      "saving_rub": 15.133760507739794,
+      "old_inner": {
+        "cream_cheese": 50,
+        "tamago": 20,
+        "cucumber": 20
+      },
+      "new_inner": {
+        "cream_cheese": 50,
+        "tamago": 20,
+        "cucumber": 20
+      },
+      "old_top": {
+        "tartar_plain": 70,
+        "teriyaki": 5
+      },
+      "new_top": {
+        "tartar_plain": 62,
+        "teriyaki": 5
+      },
+      "base_unchanged": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying_unchanged": {},
+      "inner_total_g": 90,
+      "selected_main_fractions": {},
+      "note": "Разрешённый диапазон 62–80 г; объём верха уменьшается, нужен визуальный контроль."
+    },
+    {
+      "option_id": "D2",
+      "source_recipe": "C06",
+      "title": "Готовая тартарная шапка 70→62 г",
+      "old_name": "Тартар из копчёного лосося",
+      "old_cost_rub": 157.98220288865903,
+      "new_cost_rub": 144.80859426974288,
+      "saving_rub": 13.173608618916148,
+      "old_inner": {
+        "crab_mix": 50,
+        "tamago": 20,
+        "cucumber": 20
+      },
+      "new_inner": {
+        "crab_mix": 50,
+        "tamago": 20,
+        "cucumber": 20
+      },
+      "old_top": {
+        "tartar_smoked": 70,
+        "unagi": 5
+      },
+      "new_top": {
+        "tartar_smoked": 62,
+        "unagi": 5
+      },
+      "base_unchanged": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying_unchanged": {},
+      "inner_total_g": 90,
+      "selected_main_fractions": {},
+      "note": "Разрешённый диапазон 62–80 г; объём верха уменьшается, нужен визуальный контроль."
+    },
+    {
+      "option_id": "E1",
+      "source_recipe": "B01",
+      "title": "Лосось 35 г + мидии 35 г вместо лосося и креветки",
+      "old_name": "Лосось и креветка",
+      "old_cost_rub": 174.52009481687236,
+      "new_cost_rub": 153.12733750627183,
+      "saving_rub": 21.39275731060053,
+      "old_inner": {
+        "salmon_plain": 35,
+        "shrimp": 35,
+        "crab_mix": 20,
+        "cucumber": 15
+      },
+      "new_inner": {
+        "salmon_plain": 35,
+        "mussels": 35,
+        "crab_mix": 20,
+        "cucumber": 15
+      },
+      "old_top": {
+        "yaki": 35,
+        "teriyaki": 5
+      },
+      "new_top": {
+        "yaki": 35,
+        "teriyaki": 5
+      },
+      "base_unchanged": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying_unchanged": {},
+      "inner_total_g": 105,
+      "selected_main_fractions": {
+        "salmon_plain": 0.3333333333333333,
+        "mussels": 0.3333333333333333
+      },
+      "note": "Новая рецептура с другим названием и вкусом; мидии по книге цен 21.10, спорная закупка остаётся O13."
+    },
+    {
+      "option_id": "F1",
+      "source_recipe": "B01",
+      "title": "Лосось 35 г + крабовая смесь 50 г + огурец 20 г",
+      "old_name": "Лосось и креветка",
+      "old_cost_rub": 174.52009481687236,
+      "new_cost_rub": 131.6115716425204,
+      "saving_rub": 42.908523174351956,
+      "old_inner": {
+        "salmon_plain": 35,
+        "shrimp": 35,
+        "crab_mix": 20,
+        "cucumber": 15
+      },
+      "new_inner": {
+        "salmon_plain": 35,
+        "crab_mix": 50,
+        "cucumber": 20
+      },
+      "old_top": {
+        "yaki": 35,
+        "teriyaki": 5
+      },
+      "new_top": {
+        "yaki": 35,
+        "teriyaki": 5
+      },
+      "base_unchanged": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying_unchanged": {},
+      "inner_total_g": 105,
+      "selected_main_fractions": {
+        "salmon_plain": 0.3333333333333333,
+        "crab_mix": 0.38095238095238093
+      },
+      "note": "Креветка исключена; новый ролл с лососем и крабом, а не прежний микс."
+    },
+    {
+      "option_id": "F2",
+      "source_recipe": "B01",
+      "title": "Креветка 35 г + крабовая смесь 50 г + огурец 20 г",
+      "old_name": "Лосось и креветка",
+      "old_cost_rub": 174.52009481687236,
+      "new_cost_rub": 104.98096049509495,
+      "saving_rub": 69.53913432177741,
+      "old_inner": {
+        "salmon_plain": 35,
+        "shrimp": 35,
+        "crab_mix": 20,
+        "cucumber": 15
+      },
+      "new_inner": {
+        "shrimp": 35,
+        "crab_mix": 50,
+        "cucumber": 20
+      },
+      "old_top": {
+        "yaki": 35,
+        "teriyaki": 5
+      },
+      "new_top": {
+        "yaki": 35,
+        "teriyaki": 5
+      },
+      "base_unchanged": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying_unchanged": {},
+      "inner_total_g": 105,
+      "selected_main_fractions": {
+        "shrimp": 0.3333333333333333,
+        "crab_mix": 0.38095238095238093
+      },
+      "note": "Лосось исключён; новый ролл с креветкой и крабом, а не прежний микс."
+    },
+    {
+      "option_id": "G1",
+      "source_recipe": "F01",
+      "title": "Лосось 32 г + крабовая смесь 53 г + огурец 20 г",
+      "old_name": "Лосось спайси",
+      "old_cost_rub": 135.54033667825436,
+      "new_cost_rub": 125.09873181797178,
+      "saving_rub": 10.441604860282581,
+      "old_inner": {
+        "salmon_plain": 35,
+        "cream_cheese": 50,
+        "cucumber": 20
+      },
+      "new_inner": {
+        "salmon_plain": 32,
+        "crab_mix": 53,
+        "cucumber": 20
+      },
+      "old_top": {
+        "spice": 20,
+        "unagi": 5
+      },
+      "new_top": {
+        "spice": 20,
+        "unagi": 5
+      },
+      "base_unchanged": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying_unchanged": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "inner_total_g": 105,
+      "selected_main_fractions": {
+        "salmon_plain": 0.3047619047619048,
+        "crab_mix": 0.40380952380952384
+      },
+      "note": "Эффекты пересчитаны вместе, не сложены из независимых вариантов; запас лосося 0,5 г."
+    },
+    {
+      "option_id": "H1",
+      "source_recipe": "C01",
+      "title": "Крышка 50 г: лосось без копчения → лосось х/к",
+      "old_name": "Лосось — крышка",
+      "old_cost_rub": 172.5014741241109,
+      "new_cost_rub": 156.4527305343673,
+      "saving_rub": 16.048743589743594,
+      "old_inner": {
+        "cream_cheese": 65,
+        "cucumber": 20,
+        "tamago": 20
+      },
+      "new_inner": {
+        "cream_cheese": 65,
+        "cucumber": 20,
+        "tamago": 20
+      },
+      "old_top": {
+        "salmon_plain": 50
+      },
+      "new_top": {
+        "salmon_smoked": 50
+      },
+      "base_unchanged": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying_unchanged": {},
+      "inner_total_g": 105,
+      "selected_main_fractions": {},
+      "note": "Иной вкус. Обе цены с выходами; свежий пересчёт старой книги, не новое предложение поставщика."
+    }
+  ],
+  "new_crab_candidate": {
+    "id": "CR01-proposal",
+    "name": "Краб, тамаго и огурец — предложение",
+    "kind": "ordinary",
+    "base": {
+      "rice": 110,
+      "nori": 0.5
+    },
+    "inner": {
+      "crab_mix": 40,
+      "tamago": 35,
+      "cucumber": 25
+    },
+    "top": {},
+    "frying": {},
+    "recipe_materials_rub": 43.119445306059916,
+    "actual_prepared_crab_g": 32,
+    "actual_crab_share_inner": 0.32,
+    "status": "costed_idea_not_approved_recipe"
+  },
+  "previous_set_repeat_audit": [
+    {
+      "id": "4A",
+      "max_identical_id": 1,
+      "max_identical_composition": 1,
+      "pass": true
+    },
+    {
+      "id": "4B",
+      "max_identical_id": 1,
+      "max_identical_composition": 1,
+      "pass": true
+    },
+    {
+      "id": "4C",
+      "max_identical_id": 1,
+      "max_identical_composition": 1,
+      "pass": true
+    },
+    {
+      "id": "5L-A",
+      "max_identical_id": 1,
+      "max_identical_composition": 1,
+      "pass": true
+    },
+    {
+      "id": "5L-B",
+      "max_identical_id": 1,
+      "max_identical_composition": 1,
+      "pass": true
+    },
+    {
+      "id": "5H-A",
+      "max_identical_id": 1,
+      "max_identical_composition": 1,
+      "pass": true
+    },
+    {
+      "id": "5H-B",
+      "max_identical_id": 1,
+      "max_identical_composition": 1,
+      "pass": true
+    },
+    {
+      "id": "10A",
+      "max_identical_id": 2,
+      "max_identical_composition": 2,
+      "pass": true
+    },
+    {
+      "id": "10B",
+      "max_identical_id": 2,
+      "max_identical_composition": 2,
+      "pass": true
+    },
+    {
+      "id": "10C",
+      "max_identical_id": 2,
+      "max_identical_composition": 2,
+      "pass": true
+    }
+  ],
+  "limits": [
+    "Equal grams do not prove equal volume, taste or appearance.",
+    "No eel savings claimed without full fillet/sauce output and usage balance.",
+    "No physical trial, video timing, iiko/price/menu changes.",
+    "New recipes do not inherit old profit thresholds without salesmix and paidcheck."
+  ]
+}
