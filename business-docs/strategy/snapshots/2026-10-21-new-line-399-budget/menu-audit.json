@@ -1,0 +1,1423 @@
+{
+  "as_of": "2026-10-21",
+  "status": "independent_readonly_arithmetic_audit_conditional_equal_quantity_mix",
+  "scope": "18 first-paper recipes; keep prices below399, cap higher prices at399; recipe quantities/costs unchanged. One portion ofeach is a hypothetical mix, not measured new-line sales mix.",
+  "source": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-21-new-roll-line-v1/results.json",
+  "source_sha256": "20676e8a2ea6991b5f3296ff6bbf26a138c754d64c14734dd927628f9738f902",
+  "method": "FC=sum material costs/sum paid productprices, not arithmetic mean of SKU FC. main menu scenario=min(oldmenuprice,399); alternativesall399 and flatdiscount only illustrations.",
+  "cost_bases": {
+    "joint_scenario": "Owner joint eel material/cost scenario, all other current recipe costs.",
+    "price_reserve": "Legacy separatefillet cost reserved in4directeel recipes; not an additional cost on top ofjoint.",
+    "four_eel_stress": "Replace cost in4directeel recipes by coupled fullproduction/wastedsurplussauce stress; served sauce cost removed before adding alloutput charge to prevent doublecount; other14usejoint."
+  },
+  "old_menu_sum_rub_one_each": 7530,
+  "old_menu_mean_rub": 418.3333333333333,
+  "capped_count": 9,
+  "cap_revenue_change_rub_one_each": -989,
+  "rows": [
+    {
+      "id": "C01",
+      "group": "Холодные",
+      "name": "Лосось — крышка",
+      "old_price_rub": 495,
+      "capped_price_rub": 399,
+      "price_change_rub": -96,
+      "cost_rub": {
+        "joint_scenario": 172.5014741241109,
+        "price_reserve": 172.5014741241109,
+        "four_eel_stress": 172.5014741241109
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 43.2334521614313,
+        "price_reserve": 43.2334521614313,
+        "four_eel_stress": 43.2334521614313
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 43.2334521614313,
+        "price_reserve": 43.2334521614313,
+        "four_eel_stress": 43.2334521614313
+      },
+      "food_budget_at35_rub": 139.64999999999998,
+      "food_gap_above35_rub": {
+        "joint_scenario": 32.85147412411092,
+        "price_reserve": 32.85147412411092,
+        "four_eel_stress": 32.85147412411092
+      }
+    },
+    {
+      "id": "C02",
+      "group": "Холодные",
+      "name": "Креветка — крышка",
+      "old_price_rub": 370,
+      "capped_price_rub": 370,
+      "price_change_rub": 0,
+      "cost_rub": {
+        "joint_scenario": 129.40030493391126,
+        "price_reserve": 129.40030493391126,
+        "four_eel_stress": 129.40030493391126
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 34.97305538754359,
+        "price_reserve": 34.97305538754359,
+        "four_eel_stress": 34.97305538754359
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 32.43115411877476,
+        "price_reserve": 32.43115411877476,
+        "four_eel_stress": 32.43115411877476
+      },
+      "food_budget_at35_rub": 129.5,
+      "food_gap_above35_rub": {
+        "joint_scenario": -0.09969506608874212,
+        "price_reserve": -0.09969506608874212,
+        "four_eel_stress": -0.09969506608874212
+      }
+    },
+    {
+      "id": "C03",
+      "group": "Холодные",
+      "name": "Угорь — крышка",
+      "old_price_rub": 575,
+      "capped_price_rub": 399,
+      "price_change_rub": -176,
+      "cost_rub": {
+        "joint_scenario": 132.3250805343673,
+        "price_reserve": 201.09583525134843,
+        "four_eel_stress": 261.17124123204167
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 33.16418058505445,
+        "price_reserve": 50.399958709611134,
+        "four_eel_stress": 65.45645143660191
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 33.16418058505445,
+        "price_reserve": 50.399958709611134,
+        "four_eel_stress": 65.45645143660191
+      },
+      "food_budget_at35_rub": 139.64999999999998,
+      "food_gap_above35_rub": {
+        "joint_scenario": -7.324919465632689,
+        "price_reserve": 61.445835251348456,
+        "four_eel_stress": 121.52124123204169
+      }
+    },
+    {
+      "id": "C04",
+      "group": "Холодные",
+      "name": "Копчёный лосось и масаго",
+      "old_price_rub": 375,
+      "capped_price_rub": 375,
+      "price_change_rub": 0,
+      "cost_rub": {
+        "joint_scenario": 130.77664807800215,
+        "price_reserve": 130.77664807800215,
+        "four_eel_stress": 130.77664807800215
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 34.873772820800575,
+        "price_reserve": 34.873772820800575,
+        "four_eel_stress": 34.873772820800575
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 32.77610227518851,
+        "price_reserve": 32.77610227518851,
+        "four_eel_stress": 32.77610227518851
+      },
+      "food_budget_at35_rub": 131.25,
+      "food_gap_above35_rub": {
+        "joint_scenario": -0.47335192199784615,
+        "price_reserve": -0.47335192199784615,
+        "four_eel_stress": -0.47335192199784615
+      }
+    },
+    {
+      "id": "C05",
+      "group": "Холодные",
+      "name": "Тартар из лосося",
+      "old_price_rub": 515,
+      "capped_price_rub": 399,
+      "price_change_rub": -116,
+      "cost_rub": {
+        "joint_scenario": 179.68798497709042,
+        "price_reserve": 179.68798497709042,
+        "four_eel_stress": 179.68798497709042
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 45.034582701025165,
+        "price_reserve": 45.034582701025165,
+        "four_eel_stress": 45.034582701025165
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 45.034582701025165,
+        "price_reserve": 45.034582701025165,
+        "four_eel_stress": 45.034582701025165
+      },
+      "food_budget_at35_rub": 139.64999999999998,
+      "food_gap_above35_rub": {
+        "joint_scenario": 40.037984977090446,
+        "price_reserve": 40.037984977090446,
+        "four_eel_stress": 40.037984977090446
+      }
+    },
+    {
+      "id": "C06",
+      "group": "Холодные",
+      "name": "Тартар из копчёного лосося",
+      "old_price_rub": 455,
+      "capped_price_rub": 399,
+      "price_change_rub": -56,
+      "cost_rub": {
+        "joint_scenario": 157.98220288865903,
+        "price_reserve": 157.98220288865903,
+        "four_eel_stress": 157.98220288865903
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 39.594537064826824,
+        "price_reserve": 39.594537064826824,
+        "four_eel_stress": 39.594537064826824
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 39.594537064826824,
+        "price_reserve": 39.594537064826824,
+        "four_eel_stress": 39.594537064826824
+      },
+      "food_budget_at35_rub": 139.64999999999998,
+      "food_gap_above35_rub": {
+        "joint_scenario": 18.332202888659054,
+        "price_reserve": 18.332202888659054,
+        "four_eel_stress": 18.332202888659054
+      }
+    },
+    {
+      "id": "B01",
+      "group": "Запечённые",
+      "name": "Лосось и креветка",
+      "old_price_rub": 500,
+      "capped_price_rub": 399,
+      "price_change_rub": -101,
+      "cost_rub": {
+        "joint_scenario": 174.5200948168724,
+        "price_reserve": 174.5200948168724,
+        "four_eel_stress": 174.5200948168724
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 43.73937213455448,
+        "price_reserve": 43.73937213455448,
+        "four_eel_stress": 43.73937213455448
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 43.73937213455448,
+        "price_reserve": 43.73937213455448,
+        "four_eel_stress": 43.73937213455448
+      },
+      "food_budget_at35_rub": 139.64999999999998,
+      "food_gap_above35_rub": {
+        "joint_scenario": 34.87009481687241,
+        "price_reserve": 34.87009481687241,
+        "four_eel_stress": 34.87009481687241
+      }
+    },
+    {
+      "id": "B02",
+      "group": "Запечённые",
+      "name": "Мидии под сырным соусом",
+      "old_price_rub": 245,
+      "capped_price_rub": 245,
+      "price_change_rub": 0,
+      "cost_rub": {
+        "joint_scenario": 84.37682762162197,
+        "price_reserve": 84.37682762162197,
+        "four_eel_stress": 84.37682762162197
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 34.43952147821305,
+        "price_reserve": 34.43952147821305,
+        "four_eel_stress": 34.43952147821305
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 21.147074591885207,
+        "price_reserve": 21.147074591885207,
+        "four_eel_stress": 21.147074591885207
+      },
+      "food_budget_at35_rub": 85.75,
+      "food_gap_above35_rub": {
+        "joint_scenario": -1.3731723783780296,
+        "price_reserve": -1.3731723783780296,
+        "four_eel_stress": -1.3731723783780296
+      }
+    },
+    {
+      "id": "B03",
+      "group": "Запечённые",
+      "name": "Креветка яки",
+      "old_price_rub": 315,
+      "capped_price_rub": 315,
+      "price_change_rub": 0,
+      "cost_rub": {
+        "joint_scenario": 109.53541355631944,
+        "price_reserve": 109.53541355631944,
+        "four_eel_stress": 109.53541355631944
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 34.77314716073633,
+        "price_reserve": 34.77314716073633,
+        "four_eel_stress": 34.77314716073633
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 27.45248460058131,
+        "price_reserve": 27.45248460058131,
+        "four_eel_stress": 27.45248460058131
+      },
+      "food_budget_at35_rub": 110.25,
+      "food_gap_above35_rub": {
+        "joint_scenario": -0.7145864436805596,
+        "price_reserve": -0.7145864436805596,
+        "four_eel_stress": -0.7145864436805596
+      }
+    },
+    {
+      "id": "B04",
+      "group": "Запечённые",
+      "name": "Лосось и мидии спайси",
+      "old_price_rub": 440,
+      "capped_price_rub": 399,
+      "price_change_rub": -41,
+      "cost_rub": {
+        "joint_scenario": 153.22256385567593,
+        "price_reserve": 153.22256385567593,
+        "four_eel_stress": 153.22256385567593
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 38.40164507661051,
+        "price_reserve": 38.40164507661051,
+        "four_eel_stress": 38.40164507661051
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 38.40164507661051,
+        "price_reserve": 38.40164507661051,
+        "four_eel_stress": 38.40164507661051
+      },
+      "food_budget_at35_rub": 139.64999999999998,
+      "food_gap_above35_rub": {
+        "joint_scenario": 13.572563855675952,
+        "price_reserve": 13.572563855675952,
+        "four_eel_stress": 13.572563855675952
+      }
+    },
+    {
+      "id": "B05",
+      "group": "Запечённые",
+      "name": "Угорь, моцарелла и «Чёрный угорь»",
+      "old_price_rub": 470,
+      "capped_price_rub": 399,
+      "price_change_rub": -71,
+      "cost_rub": {
+        "joint_scenario": 115.77663519731362,
+        "price_reserve": 163.91616349920042,
+        "four_eel_stress": 184.4803094044357
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 29.01670055070517,
+        "price_reserve": 41.08174523789484,
+        "four_eel_stress": 46.23566651740243
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 29.01670055070517,
+        "price_reserve": 41.08174523789484,
+        "four_eel_stress": 46.23566651740243
+      },
+      "food_budget_at35_rub": 139.64999999999998,
+      "food_gap_above35_rub": {
+        "joint_scenario": -23.873364802686353,
+        "price_reserve": 24.266163499200445,
+        "four_eel_stress": 44.830309404435724
+      }
+    },
+    {
+      "id": "B06",
+      "group": "Запечённые",
+      "name": "Креветка и мидии под сырным соусом",
+      "old_price_rub": 365,
+      "capped_price_rub": 365,
+      "price_change_rub": 0,
+      "cost_rub": {
+        "joint_scenario": 127.28535079597394,
+        "price_reserve": 127.28535079597394,
+        "four_eel_stress": 127.28535079597394
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 34.87269884821204,
+        "price_reserve": 34.87269884821204,
+        "four_eel_stress": 34.87269884821204
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 31.901090425056125,
+        "price_reserve": 31.901090425056125,
+        "four_eel_stress": 31.901090425056125
+      },
+      "food_budget_at35_rub": 127.74999999999999,
+      "food_gap_above35_rub": {
+        "joint_scenario": -0.4646492040260455,
+        "price_reserve": -0.4646492040260455,
+        "four_eel_stress": -0.4646492040260455
+      }
+    },
+    {
+      "id": "F01",
+      "group": "Жареные",
+      "name": "Лосось спайси",
+      "old_price_rub": 390,
+      "capped_price_rub": 390,
+      "price_change_rub": 0,
+      "cost_rub": {
+        "joint_scenario": 135.54033667825436,
+        "price_reserve": 135.54033667825436,
+        "four_eel_stress": 135.54033667825436
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 34.753932481603684,
+        "price_reserve": 34.753932481603684,
+        "four_eel_stress": 34.753932481603684
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 33.97000919254496,
+        "price_reserve": 33.97000919254496,
+        "four_eel_stress": 33.97000919254496
+      },
+      "food_budget_at35_rub": 136.5,
+      "food_gap_above35_rub": {
+        "joint_scenario": -0.9596633217456372,
+        "price_reserve": -0.9596633217456372,
+        "four_eel_stress": -0.9596633217456372
+      }
+    },
+    {
+      "id": "F02",
+      "group": "Жареные",
+      "name": "Креветка и крабовая смесь",
+      "old_price_rub": 300,
+      "capped_price_rub": 300,
+      "price_change_rub": 0,
+      "cost_rub": {
+        "joint_scenario": 104.35527246960443,
+        "price_reserve": 104.35527246960443,
+        "four_eel_stress": 104.35527246960443
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 34.78509082320147,
+        "price_reserve": 34.78509082320147,
+        "four_eel_stress": 34.78509082320147
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 26.154203626467275,
+        "price_reserve": 26.154203626467275,
+        "four_eel_stress": 26.154203626467275
+      },
+      "food_budget_at35_rub": 105.0,
+      "food_gap_above35_rub": {
+        "joint_scenario": -0.6447275303955706,
+        "price_reserve": -0.6447275303955706,
+        "four_eel_stress": -0.6447275303955706
+      }
+    },
+    {
+      "id": "F03",
+      "group": "Жареные",
+      "name": "Копчёный лосось и моцарелла",
+      "old_price_rub": 355,
+      "capped_price_rub": 355,
+      "price_change_rub": 0,
+      "cost_rub": {
+        "joint_scenario": 123.11617066158774,
+        "price_reserve": 123.11617066158774,
+        "four_eel_stress": 123.11617066158774
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 34.68061145396838,
+        "price_reserve": 34.68061145396838,
+        "four_eel_stress": 34.68061145396838
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 30.85618312320495,
+        "price_reserve": 30.85618312320495,
+        "four_eel_stress": 30.85618312320495
+      },
+      "food_budget_at35_rub": 124.24999999999999,
+      "food_gap_above35_rub": {
+        "joint_scenario": -1.1338293384122409,
+        "price_reserve": -1.1338293384122409,
+        "four_eel_stress": -1.1338293384122409
+      }
+    },
+    {
+      "id": "F04",
+      "group": "Жареные",
+      "name": "Угорь и креветка",
+      "old_price_rub": 590,
+      "capped_price_rub": 399,
+      "price_change_rub": -191,
+      "cost_rub": {
+        "joint_scenario": 157.10388950972984,
+        "price_reserve": 205.24341781161664,
+        "four_eel_stress": 228.8773691856019
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 39.37440839842853,
+        "price_reserve": 51.439453085618204,
+        "four_eel_stress": 57.362749169323784
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 39.37440839842853,
+        "price_reserve": 51.439453085618204,
+        "four_eel_stress": 57.362749169323784
+      },
+      "food_budget_at35_rub": 139.64999999999998,
+      "food_gap_above35_rub": {
+        "joint_scenario": 17.453889509729862,
+        "price_reserve": 65.59341781161666,
+        "four_eel_stress": 89.22736918560193
+      }
+    },
+    {
+      "id": "F05",
+      "group": "Жареные",
+      "name": "Мидии и тамаго",
+      "old_price_rub": 235,
+      "capped_price_rub": 235,
+      "price_change_rub": 0,
+      "cost_rub": {
+        "joint_scenario": 80.59764033230348,
+        "price_reserve": 80.59764033230348,
+        "four_eel_stress": 80.59764033230348
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 34.29686822651212,
+        "price_reserve": 34.29686822651212,
+        "four_eel_stress": 34.29686822651212
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 20.199909857720172,
+        "price_reserve": 20.199909857720172,
+        "four_eel_stress": 20.199909857720172
+      },
+      "food_budget_at35_rub": 82.25,
+      "food_gap_above35_rub": {
+        "joint_scenario": -1.6523596676965155,
+        "price_reserve": -1.6523596676965155,
+        "four_eel_stress": -1.6523596676965155
+      }
+    },
+    {
+      "id": "F06",
+      "group": "Жареные",
+      "name": "Угорь и мидии",
+      "old_price_rub": 540,
+      "capped_price_rub": 399,
+      "price_change_rub": -141,
+      "cost_rub": {
+        "joint_scenario": 140.6027188923691,
+        "price_reserve": 188.7422471942559,
+        "four_eel_stress": 209.30639309949117
+      },
+      "fc_pct_at_cap": {
+        "joint_scenario": 35.23877666475416,
+        "price_reserve": 47.30382135194384,
+        "four_eel_stress": 52.457742631451424
+      },
+      "fc_pct_all399": {
+        "joint_scenario": 35.23877666475416,
+        "price_reserve": 47.30382135194384,
+        "four_eel_stress": 52.457742631451424
+      },
+      "food_budget_at35_rub": 139.64999999999998,
+      "food_gap_above35_rub": {
+        "joint_scenario": 0.9527188923691199,
+        "price_reserve": 49.09224719425592,
+        "four_eel_stress": 69.6563930994912
+      }
+    }
+  ],
+  "equal_quantity18_main": {
+    "n": 18,
+    "nominal_revenue_rub": 6541,
+    "straight_discount_fraction": 0,
+    "payment_rub": 6541,
+    "mean_menu_price_rub": 363.3888888888889,
+    "cost_bases": {
+      "joint_scenario": {
+        "sum_cost_rub": 2408.7066099237672,
+        "mean_cost_rub": 133.81703388465374,
+        "weighted_fc_pct": 36.82474560348215,
+        "contribution_after_materials_rub": 4132.293390076233,
+        "room_to35_rub": -119.35660992376734,
+        "mean_room_to35_rub": -6.63092277354263,
+        "above35_count": 7,
+        "above35_ids": [
+          "C01",
+          "C05",
+          "C06",
+          "B01",
+          "B04",
+          "F04",
+          "F06"
+        ],
+        "maximum_position_fc_pct": 45.034582701025165,
+        "maximum_position_id": "C05",
+        "minimum_position_fc_pct": 29.01670055070517,
+        "minimum_position_id": "B05",
+        "max_flat_discount_for_weighted_fc35_fraction": -0.0521355886709185
+      },
+      "price_reserve": {
+        "sum_cost_rub": 2621.8959495464087,
+        "mean_cost_rub": 145.66088608591159,
+        "weighted_fc_pct": 40.08402307822059,
+        "contribution_after_materials_rub": 3919.1040504535913,
+        "room_to35_rub": -332.5459495464088,
+        "mean_room_to35_rub": -18.47477497480049,
+        "above35_count": 9,
+        "above35_ids": [
+          "C01",
+          "C03",
+          "C05",
+          "C06",
+          "B01",
+          "B04",
+          "B05",
+          "F04",
+          "F06"
+        ],
+        "maximum_position_fc_pct": 51.439453085618204,
+        "maximum_position_id": "F04",
+        "minimum_position_fc_pct": 34.29686822651212,
+        "minimum_position_id": "F05",
+        "max_flat_discount_for_weighted_fc35_fraction": -0.14525780223487406
+      },
+      "four_eel_stress": {
+        "sum_cost_rub": 2746.733598711558,
+        "mean_cost_rub": 152.596311039531,
+        "weighted_fc_pct": 41.9925638084629,
+        "contribution_after_materials_rub": 3794.266401288442,
+        "room_to35_rub": -457.3835987115581,
+        "mean_room_to35_rub": -25.410199928419893,
+        "above35_count": 9,
+        "above35_ids": [
+          "C01",
+          "C03",
+          "C05",
+          "C06",
+          "B01",
+          "B04",
+          "B05",
+          "F04",
+          "F06"
+        ],
+        "maximum_position_fc_pct": 65.45645143660191,
+        "maximum_position_id": "C03",
+        "minimum_position_fc_pct": 34.29686822651212,
+        "minimum_position_id": "F05",
+        "max_flat_discount_for_weighted_fc35_fraction": -0.19978753738465427
+      }
+    }
+  },
+  "by_group": {
+    "Холодные": {
+      "n": 6,
+      "nominal_revenue_rub": 2341,
+      "straight_discount_fraction": 0,
+      "payment_rub": 2341,
+      "mean_menu_price_rub": 390.1666666666667,
+      "cost_bases": {
+        "joint_scenario": {
+          "sum_cost_rub": 902.673695536141,
+          "mean_cost_rub": 150.44561592269017,
+          "weighted_fc_pct": 38.55932061239389,
+          "contribution_after_materials_rub": 1438.3263044638588,
+          "room_to35_rub": -83.32369553614114,
+          "mean_room_to35_rub": -13.887282589356857,
+          "above35_count": 3,
+          "above35_ids": [
+            "C01",
+            "C05",
+            "C06"
+          ],
+          "maximum_position_fc_pct": 45.034582701025165,
+          "maximum_position_id": "C05",
+          "minimum_position_fc_pct": 33.16418058505445,
+          "minimum_position_id": "C03",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.10169487463982563
+        },
+        "price_reserve": {
+          "sum_cost_rub": 971.4444502531222,
+          "mean_cost_rub": 161.90740837552036,
+          "weighted_fc_pct": 41.496986341440504,
+          "contribution_after_materials_rub": 1369.5555497468777,
+          "room_to35_rub": -152.09445025312232,
+          "mean_room_to35_rub": -25.349075042187053,
+          "above35_count": 4,
+          "above35_ids": [
+            "C01",
+            "C03",
+            "C05",
+            "C06"
+          ],
+          "maximum_position_fc_pct": 50.399958709611134,
+          "maximum_position_id": "C03",
+          "minimum_position_fc_pct": 34.873772820800575,
+          "minimum_position_id": "C04",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.18562818118401458
+        },
+        "four_eel_stress": {
+          "sum_cost_rub": 1031.5198562338155,
+          "mean_cost_rub": 171.91997603896925,
+          "weighted_fc_pct": 44.06321470456282,
+          "contribution_after_materials_rub": 1309.4801437661845,
+          "room_to35_rub": -212.1698562338156,
+          "mean_room_to35_rub": -35.36164270563594,
+          "above35_count": 4,
+          "above35_ids": [
+            "C01",
+            "C03",
+            "C05",
+            "C06"
+          ],
+          "maximum_position_fc_pct": 65.45645143660191,
+          "maximum_position_id": "C03",
+          "minimum_position_fc_pct": 34.873772820800575,
+          "minimum_position_id": "C04",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.2589489915589378
+        }
+      }
+    },
+    "Запечённые": {
+      "n": 6,
+      "nominal_revenue_rub": 2122,
+      "straight_discount_fraction": 0,
+      "payment_rub": 2122,
+      "mean_menu_price_rub": 353.6666666666667,
+      "cost_bases": {
+        "joint_scenario": {
+          "sum_cost_rub": 764.7168858437773,
+          "mean_cost_rub": 127.45281430729621,
+          "weighted_fc_pct": 36.03755352703946,
+          "contribution_after_materials_rub": 1357.2831141562228,
+          "room_to35_rub": -22.016885843777345,
+          "mean_room_to35_rub": -3.669480973962891,
+          "above35_count": 2,
+          "above35_ids": [
+            "B01",
+            "B04"
+          ],
+          "maximum_position_fc_pct": 43.73937213455448,
+          "maximum_position_id": "B01",
+          "minimum_position_fc_pct": 29.01670055070517,
+          "minimum_position_id": "B05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.029644386486841645
+        },
+        "price_reserve": {
+          "sum_cost_rub": 812.8564141456641,
+          "mean_cost_rub": 135.47606902427734,
+          "weighted_fc_pct": 38.30614581270801,
+          "contribution_after_materials_rub": 1309.143585854336,
+          "room_to35_rub": -70.15641414566414,
+          "mean_room_to35_rub": -11.692735690944025,
+          "above35_count": 3,
+          "above35_ids": [
+            "B01",
+            "B04",
+            "B05"
+          ],
+          "maximum_position_fc_pct": 43.73937213455448,
+          "maximum_position_id": "B01",
+          "minimum_position_fc_pct": 34.43952147821305,
+          "minimum_position_id": "B02",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.09446130893451476
+        },
+        "four_eel_stress": {
+          "sum_cost_rub": 833.4205600508993,
+          "mean_cost_rub": 138.9034266751499,
+          "weighted_fc_pct": 39.275238456687056,
+          "contribution_after_materials_rub": 1288.5794399491006,
+          "room_to35_rub": -90.7205600508994,
+          "mean_room_to35_rub": -15.120093341816565,
+          "above35_count": 3,
+          "above35_ids": [
+            "B01",
+            "B04",
+            "B05"
+          ],
+          "maximum_position_fc_pct": 46.23566651740243,
+          "maximum_position_id": "B05",
+          "minimum_position_fc_pct": 34.43952147821305,
+          "minimum_position_id": "B02",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.12214967019105893
+        }
+      }
+    },
+    "Жареные": {
+      "n": 6,
+      "nominal_revenue_rub": 2078,
+      "straight_discount_fraction": 0,
+      "payment_rub": 2078,
+      "mean_menu_price_rub": 346.3333333333333,
+      "cost_bases": {
+        "joint_scenario": {
+          "sum_cost_rub": 741.3160285438489,
+          "mean_cost_rub": 123.55267142397481,
+          "weighted_fc_pct": 35.67449608006973,
+          "contribution_after_materials_rub": 1336.683971456151,
+          "room_to35_rub": -14.016028543848961,
+          "mean_room_to35_rub": -2.33600475730816,
+          "above35_count": 2,
+          "above35_ids": [
+            "F04",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 39.37440839842853,
+          "maximum_position_id": "F04",
+          "minimum_position_fc_pct": 34.29686822651212,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.01927131657342085
+        },
+        "price_reserve": {
+          "sum_cost_rub": 837.5950851476225,
+          "mean_cost_rub": 139.59918085793709,
+          "weighted_fc_pct": 40.30775193203188,
+          "contribution_after_materials_rub": 1240.4049148523775,
+          "room_to35_rub": -110.29508514762256,
+          "mean_room_to35_rub": -18.382514191270428,
+          "above35_count": 2,
+          "above35_ids": [
+            "F04",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 51.439453085618204,
+          "maximum_position_id": "F04",
+          "minimum_position_fc_pct": 34.29686822651212,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.15165005520091102
+        },
+        "four_eel_stress": {
+          "sum_cost_rub": 881.7931824268431,
+          "mean_cost_rub": 146.96553040447387,
+          "weighted_fc_pct": 42.43470560283172,
+          "contribution_after_materials_rub": 1196.206817573157,
+          "room_to35_rub": -154.4931824268432,
+          "mean_room_to35_rub": -25.7488637378072,
+          "above35_count": 2,
+          "above35_ids": [
+            "F04",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 57.362749169323784,
+          "maximum_position_id": "F04",
+          "minimum_position_fc_pct": 34.29686822651212,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.21242016008090636
+        }
+      }
+    }
+  },
+  "flat_discount_sensitivity_main": {
+    "0pct": {
+      "n": 18,
+      "nominal_revenue_rub": 6541,
+      "straight_discount_fraction": 0,
+      "payment_rub": 6541,
+      "mean_menu_price_rub": 363.3888888888889,
+      "cost_bases": {
+        "joint_scenario": {
+          "sum_cost_rub": 2408.7066099237672,
+          "mean_cost_rub": 133.81703388465374,
+          "weighted_fc_pct": 36.82474560348215,
+          "contribution_after_materials_rub": 4132.293390076233,
+          "room_to35_rub": -119.35660992376734,
+          "mean_room_to35_rub": -6.63092277354263,
+          "above35_count": 7,
+          "above35_ids": [
+            "C01",
+            "C05",
+            "C06",
+            "B01",
+            "B04",
+            "F04",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 45.034582701025165,
+          "maximum_position_id": "C05",
+          "minimum_position_fc_pct": 29.01670055070517,
+          "minimum_position_id": "B05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.0521355886709185
+        },
+        "price_reserve": {
+          "sum_cost_rub": 2621.8959495464087,
+          "mean_cost_rub": 145.66088608591159,
+          "weighted_fc_pct": 40.08402307822059,
+          "contribution_after_materials_rub": 3919.1040504535913,
+          "room_to35_rub": -332.5459495464088,
+          "mean_room_to35_rub": -18.47477497480049,
+          "above35_count": 9,
+          "above35_ids": [
+            "C01",
+            "C03",
+            "C05",
+            "C06",
+            "B01",
+            "B04",
+            "B05",
+            "F04",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 51.439453085618204,
+          "maximum_position_id": "F04",
+          "minimum_position_fc_pct": 34.29686822651212,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.14525780223487406
+        },
+        "four_eel_stress": {
+          "sum_cost_rub": 2746.733598711558,
+          "mean_cost_rub": 152.596311039531,
+          "weighted_fc_pct": 41.9925638084629,
+          "contribution_after_materials_rub": 3794.266401288442,
+          "room_to35_rub": -457.3835987115581,
+          "mean_room_to35_rub": -25.410199928419893,
+          "above35_count": 9,
+          "above35_ids": [
+            "C01",
+            "C03",
+            "C05",
+            "C06",
+            "B01",
+            "B04",
+            "B05",
+            "F04",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 65.45645143660191,
+          "maximum_position_id": "C03",
+          "minimum_position_fc_pct": 34.29686822651212,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.19978753738465427
+        }
+      }
+    },
+    "15pct": {
+      "n": 18,
+      "nominal_revenue_rub": 6541,
+      "straight_discount_fraction": 0.15,
+      "payment_rub": 5559.849999999999,
+      "mean_menu_price_rub": 363.3888888888889,
+      "cost_bases": {
+        "joint_scenario": {
+          "sum_cost_rub": 2408.7066099237672,
+          "mean_cost_rub": 133.81703388465374,
+          "weighted_fc_pct": 43.32323012174371,
+          "contribution_after_materials_rub": 3151.143390076232,
+          "room_to35_rub": -462.7591099237675,
+          "mean_room_to35_rub": -25.708839440209303,
+          "above35_count": 17,
+          "above35_ids": [
+            "C01",
+            "C02",
+            "C03",
+            "C04",
+            "C05",
+            "C06",
+            "B01",
+            "B02",
+            "B03",
+            "B04",
+            "B06",
+            "F01",
+            "F02",
+            "F03",
+            "F04",
+            "F05",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 52.98186200120608,
+          "maximum_position_id": "C05",
+          "minimum_position_fc_pct": 34.13729476553549,
+          "minimum_position_id": "B05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.0521355886709185
+        },
+        "price_reserve": {
+          "sum_cost_rub": 2621.8959495464087,
+          "mean_cost_rub": 145.66088608591159,
+          "weighted_fc_pct": 47.15767420967129,
+          "contribution_after_materials_rub": 2937.9540504535908,
+          "room_to35_rub": -675.9484495464089,
+          "mean_room_to35_rub": -37.55269164146716,
+          "above35_count": 18,
+          "above35_ids": [
+            "C01",
+            "C02",
+            "C03",
+            "C04",
+            "C05",
+            "C06",
+            "B01",
+            "B02",
+            "B03",
+            "B04",
+            "B05",
+            "B06",
+            "F01",
+            "F02",
+            "F03",
+            "F04",
+            "F05",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 60.517003630139065,
+          "maximum_position_id": "F04",
+          "minimum_position_fc_pct": 40.349256737073084,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.14525780223487406
+        },
+        "four_eel_stress": {
+          "sum_cost_rub": 2746.733598711558,
+          "mean_cost_rub": 152.596311039531,
+          "weighted_fc_pct": 49.40301624525047,
+          "contribution_after_materials_rub": 2813.1164012884415,
+          "room_to35_rub": -800.7860987115582,
+          "mean_room_to35_rub": -44.48811659508657,
+          "above35_count": 18,
+          "above35_ids": [
+            "C01",
+            "C02",
+            "C03",
+            "C04",
+            "C05",
+            "C06",
+            "B01",
+            "B02",
+            "B03",
+            "B04",
+            "B05",
+            "B06",
+            "F01",
+            "F02",
+            "F03",
+            "F04",
+            "F05",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 77.00758992541402,
+          "maximum_position_id": "C03",
+          "minimum_position_fc_pct": 40.349256737073084,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.19978753738465427
+        }
+      }
+    },
+    "20pct": {
+      "n": 18,
+      "nominal_revenue_rub": 6541,
+      "straight_discount_fraction": 0.2,
+      "payment_rub": 5232.8,
+      "mean_menu_price_rub": 363.3888888888889,
+      "cost_bases": {
+        "joint_scenario": {
+          "sum_cost_rub": 2408.7066099237672,
+          "mean_cost_rub": 133.81703388465374,
+          "weighted_fc_pct": 46.030932004352685,
+          "contribution_after_materials_rub": 2824.093390076233,
+          "room_to35_rub": -577.2266099237672,
+          "mean_room_to35_rub": -32.06814499576485,
+          "above35_count": 18,
+          "above35_ids": [
+            "C01",
+            "C02",
+            "C03",
+            "C04",
+            "C05",
+            "C06",
+            "B01",
+            "B02",
+            "B03",
+            "B04",
+            "B05",
+            "B06",
+            "F01",
+            "F02",
+            "F03",
+            "F04",
+            "F05",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 56.293228376281455,
+          "maximum_position_id": "C05",
+          "minimum_position_fc_pct": 36.27087568838146,
+          "minimum_position_id": "B05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.0521355886709185
+        },
+        "price_reserve": {
+          "sum_cost_rub": 2621.8959495464087,
+          "mean_cost_rub": 145.66088608591159,
+          "weighted_fc_pct": 50.10502884777574,
+          "contribution_after_materials_rub": 2610.9040504535915,
+          "room_to35_rub": -790.4159495464087,
+          "mean_room_to35_rub": -43.91199719702271,
+          "above35_count": 18,
+          "above35_ids": [
+            "C01",
+            "C02",
+            "C03",
+            "C04",
+            "C05",
+            "C06",
+            "B01",
+            "B02",
+            "B03",
+            "B04",
+            "B05",
+            "B06",
+            "F01",
+            "F02",
+            "F03",
+            "F04",
+            "F05",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 64.29931635702275,
+          "maximum_position_id": "F04",
+          "minimum_position_fc_pct": 42.87108528314015,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.14525780223487406
+        },
+        "four_eel_stress": {
+          "sum_cost_rub": 2746.733598711558,
+          "mean_cost_rub": 152.596311039531,
+          "weighted_fc_pct": 52.49070476057862,
+          "contribution_after_materials_rub": 2486.066401288442,
+          "room_to35_rub": -915.253598711558,
+          "mean_room_to35_rub": -50.84742215064211,
+          "above35_count": 18,
+          "above35_ids": [
+            "C01",
+            "C02",
+            "C03",
+            "C04",
+            "C05",
+            "C06",
+            "B01",
+            "B02",
+            "B03",
+            "B04",
+            "B05",
+            "B06",
+            "F01",
+            "F02",
+            "F03",
+            "F04",
+            "F05",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 81.82056429575239,
+          "maximum_position_id": "C03",
+          "minimum_position_fc_pct": 42.87108528314015,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.19978753738465427
+        }
+      }
+    }
+  },
+  "all18_price399_sensitivity": {
+    "0pct": {
+      "n": 18,
+      "nominal_revenue_rub": 7182,
+      "straight_discount_fraction": 0,
+      "payment_rub": 7182,
+      "mean_menu_price_rub": 399.0,
+      "cost_bases": {
+        "joint_scenario": {
+          "sum_cost_rub": 2408.7066099237672,
+          "mean_cost_rub": 133.81703388465374,
+          "weighted_fc_pct": 33.53810373048966,
+          "contribution_after_materials_rub": 4773.293390076233,
+          "room_to35_rub": 104.99339007623257,
+          "mean_room_to35_rub": 5.832966115346254,
+          "above35_count": 7,
+          "above35_ids": [
+            "C01",
+            "C05",
+            "C06",
+            "B01",
+            "B04",
+            "F04",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 45.034582701025165,
+          "maximum_position_id": "C05",
+          "minimum_position_fc_pct": 20.199909857720172,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": 0.04176846484315255
+        },
+        "price_reserve": {
+          "sum_cost_rub": 2621.8959495464087,
+          "mean_cost_rub": 145.66088608591159,
+          "weighted_fc_pct": 36.506487740829975,
+          "contribution_after_materials_rub": 4560.104050453591,
+          "room_to35_rub": -108.19594954640888,
+          "mean_room_to35_rub": -6.010886085911604,
+          "above35_count": 9,
+          "above35_ids": [
+            "C01",
+            "C03",
+            "C05",
+            "C06",
+            "B01",
+            "B04",
+            "B05",
+            "F04",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 51.439453085618204,
+          "maximum_position_id": "F04",
+          "minimum_position_fc_pct": 20.199909857720172,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.043042506880856424
+        },
+        "four_eel_stress": {
+          "sum_cost_rub": 2746.733598711558,
+          "mean_cost_rub": 152.596311039531,
+          "weighted_fc_pct": 38.244689483591735,
+          "contribution_after_materials_rub": 4435.266401288442,
+          "room_to35_rub": -233.03359871155817,
+          "mean_room_to35_rub": -12.94631103953101,
+          "above35_count": 9,
+          "above35_ids": [
+            "C01",
+            "C03",
+            "C05",
+            "C06",
+            "B01",
+            "B04",
+            "B05",
+            "F04",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 65.45645143660191,
+          "maximum_position_id": "C03",
+          "minimum_position_fc_pct": 20.199909857720172,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.09270541381690656
+        }
+      }
+    },
+    "15pct": {
+      "n": 18,
+      "nominal_revenue_rub": 7182,
+      "straight_discount_fraction": 0.15,
+      "payment_rub": 6104.7,
+      "mean_menu_price_rub": 399.0,
+      "cost_bases": {
+        "joint_scenario": {
+          "sum_cost_rub": 2408.7066099237672,
+          "mean_cost_rub": 133.81703388465374,
+          "weighted_fc_pct": 39.45659262410548,
+          "contribution_after_materials_rub": 3695.9933900762326,
+          "room_to35_rub": -272.06160992376726,
+          "mean_room_to35_rub": -15.114533884653737,
+          "above35_count": 13,
+          "above35_ids": [
+            "C01",
+            "C02",
+            "C03",
+            "C04",
+            "C05",
+            "C06",
+            "B01",
+            "B04",
+            "B06",
+            "F01",
+            "F03",
+            "F04",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 52.98186200120608,
+          "maximum_position_id": "C05",
+          "minimum_position_fc_pct": 23.764599832611967,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": 0.04176846484315255
+        },
+        "price_reserve": {
+          "sum_cost_rub": 2621.8959495464087,
+          "mean_cost_rub": 145.66088608591159,
+          "weighted_fc_pct": 42.948809106858796,
+          "contribution_after_materials_rub": 3482.804050453591,
+          "room_to35_rub": -485.2509495464087,
+          "mean_room_to35_rub": -26.958386085911595,
+          "above35_count": 14,
+          "above35_ids": [
+            "C01",
+            "C02",
+            "C03",
+            "C04",
+            "C05",
+            "C06",
+            "B01",
+            "B04",
+            "B05",
+            "B06",
+            "F01",
+            "F03",
+            "F04",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 60.517003630139065,
+          "maximum_position_id": "F04",
+          "minimum_position_fc_pct": 23.764599832611967,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.043042506880856424
+        },
+        "four_eel_stress": {
+          "sum_cost_rub": 2746.733598711558,
+          "mean_cost_rub": 152.596311039531,
+          "weighted_fc_pct": 44.99375233363733,
+          "contribution_after_materials_rub": 3357.966401288442,
+          "room_to35_rub": -610.088598711558,
+          "mean_room_to35_rub": -33.893811039531,
+          "above35_count": 14,
+          "above35_ids": [
+            "C01",
+            "C02",
+            "C03",
+            "C04",
+            "C05",
+            "C06",
+            "B01",
+            "B04",
+            "B05",
+            "B06",
+            "F01",
+            "F03",
+            "F04",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 77.00758992541402,
+          "maximum_position_id": "C03",
+          "minimum_position_fc_pct": 23.764599832611967,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.09270541381690656
+        }
+      }
+    },
+    "20pct": {
+      "n": 18,
+      "nominal_revenue_rub": 7182,
+      "straight_discount_fraction": 0.2,
+      "payment_rub": 5745.6,
+      "mean_menu_price_rub": 399.0,
+      "cost_bases": {
+        "joint_scenario": {
+          "sum_cost_rub": 2408.7066099237672,
+          "mean_cost_rub": 133.81703388465374,
+          "weighted_fc_pct": 41.922629663112076,
+          "contribution_after_materials_rub": 3336.893390076233,
+          "room_to35_rub": -397.7466099237672,
+          "mean_room_to35_rub": -22.097033884653733,
+          "above35_count": 14,
+          "above35_ids": [
+            "C01",
+            "C02",
+            "C03",
+            "C04",
+            "C05",
+            "C06",
+            "B01",
+            "B04",
+            "B05",
+            "B06",
+            "F01",
+            "F03",
+            "F04",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 56.293228376281455,
+          "maximum_position_id": "C05",
+          "minimum_position_fc_pct": 25.249887322150208,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": 0.04176846484315255
+        },
+        "price_reserve": {
+          "sum_cost_rub": 2621.8959495464087,
+          "mean_cost_rub": 145.66088608591159,
+          "weighted_fc_pct": 45.63310967603747,
+          "contribution_after_materials_rub": 3123.7040504535917,
+          "room_to35_rub": -610.9359495464087,
+          "mean_room_to35_rub": -33.94088608591159,
+          "above35_count": 14,
+          "above35_ids": [
+            "C01",
+            "C02",
+            "C03",
+            "C04",
+            "C05",
+            "C06",
+            "B01",
+            "B04",
+            "B05",
+            "B06",
+            "F01",
+            "F03",
+            "F04",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 64.29931635702275,
+          "maximum_position_id": "F04",
+          "minimum_position_fc_pct": 25.249887322150208,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.043042506880856424
+        },
+        "four_eel_stress": {
+          "sum_cost_rub": 2746.733598711558,
+          "mean_cost_rub": 152.596311039531,
+          "weighted_fc_pct": 47.80586185448966,
+          "contribution_after_materials_rub": 2998.8664012884424,
+          "room_to35_rub": -735.773598711558,
+          "mean_room_to35_rub": -40.876311039531,
+          "above35_count": 14,
+          "above35_ids": [
+            "C01",
+            "C02",
+            "C03",
+            "C04",
+            "C05",
+            "C06",
+            "B01",
+            "B04",
+            "B05",
+            "B06",
+            "F01",
+            "F03",
+            "F04",
+            "F06"
+          ],
+          "maximum_position_fc_pct": 81.82056429575239,
+          "maximum_position_id": "C03",
+          "minimum_position_fc_pct": 25.249887322150208,
+          "minimum_position_id": "F05",
+          "max_flat_discount_for_weighted_fc35_fraction": -0.09270541381690656
+        }
+      }
+    }
+  },
+  "limits": [
+    "No true weighted new-lineFC without future SKU quantities/sets/channel/promotions mix.",
+    "Flat15/20percentdiscount illustrations do not model giftfood, redemptioncaps, benefitselection or product exclusions.",
+    "FC excludes unpriced water and costs outside recipe: packaging/sidekit/payroll/delivery/commissions/taxes/equipment.",
+    "The3costbases are alternatives; never sumjoint+reserve+stress.",
+    "Eeljoint requires linked sell-through of sauce; equal-18 demo generates surplus, hence separate stress.",
+    "35percent ceiling here is BEFOREpromotions; previous33percent net wholeline target is a different denominator."
+  ],
+  "checks": {
+    "n18": true,
+    "n6_each_group": true,
+    "all_old_prices_below399_unchanged": true,
+    "stress_formula_verified_for4eelrows": true,
+    "line_cost_sums_verified": true,
+    "no_repo_changes": true
+  }
+}

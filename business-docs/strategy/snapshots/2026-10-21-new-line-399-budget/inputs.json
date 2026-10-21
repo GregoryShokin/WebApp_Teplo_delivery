@@ -1,0 +1,955 @@
+{
+  "as_of": "2026-10-21",
+  "budget": {
+    "baseline": {
+      "quarter_orders": 5507,
+      "average_orders": 1835.6666666666667,
+      "quarter_revenue": 9945707.51,
+      "weighted_net_check": 1806.0118957690213,
+      "actual_quarter_roll_fc": 0.2952357924782555,
+      "future_roll_fc": 0.33,
+      "future_enterprise_recipe_fc": 0.30998232911198753
+    },
+    "coefficients": {
+      "fixed_monthly": 1517035.1818,
+      "variable_per_order_without_company_pool": 1047.5849122640334,
+      "contribution_per_order_before_company_pool": 758.4269835049879,
+      "formula": "profit(q)=q*netcheck−fixed_monthly−q*variable_per_order−one_daily_company_pool(q)−new_unknown_costs",
+      "four_sushi_fixed_fund": 320433.3333333333,
+      "other_fixed_payroll": 719164.5866666666,
+      "vacation_reserve_already_inside_payroll": 22000,
+      "starter_fixed_residual": 494.05366666667396,
+      "business_tax_fixed_residual": 4782.503133333317
+    },
+    "budget_rows": [
+      {
+        "code": "four_sushi_fixed",
+        "fixed_monthly": 320433.3333333333,
+        "per_order": 0.0
+      },
+      {
+        "code": "other_fixed_payroll",
+        "fixed_monthly": 719164.5866666666,
+        "per_order": 0.0
+      },
+      {
+        "code": "roll_food",
+        "fixed_monthly": 0.0,
+        "per_order": 323.03875066314095
+      },
+      {
+        "code": "other_food",
+        "fixed_monthly": 0.0,
+        "per_order": 236.79302319129633
+      },
+      {
+        "code": "writeoff_reserve",
+        "fixed_monthly": 0.0,
+        "per_order": 43.73050332566224
+      },
+      {
+        "code": "inventory_reserve",
+        "fixed_monthly": 0.0,
+        "per_order": 30.669578138228363
+      },
+      {
+        "code": "packaging_discrepancy",
+        "fixed_monthly": 0.0,
+        "per_order": 15.963386598874163
+      },
+      {
+        "code": "courier_service",
+        "fixed_monthly": 0.0,
+        "per_order": 143.42128200472126
+      },
+      {
+        "code": "consumables_maintenance",
+        "fixed_monthly": 29504.756666666664,
+        "per_order": 16.07304703105139
+      },
+      {
+        "code": "utilities",
+        "fixed_monthly": 68023.85833333334,
+        "per_order": 32.29939077537679
+      },
+      {
+        "code": "rent",
+        "fixed_monthly": 110000.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "rent_unspecified_reserve",
+        "fixed_monthly": 333.3333333333333,
+        "per_order": 0.0
+      },
+      {
+        "code": "acquiring",
+        "fixed_monthly": 0.0,
+        "per_order": 24.948612674777557
+      },
+      {
+        "code": "starter",
+        "fixed_monthly": 494.05366666667396,
+        "per_order": 42.10765189758489
+      },
+      {
+        "code": "yandex",
+        "fixed_monthly": 0.0,
+        "per_order": 9.078264027601234
+      },
+      {
+        "code": "partner_refunds",
+        "fixed_monthly": 0.0,
+        "per_order": 21.100708189576903
+      },
+      {
+        "code": "payroll_taxes",
+        "fixed_monthly": 20013.93,
+        "per_order": 0.0
+      },
+      {
+        "code": "business_taxes",
+        "fixed_monthly": 4782.503133333317,
+        "per_order": 108.36071374614127
+      },
+      {
+        "code": "fuel_reserve",
+        "fixed_monthly": 880.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "transport",
+        "fixed_monthly": 7364.466666666667,
+        "per_order": 0.0
+      },
+      {
+        "code": "staff_meals",
+        "fixed_monthly": 28445.963333333333,
+        "per_order": 0.0
+      },
+      {
+        "code": "automation",
+        "fixed_monthly": 63049.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "equipment_repair",
+        "fixed_monthly": 3700.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "office_rent",
+        "fixed_monthly": 0.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "office_maintenance",
+        "fixed_monthly": 116.66666666666667,
+        "per_order": 0.0
+      },
+      {
+        "code": "rko",
+        "fixed_monthly": 5390.693333333334,
+        "per_order": 0.0
+      },
+      {
+        "code": "bank_fees",
+        "fixed_monthly": 292.76,
+        "per_order": 0.0
+      },
+      {
+        "code": "fd_nk_services",
+        "fixed_monthly": 3000.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "staff_expenses",
+        "fixed_monthly": 3944.3199999999997,
+        "per_order": 0.0
+      },
+      {
+        "code": "staff_training",
+        "fixed_monthly": 0.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "telecom",
+        "fixed_monthly": 14603.753333333334,
+        "per_order": 0.0
+      },
+      {
+        "code": "recruiting",
+        "fixed_monthly": 6899.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "aggregator_commission",
+        "fixed_monthly": 2000.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "targeted_ads",
+        "fixed_monthly": 0.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "outdoor_ads",
+        "fixed_monthly": 0.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "yandex_maps_ads",
+        "fixed_monthly": 0.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "context_ads",
+        "fixed_monthly": 64666.666666666664,
+        "per_order": 0.0
+      },
+      {
+        "code": "flyers",
+        "fixed_monthly": 0.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "seo",
+        "fixed_monthly": 13000.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "other_marketing",
+        "fixed_monthly": 0.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "other_expenses",
+        "fixed_monthly": 3.046666666666681,
+        "per_order": 0.0
+      },
+      {
+        "code": "overdraft_fee",
+        "fixed_monthly": 0.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "depreciation",
+        "fixed_monthly": 26928.49,
+        "per_order": 0.0
+      },
+      {
+        "code": "asset_disposal_loss",
+        "fixed_monthly": 0.0,
+        "per_order": 0.0
+      },
+      {
+        "code": "fines_penalties",
+        "fixed_monthly": 0.0,
+        "per_order": 0.0
+      }
+    ],
+    "days": [
+      {
+        "date": "2026-07-01",
+        "revenue": 123604.0,
+        "other_coeff": 22.5
+      },
+      {
+        "date": "2026-07-02",
+        "revenue": 88248.15,
+        "other_coeff": 22.106944444444444
+      },
+      {
+        "date": "2026-07-03",
+        "revenue": 193508.2,
+        "other_coeff": 30.0
+      },
+      {
+        "date": "2026-07-04",
+        "revenue": 123383.05,
+        "other_coeff": 25.0
+      },
+      {
+        "date": "2026-07-05",
+        "revenue": 120368.0,
+        "other_coeff": 20.0
+      },
+      {
+        "date": "2026-07-06",
+        "revenue": 105747.2,
+        "other_coeff": 35.0
+      },
+      {
+        "date": "2026-07-07",
+        "revenue": 86165.06,
+        "other_coeff": 24.998888888888885
+      },
+      {
+        "date": "2026-07-08",
+        "revenue": 121650.95,
+        "other_coeff": 27.498611111111114
+      },
+      {
+        "date": "2026-07-09",
+        "revenue": 105364.5,
+        "other_coeff": 25.166666666666664
+      },
+      {
+        "date": "2026-07-10",
+        "revenue": 160234.75,
+        "other_coeff": 27.501944444444444
+      },
+      {
+        "date": "2026-07-11",
+        "revenue": 154967.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-07-12",
+        "revenue": 118341.15,
+        "other_coeff": 27.496111111111116
+      },
+      {
+        "date": "2026-07-13",
+        "revenue": 95968.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-07-14",
+        "revenue": 105498.8,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-07-15",
+        "revenue": 134820.2,
+        "other_coeff": 17.5
+      },
+      {
+        "date": "2026-07-16",
+        "revenue": 113226.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-07-17",
+        "revenue": 116737.8,
+        "other_coeff": 30.0
+      },
+      {
+        "date": "2026-07-18",
+        "revenue": 128477.0,
+        "other_coeff": 27.5025
+      },
+      {
+        "date": "2026-07-19",
+        "revenue": 91205.0,
+        "other_coeff": 27.500833333333336
+      },
+      {
+        "date": "2026-07-20",
+        "revenue": 102298.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-07-21",
+        "revenue": 104207.15,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-07-22",
+        "revenue": 77556.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-07-23",
+        "revenue": 112254.75,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-07-24",
+        "revenue": 126933.9,
+        "other_coeff": 27.495
+      },
+      {
+        "date": "2026-07-25",
+        "revenue": 146006.72,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-07-26",
+        "revenue": 147436.8,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-07-27",
+        "revenue": 75546.35,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-07-28",
+        "revenue": 73272.0,
+        "other_coeff": 26.694444444444443
+      },
+      {
+        "date": "2026-07-29",
+        "revenue": 119968.1,
+        "other_coeff": 15.0
+      },
+      {
+        "date": "2026-07-30",
+        "revenue": 104916.3,
+        "other_coeff": 27.49972222222222
+      },
+      {
+        "date": "2026-07-31",
+        "revenue": 118872.4,
+        "other_coeff": 30.0
+      },
+      {
+        "date": "2026-08-01",
+        "revenue": 129747.15,
+        "other_coeff": 30.0
+      },
+      {
+        "date": "2026-08-02",
+        "revenue": 92847.8,
+        "other_coeff": 20.0
+      },
+      {
+        "date": "2026-08-03",
+        "revenue": 98910.4,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-08-04",
+        "revenue": 56668.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-08-05",
+        "revenue": 66304.3,
+        "other_coeff": 17.5
+      },
+      {
+        "date": "2026-08-06",
+        "revenue": 65898.0,
+        "other_coeff": 17.497500000000002
+      },
+      {
+        "date": "2026-08-07",
+        "revenue": 136962.6,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-08-08",
+        "revenue": 184694.4,
+        "other_coeff": 25.0
+      },
+      {
+        "date": "2026-08-09",
+        "revenue": 81747.0,
+        "other_coeff": 25.0
+      },
+      {
+        "date": "2026-08-10",
+        "revenue": 76445.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-08-11",
+        "revenue": 106484.25,
+        "other_coeff": 17.5
+      },
+      {
+        "date": "2026-08-12",
+        "revenue": 130196.0,
+        "other_coeff": 15.003611111111113
+      },
+      {
+        "date": "2026-08-13",
+        "revenue": 96537.4,
+        "other_coeff": 12.5
+      },
+      {
+        "date": "2026-08-14",
+        "revenue": 150831.0,
+        "other_coeff": 22.5
+      },
+      {
+        "date": "2026-08-15",
+        "revenue": 175890.2,
+        "other_coeff": 34.998888888888885
+      },
+      {
+        "date": "2026-08-16",
+        "revenue": 99755.0,
+        "other_coeff": 27.498611111111114
+      },
+      {
+        "date": "2026-08-17",
+        "revenue": 95721.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-08-18",
+        "revenue": 61479.83,
+        "other_coeff": 20.0
+      },
+      {
+        "date": "2026-08-19",
+        "revenue": 93336.78,
+        "other_coeff": 27.918888888888887
+      },
+      {
+        "date": "2026-08-20",
+        "revenue": 89883.0,
+        "other_coeff": 32.5
+      },
+      {
+        "date": "2026-08-21",
+        "revenue": 126964.24,
+        "other_coeff": 37.5
+      },
+      {
+        "date": "2026-08-22",
+        "revenue": 139389.2,
+        "other_coeff": 37.50138888888888
+      },
+      {
+        "date": "2026-08-23",
+        "revenue": 113255.75,
+        "other_coeff": 32.5
+      },
+      {
+        "date": "2026-08-24",
+        "revenue": 65935.0,
+        "other_coeff": 30.001666666666665
+      },
+      {
+        "date": "2026-08-25",
+        "revenue": 74972.02,
+        "other_coeff": 27.499166666666664
+      },
+      {
+        "date": "2026-08-26",
+        "revenue": 105736.15,
+        "other_coeff": 32.50277777777778
+      },
+      {
+        "date": "2026-08-27",
+        "revenue": 70321.22,
+        "other_coeff": 30.0
+      },
+      {
+        "date": "2026-08-28",
+        "revenue": 132914.0,
+        "other_coeff": 30.0
+      },
+      {
+        "date": "2026-08-29",
+        "revenue": 171945.0,
+        "other_coeff": 30.0
+      },
+      {
+        "date": "2026-08-30",
+        "revenue": 93846.0,
+        "other_coeff": 27.50347222222222
+      },
+      {
+        "date": "2026-08-31",
+        "revenue": 96812.95,
+        "other_coeff": 31.416666666666664
+      },
+      {
+        "date": "2026-09-01",
+        "revenue": 265040.0,
+        "other_coeff": 32.625
+      },
+      {
+        "date": "2026-09-02",
+        "revenue": 51222.0,
+        "other_coeff": 27.208333333333336
+      },
+      {
+        "date": "2026-09-03",
+        "revenue": 53492.82,
+        "other_coeff": 25.191666666666663
+      },
+      {
+        "date": "2026-09-04",
+        "revenue": 110601.55,
+        "other_coeff": 32.50388888888888
+      },
+      {
+        "date": "2026-09-05",
+        "revenue": 133381.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-06",
+        "revenue": 107223.84,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-07",
+        "revenue": 97102.15,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-08",
+        "revenue": 63063.3,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-09",
+        "revenue": 73609.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-10",
+        "revenue": 94769.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-11",
+        "revenue": 104549.02,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-12",
+        "revenue": 154373.2,
+        "other_coeff": 27.49972222222222
+      },
+      {
+        "date": "2026-09-13",
+        "revenue": 128993.01,
+        "other_coeff": 35.219722222222224
+      },
+      {
+        "date": "2026-09-14",
+        "revenue": 95352.25,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-15",
+        "revenue": 103340.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-16",
+        "revenue": 75343.45,
+        "other_coeff": 25.0
+      },
+      {
+        "date": "2026-09-17",
+        "revenue": 62323.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-18",
+        "revenue": 129345.15,
+        "other_coeff": 32.55555555555556
+      },
+      {
+        "date": "2026-09-19",
+        "revenue": 123102.35,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-20",
+        "revenue": 56806.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-21",
+        "revenue": 70711.9,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-22",
+        "revenue": 62786.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-23",
+        "revenue": 64778.0,
+        "other_coeff": 27.263888888888886
+      },
+      {
+        "date": "2026-09-24",
+        "revenue": 63868.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-25",
+        "revenue": 164633.45,
+        "other_coeff": 28.90625
+      },
+      {
+        "date": "2026-09-26",
+        "revenue": 176647.0,
+        "other_coeff": 37.5
+      },
+      {
+        "date": "2026-09-27",
+        "revenue": 144567.0,
+        "other_coeff": 30.0
+      },
+      {
+        "date": "2026-09-28",
+        "revenue": 93546.0,
+        "other_coeff": 27.5
+      },
+      {
+        "date": "2026-09-29",
+        "revenue": 60151.15,
+        "other_coeff": 26.0375
+      },
+      {
+        "date": "2026-09-30",
+        "revenue": 81773.0,
+        "other_coeff": 27.5
+      }
+    ],
+    "tiers": [
+      {
+        "min": 50000.0,
+        "rate": 0.035
+      },
+      {
+        "min": 140000.0,
+        "rate": 0.045
+      },
+      {
+        "min": 190000.0,
+        "rate": 0.055
+      },
+      {
+        "min": 550000.0,
+        "rate": 0.065
+      }
+    ],
+    "roll_net_per_order": 978.905305039821,
+    "other_food_per_order": 236.79302319129633,
+    "loss_rate": 0.13289721115978578
+  },
+  "menu": [
+    {
+      "id": "C01",
+      "group": "Холодные",
+      "name": "Лосось — крышка",
+      "old_price": 495,
+      "costs": {
+        "joint": 172.5014741241109,
+        "reserve": 172.5014741241109,
+        "surplus_stress": 172.5014741241109
+      }
+    },
+    {
+      "id": "C02",
+      "group": "Холодные",
+      "name": "Креветка — крышка",
+      "old_price": 370,
+      "costs": {
+        "joint": 129.40030493391126,
+        "reserve": 129.40030493391126,
+        "surplus_stress": 129.40030493391126
+      }
+    },
+    {
+      "id": "C03",
+      "group": "Холодные",
+      "name": "Угорь — крышка",
+      "old_price": 575,
+      "costs": {
+        "joint": 132.3250805343673,
+        "reserve": 201.09583525134843,
+        "surplus_stress": 261.17124123204167
+      }
+    },
+    {
+      "id": "C04",
+      "group": "Холодные",
+      "name": "Копчёный лосось и масаго",
+      "old_price": 375,
+      "costs": {
+        "joint": 130.77664807800215,
+        "reserve": 130.77664807800215,
+        "surplus_stress": 130.77664807800215
+      }
+    },
+    {
+      "id": "C05",
+      "group": "Холодные",
+      "name": "Тартар из лосося",
+      "old_price": 515,
+      "costs": {
+        "joint": 179.68798497709042,
+        "reserve": 179.68798497709042,
+        "surplus_stress": 179.68798497709042
+      }
+    },
+    {
+      "id": "C06",
+      "group": "Холодные",
+      "name": "Тартар из копчёного лосося",
+      "old_price": 455,
+      "costs": {
+        "joint": 157.98220288865903,
+        "reserve": 157.98220288865903,
+        "surplus_stress": 157.98220288865903
+      }
+    },
+    {
+      "id": "B01",
+      "group": "Запечённые",
+      "name": "Лосось и креветка",
+      "old_price": 500,
+      "costs": {
+        "joint": 174.5200948168724,
+        "reserve": 174.5200948168724,
+        "surplus_stress": 174.5200948168724
+      }
+    },
+    {
+      "id": "B02",
+      "group": "Запечённые",
+      "name": "Мидии под сырным соусом",
+      "old_price": 245,
+      "costs": {
+        "joint": 84.37682762162197,
+        "reserve": 84.37682762162197,
+        "surplus_stress": 84.37682762162197
+      }
+    },
+    {
+      "id": "B03",
+      "group": "Запечённые",
+      "name": "Креветка яки",
+      "old_price": 315,
+      "costs": {
+        "joint": 109.53541355631944,
+        "reserve": 109.53541355631944,
+        "surplus_stress": 109.53541355631944
+      }
+    },
+    {
+      "id": "B04",
+      "group": "Запечённые",
+      "name": "Лосось и мидии спайси",
+      "old_price": 440,
+      "costs": {
+        "joint": 153.22256385567593,
+        "reserve": 153.22256385567593,
+        "surplus_stress": 153.22256385567593
+      }
+    },
+    {
+      "id": "B05",
+      "group": "Запечённые",
+      "name": "Угорь, моцарелла и «Чёрный угорь»",
+      "old_price": 470,
+      "costs": {
+        "joint": 115.77663519731362,
+        "reserve": 163.91616349920042,
+        "surplus_stress": 184.4803094044357
+      }
+    },
+    {
+      "id": "B06",
+      "group": "Запечённые",
+      "name": "Креветка и мидии под сырным соусом",
+      "old_price": 365,
+      "costs": {
+        "joint": 127.28535079597394,
+        "reserve": 127.28535079597394,
+        "surplus_stress": 127.28535079597394
+      }
+    },
+    {
+      "id": "F01",
+      "group": "Жареные",
+      "name": "Лосось спайси",
+      "old_price": 390,
+      "costs": {
+        "joint": 135.54033667825436,
+        "reserve": 135.54033667825436,
+        "surplus_stress": 135.54033667825436
+      }
+    },
+    {
+      "id": "F02",
+      "group": "Жареные",
+      "name": "Креветка и крабовая смесь",
+      "old_price": 300,
+      "costs": {
+        "joint": 104.35527246960443,
+        "reserve": 104.35527246960443,
+        "surplus_stress": 104.35527246960443
+      }
+    },
+    {
+      "id": "F03",
+      "group": "Жареные",
+      "name": "Копчёный лосось и моцарелла",
+      "old_price": 355,
+      "costs": {
+        "joint": 123.11617066158774,
+        "reserve": 123.11617066158774,
+        "surplus_stress": 123.11617066158774
+      }
+    },
+    {
+      "id": "F04",
+      "group": "Жареные",
+      "name": "Угорь и креветка",
+      "old_price": 590,
+      "costs": {
+        "joint": 157.10388950972984,
+        "reserve": 205.24341781161664,
+        "surplus_stress": 228.8773691856019
+      }
+    },
+    {
+      "id": "F05",
+      "group": "Жареные",
+      "name": "Мидии и тамаго",
+      "old_price": 235,
+      "costs": {
+        "joint": 80.59764033230348,
+        "reserve": 80.59764033230348,
+        "surplus_stress": 80.59764033230348
+      }
+    },
+    {
+      "id": "F06",
+      "group": "Жареные",
+      "name": "Угорь и мидии",
+      "old_price": 540,
+      "costs": {
+        "joint": 140.6027188923691,
+        "reserve": 188.7422471942559,
+        "surplus_stress": 209.30639309949117
+      }
+    }
+  ],
+  "set_box_proxy": {
+    "rub_per_physical_roll": 1.8775902584917752,
+    "quarter_box_cost": 43945.0,
+    "quarter_physical_roll_qty": 23405.0,
+    "source": "Q19 current21Oct replay of Q3; proxy only, not newsetcard"
+  },
+  "source_sha256": {
+    "2026-10-19-unified-operating-budget/inputs.json": "d4c175fdab86419e3b262d5a1b67d0079b1c1890d4ce2e54892c02340809f058",
+    "2026-10-19-unified-operating-budget/results.json": "487340af9e8b398cba709bc4c65292578a77b539df96eadc51fd10850ab722fb",
+    "2026-10-21-new-roll-line-v1/results.json": "20676e8a2ea6991b5f3296ff6bbf26a138c754d64c14734dd927628f9738f902",
+    "2026-10-21-eight-rolls-fc-offers/inputs.json": "fae00a7e34c132a3ea3335bf5e32e6ba0ef3884ea92020a1341ce29628279622"
+  },
+  "assumptions": [
+    "Four daily category2 positions + all oldroles retained",
+    "Cap=min(oldnewprice,399), lowerprices unchanged",
+    "Allnew18 replace whole roll-line by equalphysicalmix",
+    "Price/volume scenarios synthetic; oldpaidcheck1806 held fixed in primary",
+    "Fees acquiring/Starter/Yandex/business tax scale withrevenue; courier and partnerrefunds retainorderdrivers",
+    "Fulljoint eel / legacyreserve / fullsurpluswaste are alternative costcases; specificwaste doesnotreceivegeneralfoodlossreserveagain"
+  ]
+}

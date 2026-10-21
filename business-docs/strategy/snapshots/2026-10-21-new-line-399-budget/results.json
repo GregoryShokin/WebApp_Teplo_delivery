@@ -1,0 +1,1212 @@
+{
+  "as_of": "2026-10-21",
+  "scope": "Chernikova; whole roll-line replaced by hypothetical new18, equal physical sales mix, other recipes unchanged. No production changes.",
+  "baseline": {
+    "scenario": "Old Q15: netrollFC33%",
+    "net_check": 1806.0118957690213,
+    "recipe_food_per_order": 559.8317738544373,
+    "enterprise_recipe_fc": 0.30998232911198753,
+    "unit_without_company_pool": 1047.5849122640332,
+    "contribution_before_pool": 758.4269835049881,
+    "fixed_monthly": 1517035.1818,
+    "extra_monthly": 0,
+    "thresholds": {
+      "0": {
+        "first_crossing": 2221,
+        "safe_crossing_through20000": 2221,
+        "planning_orders": 2250,
+        "profit_at_safe": 634.3500148146995,
+        "profit_at_planning": 20450.836472549825
+      },
+      "500000": {
+        "first_crossing": 3006,
+        "safe_crossing_through20000": 3006,
+        "planning_orders": 3050,
+        "profit_at_safe": 500108.189160483,
+        "profit_at_planning": 529633.9071652275
+      }
+    },
+    "profit_at_3050": 529633.9071652275,
+    "profit_at_old_average_orders": -250347.04642934323
+  },
+  "coefficients": {
+    "fixed_monthly": 1517035.1818,
+    "other_order_driver_cost": 228.85781459960052,
+    "revenue_cost_rate": 0.10215616119601731,
+    "roll_net_per_order_old": 978.905305039821,
+    "other_net_per_order_old": 827.1065907292003,
+    "other_food_per_order": 236.79302319129633,
+    "food_loss_reserve_rate": 0.13289721115978578,
+    "set_box_cost_proxy_per_physical_roll": 1.8775902584917752,
+    "formula": "profit=q*(paidcheck − perorder_driver − (food−specific_waste)*(1+loss_rate)+specific_waste − revenue_rate*paidcheck) − fixed − daily_company_pool(q,paidcheck) − new_extra_costs"
+  },
+  "menu_summary": {
+    "cap399_joint": {
+      "average_menu_price": 363.3888888888889,
+      "average_recipe_material": 133.81703388465374,
+      "fc_before_offers": 0.36824745603482145,
+      "fc_with_setbox_proxy_before_offers": 0.3734143456010731
+    },
+    "cap399_reserve": {
+      "average_menu_price": 363.3888888888889,
+      "average_recipe_material": 145.66088608591159,
+      "fc_before_offers": 0.4008402307822058,
+      "fc_with_setbox_proxy_before_offers": 0.4060071203484575
+    },
+    "cap399_surplus_stress": {
+      "average_menu_price": 363.3888888888889,
+      "average_recipe_material": 152.596311039531,
+      "fc_before_offers": 0.41992563808462896,
+      "fc_with_setbox_proxy_before_offers": 0.42509252765088057
+    },
+    "all399_joint": {
+      "average_menu_price": 399.0,
+      "average_recipe_material": 133.81703388465374,
+      "fc_before_offers": 0.3353810373048966,
+      "fc_with_setbox_proxy_before_offers": 0.3400867773011166
+    },
+    "all399_reserve": {
+      "average_menu_price": 399.0,
+      "average_recipe_material": 145.66088608591159,
+      "fc_before_offers": 0.36506487740829974,
+      "fc_with_setbox_proxy_before_offers": 0.3697706174045197
+    },
+    "all399_surplus_stress": {
+      "average_menu_price": 399.0,
+      "average_recipe_material": 152.596311039531,
+      "fc_before_offers": 0.3824468948359173,
+      "fc_with_setbox_proxy_before_offers": 0.3871526348321373
+    }
+  },
+  "scenarios": [
+    {
+      "scenario": "cap399/joint/benefits0%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 602.33030707816,
+      "enterprise_recipe_fc": 0.33351403082629233,
+      "unit_without_company_pool": 1095.73138203157,
+      "contribution_before_pool": 710.2805137374512,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2398,
+          "safe_crossing_through20000": 2398,
+          "planning_orders": 2400,
+          "profit_at_safe": 422.906644550676,
+          "profit_at_planning": 1688.5097208180523
+        },
+        "500000": {
+          "first_crossing": 3244,
+          "safe_crossing_through20000": 3244,
+          "planning_orders": 3250,
+          "profit_at_safe": 500018.18061157665,
+          "profit_at_planning": 503748.8588404512
+        }
+      },
+      "profit_at_3050": 382787.17437423946,
+      "profit_at_old_average_orders": -338727.9160992852,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "cap399",
+      "cost_mode": "joint",
+      "effective_offer_reduction": 0,
+      "net_roll_fc_recipe": 0.36824745603482145,
+      "net_roll_fc_with_setbox_proxy": 0.3734143456010731,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 2.69382288498957,
+      "roll_material_per_order": 360.479388279905,
+      "setbox_per_order_proxy": 5.057895606958627,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "cap399/joint/benefits15%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 666.8368865876065,
+      "enterprise_recipe_fc": 0.3692317244143397,
+      "unit_without_company_pool": 1168.810706059279,
+      "contribution_before_pool": 637.2011897097423,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2742,
+          "safe_crossing_through20000": 2742,
+          "planning_orders": 2750,
+          "profit_at_safe": 387.29693815359497,
+          "profit_at_planning": 3079.4834985770867
+        },
+        "500000": {
+          "first_crossing": 3710,
+          "safe_crossing_through20000": 3710,
+          "planning_orders": 3750,
+          "profit_at_safe": 500493.601688569,
+          "profit_at_planning": 520334.3067020541
+        }
+      },
+      "profit_at_3050": 159895.23608972732,
+      "profit_at_old_average_orders": -472877.1952394831,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "cap399",
+      "cost_mode": "joint",
+      "effective_offer_reduction": 0.15,
+      "net_roll_fc_recipe": 0.433232301217437,
+      "net_roll_fc_with_setbox_proxy": 0.43931099482479186,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 3.1692033941053763,
+      "roll_material_per_order": 424.0933979763588,
+      "setbox_per_order_proxy": 5.950465419951325,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "cap399/joint/benefits20%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 693.7146280498757,
+      "enterprise_recipe_fc": 0.3841140967426927,
+      "unit_without_company_pool": 1199.2604244041577,
+      "contribution_before_pool": 606.7514713648636,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2917,
+          "safe_crossing_through20000": 2917,
+          "planning_orders": 2950,
+          "profit_at_safe": 279.4955430974951,
+          "profit_at_planning": 16174.155608951492
+        },
+        "500000": {
+          "first_crossing": 3944,
+          "safe_crossing_through20000": 3944,
+          "planning_orders": 3950,
+          "profit_at_safe": 500361.48018562904,
+          "profit_at_planning": 503430.5420446336
+        }
+      },
+      "profit_at_3050": 67023.59513784753,
+      "profit_at_old_average_orders": -528772.7282145651,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "cap399",
+      "cost_mode": "joint",
+      "effective_offer_reduction": 0.2,
+      "net_roll_fc_recipe": 0.46030932004352676,
+      "net_roll_fc_with_setbox_proxy": 0.4667679320013413,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 3.3672786062369617,
+      "roll_material_per_order": 450.5992353498811,
+      "setbox_per_order_proxy": 6.322369508698282,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "cap399/reserve/benefits0%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 634.2355471843424,
+      "enterprise_recipe_fc": 0.35118016036892014,
+      "unit_without_company_pool": 1131.8767395692475,
+      "contribution_before_pool": 674.1351561997737,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2554,
+          "safe_crossing_through20000": 2554,
+          "planning_orders": 2600,
+          "profit_at_safe": 11.593447296298109,
+          "profit_at_planning": 25760.59357490475
+        },
+        "500000": {
+          "first_crossing": 3461,
+          "safe_crossing_through20000": 3461,
+          "planning_orders": 3500,
+          "profit_at_safe": 500196.80272187997,
+          "profit_at_planning": 521825.9958825018
+        }
+      },
+      "profit_at_3050": 272543.8338843234,
+      "profit_at_old_average_orders": -405078.7440859486,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "cap399",
+      "cost_mode": "reserve",
+      "effective_offer_reduction": 0,
+      "net_roll_fc_recipe": 0.4008402307822058,
+      "net_roll_fc_with_setbox_proxy": 0.4060071203484575,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 2.69382288498957,
+      "roll_material_per_order": 392.38462838608746,
+      "setbox_per_order_proxy": 5.057895606958627,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "cap399/reserve/benefits0%/fixed_newbasket",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 634.2355471843424,
+      "enterprise_recipe_fc": 0.35118016036892014,
+      "unit_without_company_pool": 1131.8767395692475,
+      "contribution_before_pool": 674.1351561997737,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2554,
+          "safe_crossing_through20000": 2554,
+          "planning_orders": 2600,
+          "profit_at_safe": 11.593447296298109,
+          "profit_at_planning": 25760.59357490475
+        },
+        "500000": {
+          "first_crossing": 3461,
+          "safe_crossing_through20000": 3461,
+          "planning_orders": 3500,
+          "profit_at_safe": 500196.80272187997,
+          "profit_at_planning": 521825.9958825018
+        }
+      },
+      "profit_at_3050": 272543.8338843234,
+      "profit_at_old_average_orders": -405078.7440859486,
+      "basket_mode": "fixed_new_basket_quantities",
+      "price_mode": "cap399",
+      "cost_mode": "reserve",
+      "effective_offer_reduction": 0,
+      "net_roll_fc_recipe": 0.4008402307822058,
+      "net_roll_fc_with_setbox_proxy": 0.4060071203484575,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 2.69382288498957,
+      "roll_material_per_order": 392.38462838608746,
+      "setbox_per_order_proxy": 5.057895606958627,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "cap399/reserve/benefits0%/fixed_paidcheck/extra20000",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 634.2355471843424,
+      "enterprise_recipe_fc": 0.35118016036892014,
+      "unit_without_company_pool": 1131.8767395692475,
+      "contribution_before_pool": 674.1351561997737,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 20000,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2590,
+          "safe_crossing_through20000": 2590,
+          "planning_orders": 2600,
+          "profit_at_safe": 291.949680148653,
+          "profit_at_planning": 5760.593574904749
+        },
+        "500000": {
+          "first_crossing": 3496,
+          "safe_crossing_through20000": 3496,
+          "planning_orders": 3500,
+          "profit_at_safe": 500129.14189293055,
+          "profit_at_planning": 501825.9958825018
+        }
+      },
+      "profit_at_3050": 252543.83388432342,
+      "profit_at_old_average_orders": -425078.7440859486,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "cap399",
+      "cost_mode": "reserve",
+      "effective_offer_reduction": 0,
+      "net_roll_fc_recipe": 0.4008402307822058,
+      "net_roll_fc_with_setbox_proxy": 0.4060071203484575,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 2.69382288498957,
+      "roll_material_per_order": 392.38462838608746,
+      "setbox_per_order_proxy": 5.057895606958627,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "cap399/reserve/benefits0%/fixed_paidcheck/extra50000",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 634.2355471843424,
+      "enterprise_recipe_fc": 0.35118016036892014,
+      "unit_without_company_pool": 1131.8767395692475,
+      "contribution_before_pool": 674.1351561997737,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 50000,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2644,
+          "safe_crossing_through20000": 2644,
+          "planning_orders": 2650,
+          "profit_at_safe": 590.919681506115,
+          "profit_at_planning": 3681.055163266399
+        },
+        "500000": {
+          "first_crossing": 3551,
+          "safe_crossing_through20000": 3551,
+          "planning_orders": 3600,
+          "profit_at_safe": 500424.8567710528,
+          "profit_at_planning": 528318.823050509
+        }
+      },
+      "profit_at_3050": 222543.83388432342,
+      "profit_at_old_average_orders": -455078.7440859486,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "cap399",
+      "cost_mode": "reserve",
+      "effective_offer_reduction": 0,
+      "net_roll_fc_recipe": 0.4008402307822058,
+      "net_roll_fc_with_setbox_proxy": 0.4060071203484575,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 2.69382288498957,
+      "roll_material_per_order": 392.38462838608746,
+      "setbox_per_order_proxy": 5.057895606958627,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "cap399/reserve/benefits15%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 704.3724631831152,
+      "enterprise_recipe_fc": 0.390015406229196,
+      "unit_without_company_pool": 1211.3346561036055,
+      "contribution_before_pool": 594.6772396654158,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2991,
+          "safe_crossing_through20000": 2991,
+          "planning_orders": 3000,
+          "profit_at_safe": 267.119652886322,
+          "profit_at_planning": 4832.723368391569
+        },
+        "500000": {
+          "first_crossing": 4042,
+          "safe_crossing_through20000": 4042,
+          "planning_orders": 4050,
+          "profit_at_safe": 500093.49731074047,
+          "profit_at_planning": 503452.1534567908
+        }
+      },
+      "profit_at_3050": 30197.18845453154,
+      "profit_at_old_average_orders": -550936.9928708515,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "cap399",
+      "cost_mode": "reserve",
+      "effective_offer_reduction": 0.15,
+      "net_roll_fc_recipe": 0.47157674209671274,
+      "net_roll_fc_with_setbox_proxy": 0.4776554357040676,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 3.1692033941053763,
+      "roll_material_per_order": 461.62897457186756,
+      "setbox_per_order_proxy": 5.950465419951325,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "cap399/reserve/benefits15%/fixed_newbasket",
+      "net_check": 1659.1761000130482,
+      "recipe_food_per_order": 634.2355471843424,
+      "enterprise_recipe_fc": 0.38225933171250154,
+      "unit_without_company_pool": 1116.876558348655,
+      "contribution_before_pool": 542.2995416643932,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 3284,
+          "safe_crossing_through20000": 3284,
+          "planning_orders": 3300,
+          "profit_at_safe": 227.2773386243498,
+          "profit_at_planning": 7619.542669385031
+        },
+        "500000": {
+          "first_crossing": 4441,
+          "safe_crossing_through20000": 4441,
+          "planning_orders": 4450,
+          "profit_at_safe": 500027.40200328256,
+          "profit_at_planning": 504115.121718263
+        }
+      },
+      "profit_at_3050": -100549.94245801974,
+      "profit_at_old_average_orders": -633360.6769270117,
+      "basket_mode": "fixed_new_basket_quantities",
+      "price_mode": "cap399",
+      "cost_mode": "reserve",
+      "effective_offer_reduction": 0.15,
+      "net_roll_fc_recipe": 0.47157674209671274,
+      "net_roll_fc_with_setbox_proxy": 0.4776554357040676,
+      "roll_net_per_order": 832.0695092838478,
+      "roll_physical_portions_per_order_synthetic": 2.69382288498957,
+      "roll_material_per_order": 392.38462838608746,
+      "setbox_per_order_proxy": 5.057895606958627,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "cap399/reserve/benefits15%/fixed_paidcheck/extra20000",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 704.3724631831152,
+      "enterprise_recipe_fc": 0.390015406229196,
+      "unit_without_company_pool": 1211.3346561036055,
+      "contribution_before_pool": 594.6772396654158,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 20000,
+      "thresholds": {
+        "0": {
+          "first_crossing": 3030,
+          "safe_crossing_through20000": 3030,
+          "planning_orders": 3050,
+          "profit_at_safe": 51.40242007543566,
+          "profit_at_planning": 10197.18845453154
+        },
+        "500000": {
+          "first_crossing": 4085,
+          "safe_crossing_through20000": 4085,
+          "planning_orders": 4100,
+          "profit_at_safe": 500445.36216417426,
+          "profit_at_planning": 507459.4847096277
+        }
+      },
+      "profit_at_3050": 10197.18845453154,
+      "profit_at_old_average_orders": -570936.9928708515,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "cap399",
+      "cost_mode": "reserve",
+      "effective_offer_reduction": 0.15,
+      "net_roll_fc_recipe": 0.47157674209671274,
+      "net_roll_fc_with_setbox_proxy": 0.4776554357040676,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 3.1692033941053763,
+      "roll_material_per_order": 461.62897457186756,
+      "setbox_per_order_proxy": 5.950465419951325,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "cap399/reserve/benefits15%/fixed_paidcheck/extra50000",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 704.3724631831152,
+      "enterprise_recipe_fc": 0.390015406229196,
+      "unit_without_company_pool": 1211.3346561036055,
+      "contribution_before_pool": 594.6772396654158,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 50000,
+      "thresholds": {
+        "0": {
+          "first_crossing": 3092,
+          "safe_crossing_through20000": 3092,
+          "planning_orders": 3100,
+          "profit_at_safe": 231.71833335334668,
+          "profit_at_planning": 4286.742654526315
+        },
+        "500000": {
+          "first_crossing": 4147,
+          "safe_crossing_through20000": 4147,
+          "planning_orders": 4150,
+          "profit_at_safe": 500427.05668308144,
+          "profit_at_planning": 501922.6888787529
+        }
+      },
+      "profit_at_3050": -19802.81154546846,
+      "profit_at_old_average_orders": -600936.9928708515,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "cap399",
+      "cost_mode": "reserve",
+      "effective_offer_reduction": 0.15,
+      "net_roll_fc_recipe": 0.47157674209671274,
+      "net_roll_fc_with_setbox_proxy": 0.4776554357040676,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 3.1692033941053763,
+      "roll_material_per_order": 461.62897457186756,
+      "setbox_per_order_proxy": 5.950465419951325,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "cap399/reserve/benefits20%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 733.5961781826038,
+      "enterprise_recipe_fc": 0.40619675867097754,
+      "unit_without_company_pool": 1244.4421213262547,
+      "contribution_before_pool": 561.5697744427666,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 3207,
+          "safe_crossing_through20000": 3207,
+          "planning_orders": 3250,
+          "profit_at_safe": 96.99061546270968,
+          "profit_at_planning": 20438.956132726627
+        },
+        "500000": {
+          "first_crossing": 4339,
+          "safe_crossing_through20000": 4339,
+          "planning_orders": 4350,
+          "profit_at_safe": 500247.5030659889,
+          "profit_at_planning": 505361.609895564
+        }
+      },
+      "profit_at_3050": -70780.58047454833,
+      "profit_at_old_average_orders": -611711.2631978946,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "cap399",
+      "cost_mode": "reserve",
+      "effective_offer_reduction": 0.2,
+      "net_roll_fc_recipe": 0.5010502884777572,
+      "net_roll_fc_with_setbox_proxy": 0.5075089004355718,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 3.3672786062369617,
+      "roll_material_per_order": 490.48078548260924,
+      "setbox_per_order_proxy": 6.322369508698282,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "cap399/reserve/benefits20%/fixed_newbasket",
+      "net_check": 1610.2308347610572,
+      "recipe_food_per_order": 634.2355471843424,
+      "enterprise_recipe_fc": 0.39387864987597065,
+      "unit_without_company_pool": 1111.8764979417908,
+      "contribution_before_pool": 498.35433681926634,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 3617,
+          "safe_crossing_through20000": 3617,
+          "planning_orders": 3650,
+          "profit_at_safe": 106.33461621083552,
+          "profit_at_planning": 13314.469905795704
+        },
+        "500000": {
+          "first_crossing": 4894,
+          "safe_crossing_through20000": 4894,
+          "planning_orders": 4900,
+          "profit_at_safe": 500177.8096708484,
+          "profit_at_planning": 502650.8946624349
+        }
+      },
+      "profit_at_3050": -224477.3132542502,
+      "profit_at_old_average_orders": -709811.8025835837,
+      "basket_mode": "fixed_new_basket_quantities",
+      "price_mode": "cap399",
+      "cost_mode": "reserve",
+      "effective_offer_reduction": 0.2,
+      "net_roll_fc_recipe": 0.5010502884777572,
+      "net_roll_fc_with_setbox_proxy": 0.5075089004355718,
+      "roll_net_per_order": 783.1242440318568,
+      "roll_physical_portions_per_order_synthetic": 2.69382288498957,
+      "roll_material_per_order": 392.38462838608746,
+      "setbox_per_order_proxy": 5.057895606958627,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "cap399/reserve/benefits20%/fixed_paidcheck/extra20000",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 733.5961781826038,
+      "enterprise_recipe_fc": 0.40619675867097754,
+      "unit_without_company_pool": 1244.4421213262547,
+      "contribution_before_pool": 561.5697744427666,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 20000,
+      "thresholds": {
+        "0": {
+          "first_crossing": 3250,
+          "safe_crossing_through20000": 3250,
+          "planning_orders": 3250,
+          "profit_at_safe": 438.9561327266274,
+          "profit_at_planning": 438.9561327266274
+        },
+        "500000": {
+          "first_crossing": 4382,
+          "safe_crossing_through20000": 4382,
+          "planning_orders": 4400,
+          "profit_at_safe": 500239.01158160006,
+          "profit_at_planning": 508607.5500299955
+        }
+      },
+      "profit_at_3050": -90780.58047454833,
+      "profit_at_old_average_orders": -631711.2631978946,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "cap399",
+      "cost_mode": "reserve",
+      "effective_offer_reduction": 0.2,
+      "net_roll_fc_recipe": 0.5010502884777572,
+      "net_roll_fc_with_setbox_proxy": 0.5075089004355718,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 3.3672786062369617,
+      "roll_material_per_order": 490.48078548260924,
+      "setbox_per_order_proxy": 6.322369508698282,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "cap399/reserve/benefits20%/fixed_paidcheck/extra50000",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 733.5961781826038,
+      "enterprise_recipe_fc": 0.40619675867097754,
+      "unit_without_company_pool": 1244.4421213262547,
+      "contribution_before_pool": 561.5697744427666,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 50000,
+      "thresholds": {
+        "0": {
+          "first_crossing": 3322,
+          "safe_crossing_through20000": 3322,
+          "planning_orders": 3350,
+          "profit_at_safe": 195.19152783369645,
+          "profit_at_planning": 11496.717486572918
+        },
+        "500000": {
+          "first_crossing": 4447,
+          "safe_crossing_through20000": 4447,
+          "planning_orders": 4450,
+          "profit_at_safe": 500458.73375636153,
+          "profit_at_planning": 501853.49016442755
+        }
+      },
+      "profit_at_3050": -120780.58047454833,
+      "profit_at_old_average_orders": -661711.2631978946,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "cap399",
+      "cost_mode": "reserve",
+      "effective_offer_reduction": 0.2,
+      "net_roll_fc_recipe": 0.5010502884777572,
+      "net_roll_fc_with_setbox_proxy": 0.5075089004355718,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 3.3672786062369617,
+      "roll_material_per_order": 490.48078548260924,
+      "setbox_per_order_proxy": 6.322369508698282,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "cap399/surplus_stress/benefits0%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 652.9183536415302,
+      "enterprise_recipe_fc": 0.36152494630358445,
+      "unit_without_company_pool": 1146.3194285949403,
+      "contribution_before_pool": 659.692467174081,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2622,
+          "safe_crossing_through20000": 2622,
+          "planning_orders": 2650,
+          "profit_at_safe": 311.23338980117114,
+          "profit_at_planning": 15407.92924518048
+        },
+        "500000": {
+          "first_crossing": 3553,
+          "safe_crossing_through20000": 3553,
+          "planning_orders": 3600,
+          "profit_at_safe": 500274.4208709167,
+          "profit_at_planning": 526325.1425580152
+        }
+      },
+      "profit_at_3050": 228493.6323559605,
+      "profit_at_old_average_orders": -431590.7069074453,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "cap399",
+      "cost_mode": "surplus_stress",
+      "effective_offer_reduction": 0,
+      "net_roll_fc_recipe": 0.41992563808462896,
+      "net_roll_fc_with_setbox_proxy": 0.42509252765088057,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 2.69382288498957,
+      "roll_material_per_order": 411.0674348432752,
+      "setbox_per_order_proxy": 5.057895606958627,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 50.58804656337019,
+      "food_fc_includes_specific_sauce_writeoff": true
+    },
+    {
+      "scenario": "cap399/surplus_stress/benefits15%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 726.352235485689,
+      "enterprise_recipe_fc": 0.4021857426229187,
+      "unit_without_company_pool": 1228.3260549573615,
+      "contribution_before_pool": 577.6858408116598,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 3097,
+          "safe_crossing_through20000": 3097,
+          "planning_orders": 3100,
+          "profit_at_safe": 143.74628400435904,
+          "profit_at_planning": 1613.4062078829738
+        },
+        "500000": {
+          "first_crossing": 4190,
+          "safe_crossing_through20000": 4190,
+          "planning_orders": 4200,
+          "profit_at_safe": 500202.72110996954,
+          "profit_at_planning": 505017.13137944456
+        }
+      },
+      "profit_at_3050": -21626.578049424163,
+      "profit_at_old_average_orders": -582127.5373667298,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "cap399",
+      "cost_mode": "surplus_stress",
+      "effective_offer_reduction": 0.15,
+      "net_roll_fc_recipe": 0.4940301624525046,
+      "net_roll_fc_with_setbox_proxy": 0.5001088560598594,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 3.1692033941053763,
+      "roll_material_per_order": 483.60874687444135,
+      "setbox_per_order_proxy": 5.950465419951325,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 59.51534889808258,
+      "food_fc_includes_specific_sauce_writeoff": true
+    },
+    {
+      "scenario": "cap399/surplus_stress/benefits20%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 756.9496862540885,
+      "enterprise_recipe_fc": 0.41912774108930795,
+      "unit_without_company_pool": 1262.4954826083706,
+      "contribution_before_pool": 543.5164131606507,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 3348,
+          "safe_crossing_through20000": 3348,
+          "planning_orders": 3350,
+          "profit_at_safe": 111.65680999692995,
+          "profit_at_planning": 1017.9571914845146
+        },
+        "500000": {
+          "first_crossing": 4516,
+          "safe_crossing_through20000": 4516,
+          "planning_orders": 4550,
+          "profit_at_safe": 500373.15577560803,
+          "profit_at_planning": 514624.24629278155
+        }
+      },
+      "profit_at_3050": -125843.332385002,
+      "profit_at_old_average_orders": -644851.2167247654,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "cap399",
+      "cost_mode": "surplus_stress",
+      "effective_offer_reduction": 0.2,
+      "net_roll_fc_recipe": 0.5249070476057861,
+      "net_roll_fc_with_setbox_proxy": 0.5313656595636007,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 3.3672786062369617,
+      "roll_material_per_order": 513.8342935540938,
+      "setbox_per_order_proxy": 6.322369508698282,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 63.23505820421273,
+      "food_fc_includes_specific_sauce_writeoff": true
+    },
+    {
+      "scenario": "all399/joint/benefits0%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 569.7057736652555,
+      "enterprise_recipe_fc": 0.315449624113726,
+      "unit_without_company_pool": 1058.7711391127013,
+      "contribution_before_pool": 747.24075665632,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2258,
+          "safe_crossing_through20000": 2258,
+          "planning_orders": 2300,
+          "profit_at_safe": 23.551920110359788,
+          "profit_at_planning": 26182.176638281002
+        },
+        "500000": {
+          "first_crossing": 3057,
+          "safe_crossing_through20000": 3057,
+          "planning_orders": 3100,
+          "profit_at_safe": 500134.88500778534,
+          "profit_at_planning": 527233.6453263294
+        }
+      },
+      "profit_at_3050": 495515.91527678905,
+      "profit_at_old_average_orders": -270881.2301812153,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "all399",
+      "cost_mode": "joint",
+      "effective_offer_reduction": 0,
+      "net_roll_fc_recipe": 0.3353810373048966,
+      "net_roll_fc_with_setbox_proxy": 0.3400867773011166,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 2.453396754485767,
+      "roll_material_per_order": 328.30627662752136,
+      "setbox_per_order_proxy": 4.606473846437813,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "all399/joint/benefits15%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 628.4550825724248,
+      "enterprise_recipe_fc": 0.34797948122308525,
+      "unit_without_company_pool": 1125.3280673311983,
+      "contribution_before_pool": 680.683828437823,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2526,
+          "safe_crossing_through20000": 2526,
+          "planning_orders": 2550,
+          "profit_at_safe": 550.0922172529972,
+          "profit_at_planning": 14334.753425273579
+        },
+        "500000": {
+          "first_crossing": 3422,
+          "safe_crossing_through20000": 3422,
+          "planning_orders": 3450,
+          "profit_at_safe": 500341.21217820287,
+          "profit_at_planning": 516378.40965486894
+        }
+      },
+      "profit_at_3050": 292517.28421037336,
+      "profit_at_old_average_orders": -393057.56474763615,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "all399",
+      "cost_mode": "joint",
+      "effective_offer_reduction": 0.15,
+      "net_roll_fc_recipe": 0.39456592624105485,
+      "net_roll_fc_with_setbox_proxy": 0.4001020909424901,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 2.8863491229244316,
+      "roll_material_per_order": 386.24267838531927,
+      "setbox_per_order_proxy": 5.419380995809192,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "all399/joint/benefits20%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 652.9339612837452,
+      "enterprise_recipe_fc": 0.3615335883519849,
+      "unit_without_company_pool": 1153.060120755572,
+      "contribution_before_pool": 652.9517750134494,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2656,
+          "safe_crossing_through20000": 2656,
+          "planning_orders": 2700,
+          "profit_at_safe": 507.40911264164606,
+          "profit_at_planning": 21858.170479367574
+        },
+        "500000": {
+          "first_crossing": 3597,
+          "safe_crossing_through20000": 3597,
+          "planning_orders": 3600,
+          "profit_at_safe": 500376.07258592464,
+          "profit_at_planning": 502058.6507797412
+        }
+      },
+      "profit_at_3050": 207934.52126603405,
+      "profit_at_old_average_orders": -443964.37081697787,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "all399",
+      "cost_mode": "joint",
+      "effective_offer_reduction": 0.2,
+      "net_roll_fc_recipe": 0.41922629663112065,
+      "net_roll_fc_with_setbox_proxy": 0.42510847162639565,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 3.066745943107208,
+      "roll_material_per_order": 410.38284578440164,
+      "setbox_per_order_proxy": 5.7580923080472655,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "all399/reserve/benefits0%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 598.7634422164306,
+      "enterprise_recipe_fc": 0.33153903560611375,
+      "unit_without_company_pool": 1091.6904907771332,
+      "contribution_before_pool": 714.3214049918881,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2381,
+          "safe_crossing_through20000": 2381,
+          "planning_orders": 2400,
+          "profit_at_safe": 381.5072241911839,
+          "profit_at_planning": 11386.648731466761
+        },
+        "500000": {
+          "first_crossing": 3224,
+          "safe_crossing_through20000": 3224,
+          "planning_orders": 3250,
+          "profit_at_safe": 500610.4199196323,
+          "profit_at_planning": 516881.7554173713
+        }
+      },
+      "profit_at_3050": 395111.8927002721,
+      "profit_at_old_average_orders": -331310.1867198906,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "all399",
+      "cost_mode": "reserve",
+      "effective_offer_reduction": 0,
+      "net_roll_fc_recipe": 0.36506487740829974,
+      "net_roll_fc_with_setbox_proxy": 0.3697706174045197,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 2.453396754485767,
+      "roll_material_per_order": 357.3639451786965,
+      "setbox_per_order_proxy": 4.606473846437813,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "all399/reserve/benefits15%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 662.640574985572,
+      "enterprise_recipe_fc": 0.3669082006258944,
+      "unit_without_company_pool": 1164.056716348177,
+      "contribution_before_pool": 641.9551794208444,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2718,
+          "safe_crossing_through20000": 2718,
+          "planning_orders": 2750,
+          "profit_at_safe": 490.22415165478014,
+          "profit_at_planning": 16152.955204107857
+        },
+        "500000": {
+          "first_crossing": 3676,
+          "safe_crossing_through20000": 3676,
+          "planning_orders": 3700,
+          "profit_at_safe": 500112.3821655869,
+          "profit_at_planning": 512645.2806452844
+        }
+      },
+      "profit_at_3050": 174394.9047085889,
+      "profit_at_old_average_orders": -464150.4547931365,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "all399",
+      "cost_mode": "reserve",
+      "effective_offer_reduction": 0.15,
+      "net_roll_fc_recipe": 0.42948809106858793,
+      "net_roll_fc_with_setbox_proxy": 0.43502425577002324,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 2.8863491229244316,
+      "roll_material_per_order": 420.42817079846645,
+      "setbox_per_order_proxy": 5.419380995809192,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "all399/reserve/benefits20%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 689.2560469727141,
+      "enterprise_recipe_fc": 0.38164535271746963,
+      "unit_without_company_pool": 1194.2093103361115,
+      "contribution_before_pool": 611.8025854329098,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2886,
+          "safe_crossing_through20000": 2886,
+          "planning_orders": 2900,
+          "profit_at_safe": 453.9457412371703,
+          "profit_at_planning": 7181.431955983135
+        },
+        "500000": {
+          "first_crossing": 3905,
+          "safe_crossing_through20000": 3905,
+          "planning_orders": 3950,
+          "profit_at_safe": 500137.17853782023,
+          "profit_at_planning": 523382.4426134164
+        }
+      },
+      "profit_at_3050": 82429.49304538843,
+      "profit_at_old_average_orders": -519500.5664903218,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "all399",
+      "cost_mode": "reserve",
+      "effective_offer_reduction": 0.2,
+      "net_roll_fc_recipe": 0.4563310967603746,
+      "net_roll_fc_with_setbox_proxy": 0.4622132717556496,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 3.066745943107208,
+      "roll_material_per_order": 446.7049314733705,
+      "setbox_per_order_proxy": 5.7580923080472655,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 0.0,
+      "food_fc_includes_specific_sauce_writeoff": false
+    },
+    {
+      "scenario": "all399/surplus_stress/benefits0%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 615.7787912886201,
+      "enterprise_recipe_fc": 0.34096054003366033,
+      "unit_without_company_pool": 1104.8441567360662,
+      "contribution_before_pool": 701.1677390329551,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2437,
+          "safe_crossing_through20000": 2437,
+          "planning_orders": 2450,
+          "profit_at_safe": 380.629581936897,
+          "profit_at_planning": 7539.659602030879
+        },
+        "500000": {
+          "first_crossing": 3295,
+          "safe_crossing_through20000": 3295,
+          "planning_orders": 3300,
+          "profit_at_safe": 500423.6745752992,
+          "profit_at_planning": 502217.7817055012
+        }
+      },
+      "profit_at_3050": 354993.2115255263,
+      "profit_at_old_average_orders": -355455.9328651721,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "all399",
+      "cost_mode": "surplus_stress",
+      "effective_offer_reduction": 0,
+      "net_roll_fc_recipe": 0.3824468948359173,
+      "net_roll_fc_with_setbox_proxy": 0.3871526348321373,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 2.453396754485767,
+      "roll_material_per_order": 374.37929425088595,
+      "setbox_per_order_proxy": 4.606473846437813,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 46.073017623364585,
+      "food_fc_includes_specific_sauce_writeoff": true
+    },
+    {
+      "scenario": "all399/surplus_stress/benefits15%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 682.6586327175596,
+      "enterprise_recipe_fc": 0.3779923234818315,
+      "unit_without_company_pool": 1179.5316174763332,
+      "contribution_before_pool": 626.4802782926881,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2801,
+          "safe_crossing_through20000": 2801,
+          "planning_orders": 2850,
+          "profit_at_safe": 294.44601012187195,
+          "profit_at_planning": 24450.92925181138
+        },
+        "500000": {
+          "first_crossing": 3789,
+          "safe_crossing_through20000": 3789,
+          "planning_orders": 3800,
+          "profit_at_safe": 500262.59213693114,
+          "profit_at_planning": 506119.0913486771
+        }
+      },
+      "profit_at_3050": 127196.45626771211,
+      "profit_at_old_average_orders": -492557.2149640554,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "all399",
+      "cost_mode": "surplus_stress",
+      "effective_offer_reduction": 0.15,
+      "net_roll_fc_recipe": 0.4499375233363733,
+      "net_roll_fc_with_setbox_proxy": 0.45547368803780863,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 2.8863491229244316,
+      "roll_material_per_order": 440.44622853045405,
+      "setbox_per_order_proxy": 5.419380995809192,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 54.203550145134805,
+      "food_fc_includes_specific_sauce_writeoff": true
+    },
+    {
+      "scenario": "all399/surplus_stress/benefits20%/fixed_paidcheck",
+      "net_check": 1806.0118957690213,
+      "recipe_food_per_order": 710.525233312951,
+      "enterprise_recipe_fc": 0.39342223325190273,
+      "unit_without_company_pool": 1210.6513927847777,
+      "contribution_before_pool": 595.3605029842436,
+      "fixed_monthly": 1517035.1818,
+      "extra_monthly": 0,
+      "thresholds": {
+        "0": {
+          "first_crossing": 2986,
+          "safe_crossing_through20000": 2986,
+          "planning_orders": 3000,
+          "profit_at_safe": 403.8719390787883,
+          "profit_at_planning": 6882.5133248750935
+        },
+        "500000": {
+          "first_crossing": 4037,
+          "safe_crossing_through20000": 4037,
+          "planning_orders": 4050,
+          "profit_at_safe": 500356.62019684614,
+          "profit_at_planning": 506219.3698980435
+        }
+      },
+      "profit_at_3050": 32281.1415769562,
+      "profit_at_old_average_orders": -549682.7491719233,
+      "basket_mode": "fixed_paid_check",
+      "price_mode": "all399",
+      "cost_mode": "surplus_stress",
+      "effective_offer_reduction": 0.2,
+      "net_roll_fc_recipe": 0.47805861854489656,
+      "net_roll_fc_with_setbox_proxy": 0.48394079354017155,
+      "roll_net_per_order": 978.905305039821,
+      "roll_physical_portions_per_order_synthetic": 3.066745943107208,
+      "roll_material_per_order": 467.97411781360734,
+      "setbox_per_order_proxy": 5.7580923080472655,
+      "other_net_per_order": 827.1065907292003,
+      "specific_surplus_sauce_waste_per_order": 57.59127202920572,
+      "food_fc_includes_specific_sauce_writeoff": true
+    }
+  ],
+  "validation": {
+    "old_budget_exact_thresholds_reproduced": true,
+    "old_variable_cost_reproduced": true,
+    "daily_pool_direct_checks": 27,
+    "thresholds_safe_horizon": 20000,
+    "source_hashes": {
+      "2026-10-19-unified-operating-budget/inputs.json": "d4c175fdab86419e3b262d5a1b67d0079b1c1890d4ce2e54892c02340809f058",
+      "2026-10-19-unified-operating-budget/results.json": "487340af9e8b398cba709bc4c65292578a77b539df96eadc51fd10850ab722fb",
+      "2026-10-21-new-roll-line-v1/results.json": "20676e8a2ea6991b5f3296ff6bbf26a138c754d64c14734dd927628f9738f902",
+      "2026-10-21-eight-rolls-fc-offers/inputs.json": "fae00a7e34c132a3ea3335bf5e32e6ba0ef3884ea92020a1341ce29628279622"
+    }
+  },
+  "limits": [
+    "Equal18 is a scenario, not observed sales mix; newsetcomposition/discount/gifts unknown",
+    "Current/new lighter offers are NOT replayed;15/20% are illustrative effective reductions",
+    "Q15 historical1806 paidcheck already includes historical benefits; future capped paidcheck unknown",
+    "fixed_newbasket calibration at zero benefits is synthetic, not historical SKU basket mapping",
+    "Set box proxy restored once; sidekits/order packaging outside cards not fully estimated",
+    "Unpriced water retained; no additional equipment/finance/capacity/marketing-acquisition budget embedded",
+    "Eel reserve and joint/stress are alternatives, not costs to add together; scenario surplusstress is not general loss reserve",
+    "Rate/source dates and fixed staff budget retained from Q15, no guarantee of kitchen capacity for threshold demand"
+  ]
+}

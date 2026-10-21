@@ -1,0 +1,37 @@
+{
+  "as_of": "2026-10-21",
+  "status": "PASS",
+  "source_hashes_verified": 4,
+  "scenario_count_excluding_baseline": 27,
+  "baseline_safe_thresholds": [
+    2221,
+    3006
+  ],
+  "daily_pool_direct_spot_checks": 27,
+  "independent_reviewer": "Direct92daypool for every integer q1..20000, all3 paidchecks and all28 baseline+scenario thresholds matched",
+  "main_plan_thresholds": [
+    [
+      2600,
+      3500
+    ],
+    [
+      3000,
+      4050
+    ],
+    [
+      3250,
+      4350
+    ]
+  ],
+  "specific_sauce_loss_no_general_loss_again": true,
+  "set_recipe_packaging_added_once": true,
+  "new_report_relative_links": "PASS",
+  "no_business_system_writes": true,
+  "artifact_sha256": {
+    "inputs.json": "d2a73f360c708a5ce8ad5a3568785b9175f089aaa1589b42b4fd9cdc76bd610b",
+    "results.json": "ccab3bae19ea438181e9d7dd2356f6d8822d5a9ce631ba28a8c4add5a3be93d4",
+    "calculate.py": "992684097ca345a1e9328b4f52885a4ba04bc5d6a5daab26ebf7094dc8854e65",
+    "report.md": "851681af317fb6e1c314bc4a7d2fc82e8c4e7e52dae4cde53f77aa90814d6b33",
+    "menu-audit.json": "5319153aace3e23bfc69e681135f71a02bef10439580af74c620ef0aff02db1f"
+  }
+}
