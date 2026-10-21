@@ -1,0 +1,259 @@
+{
+  "as_of": "2026-10-21",
+  "status": "observed_pattern_and_proposed_calibration_not_approved_standard",
+  "source_method": "Reclassification of existing13video observations/results; no new video timing, volume or dimension measurement. Fiesta outer salmon18+shrimp20 excluded from inner filling; Yakudza salmon30 inside confirmed from saved frame0039 PTS128.069989.",
+  "rows": [
+    {
+      "name": "Фиеста",
+      "rice_g": 100,
+      "inside_filling_dispensed_g": 110,
+      "inside_components": [
+        {
+          "name": "Сыр творожный",
+          "g": 85
+        },
+        {
+          "name": "Огурец п/ф роллы",
+          "g": 25
+        }
+      ],
+      "outside_components": [
+        {
+          "name": "Креветка п/ф очищ отвар",
+          "g": 20
+        },
+        {
+          "name": "Семга х/к п/ф",
+          "g": 18
+        }
+      ],
+      "unmeasured_other": [
+        "Нори"
+      ],
+      "note": "Сумма взвешенных закладок; не независимое взвешивание удержанной массы начинки готового ролла."
+    },
+    {
+      "name": "Филадельфия темпура",
+      "rice_g": 100,
+      "inside_filling_dispensed_g": 103,
+      "inside_components": [
+        {
+          "name": "Семга с/м вакуум п/ф",
+          "g": 41
+        },
+        {
+          "name": "Сыр творожный",
+          "g": 41
+        },
+        {
+          "name": "Огурец п/ф роллы",
+          "g": 21
+        }
+      ],
+      "outside_components": [],
+      "unmeasured_other": [
+        "Нори",
+        "Кляр",
+        "Сухари Голд"
+      ],
+      "note": "Сумма взвешенных закладок; не независимое взвешивание удержанной массы начинки готового ролла."
+    },
+    {
+      "name": "Лава с креветкой",
+      "rice_g": 101,
+      "inside_filling_dispensed_g": 89,
+      "inside_components": [
+        {
+          "name": "Креветка п/ф очищ отвар",
+          "g": 40
+        },
+        {
+          "name": "Сыр творожный",
+          "g": 49
+        }
+      ],
+      "outside_components": [
+        {
+          "name": "Соус Лава",
+          "g": 80
+        }
+      ],
+      "unmeasured_other": [
+        "Нори"
+      ],
+      "note": "Сумма взвешенных закладок; не независимое взвешивание удержанной массы начинки готового ролла."
+    },
+    {
+      "name": "Сакура",
+      "rice_g": 100,
+      "inside_filling_dispensed_g": 105,
+      "inside_components": [
+        {
+          "name": "Помидор п/ф",
+          "g": 26
+        },
+        {
+          "name": "Айсберг ",
+          "g": 19
+        },
+        {
+          "name": "Масаго п/ф",
+          "g": 10
+        },
+        {
+          "name": "Снежный краб полуфабрикат",
+          "g": 50
+        }
+      ],
+      "outside_components": [],
+      "unmeasured_other": [
+        "Кляр",
+        "Сухари Голд",
+        "Нори"
+      ],
+      "note": "Сумма взвешенных закладок; не независимое взвешивание удержанной массы начинки готового ролла. Айсберг/масаго отбирались с остатками: удержанные граммы не установлены."
+    },
+    {
+      "name": "Якудза",
+      "rice_g": 100,
+      "inside_filling_dispensed_g": 103,
+      "inside_components": [
+        {
+          "name": "Снежный краб полуфабрикат",
+          "g": 52
+        },
+        {
+          "name": "Семга х/к п/ф",
+          "g": 30
+        },
+        {
+          "name": "Огурец п/ф роллы",
+          "g": 21
+        }
+      ],
+      "outside_components": [
+        {
+          "name": "Кунжут белый",
+          "g": 10
+        }
+      ],
+      "unmeasured_other": [
+        "Нори"
+      ],
+      "note": "Сумма взвешенных закладок; не независимое взвешивание удержанной массы начинки готового ролла."
+    },
+    {
+      "name": "Камчатский",
+      "rice_g": 100,
+      "inside_filling_dispensed_g": 108,
+      "inside_components": [
+        {
+          "name": "Снежный краб полуфабрикат",
+          "g": 49
+        },
+        {
+          "name": "Огурец п/ф роллы",
+          "g": 29
+        },
+        {
+          "name": "Сыр творожный",
+          "g": 30
+        }
+      ],
+      "outside_components": [
+        {
+          "name": "Кунжут белый",
+          "g": 10
+        }
+      ],
+      "unmeasured_other": [
+        "Нори"
+      ],
+      "note": "Сумма взвешенных закладок; не независимое взвешивание удержанной массы начинки готового ролла."
+    },
+    {
+      "name": "Атакама",
+      "rice_g": 100,
+      "inside_filling_dispensed_g": 102,
+      "inside_components": [
+        {
+          "name": "Моцарелла",
+          "g": 41
+        },
+        {
+          "name": "Огурец п/ф роллы",
+          "g": 20
+        },
+        {
+          "name": "Семга х/к п/ф",
+          "g": 41
+        }
+      ],
+      "outside_components": [],
+      "unmeasured_other": [
+        "Кляр",
+        "Сухари Голд",
+        "Нори"
+      ],
+      "note": "Сумма взвешенных закладок; не независимое взвешивание удержанной массы начинки готового ролла."
+    },
+    {
+      "name": "Жареный с креветкой",
+      "rice_g": 102,
+      "inside_filling_dispensed_g": 105,
+      "inside_components": [
+        {
+          "name": "Креветка п/ф очищ отвар",
+          "g": 40
+        },
+        {
+          "name": "Огурец п/ф роллы",
+          "g": 26
+        },
+        {
+          "name": "Моцарелла",
+          "g": 30
+        },
+        {
+          "name": "Соус Юкихиро(new)",
+          "g": 9
+        }
+      ],
+      "outside_components": [],
+      "unmeasured_other": [
+        "Нори",
+        "Кляр",
+        "Сухари Голд"
+      ],
+      "note": "Сумма взвешенных закладок; не независимое взвешивание удержанной массы начинки готового ролла. Огурец26г имеет среднюю уверенность; соус9г внесён до формования."
+    }
+  ],
+  "summary": {
+    "n": 8,
+    "mean_inside_dispensed_g": 103.125,
+    "median_inside_dispensed_g": 104.0,
+    "min_g": 89,
+    "max_g": 110,
+    "seven_non_lava_range_g": [
+      102,
+      110
+    ],
+    "rice_range_g": [
+      100,
+      102
+    ]
+  },
+  "interpretation": "Around100–110g internal filling with100g rice is an empirical starting point in these prototypes, not a universal proven grammage or equal finished dimensions.",
+  "proposal": "Choose desired blank length/cross-section and rice mat footprint/thickness, calibrate each recipe gram quantities and portion units to that formed geometry; account separately for coating, frying and hats. Same formed internal volume at fixed length/rice geometry can require different mass and different loose preforming volume.",
+  "not_known": [
+    "Calibrated length/diameter/cross-section of all8",
+    "Ingredient and mixture effective packed densities, compressibility and voids",
+    "Retained filling mass for all dispensed portions",
+    "Finished postfry dimensions/mass and coating uptake",
+    "Whether equal dimensions also produce desired flavour, visual distribution and delivery performance"
+  ],
+  "source_sha256": {
+    "business-docs/strategy/snapshots/2026-10-21-video-prototypes/results.json": "10ff8e951784f7081474faad1fe387d552efed5bdbefc8ee1dde55ba6a333c19",
+    "business-docs/strategy/snapshots/2026-10-21-video-prototypes/observations.json": "3007a95c9e8e767a08249cd065abb0da74bb836dc9fe68b808c7b5904a5dec04"
+  }
+}
