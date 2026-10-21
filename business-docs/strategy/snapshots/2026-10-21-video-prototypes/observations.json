@@ -1,0 +1,3967 @@
+{
+  "cold": {
+    "analysis_date": "2026-10-21",
+    "analyst": "video_cold_trials",
+    "identity_source": "Owner confirms same ingredients/prepared items as iiko; only quantity changed. Video file name supplies product identity. No identity guessed from color.",
+    "time_method": {
+      "zero": "first decoded source frame PTS (all three first PTS=0.066667 s)",
+      "time_is": "source media PTS, not independently calibrated physical seconds",
+      "timer_checks": "Contact sheets at beginning/middle/end and dense boundaries viewed; no legible running stopwatch or camera clock found. Monotone PTS alone does not prove real-time continuity.",
+      "measurement_scope": "experimental sample, includes weighing/adjustment; not kitchen capacity, staffing norm or FOT saving",
+      "boundaries": "Last-before/first-after pairs from inspected sampling. Semantic/occlusion uncertainty retained.",
+      "active_labor": "Separate operation windows indicate activity, not frame-complete person-second accounting. No active-total or inferred idle given."
+    },
+    "videos": [
+      {
+        "source_id": "v04",
+        "source_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Камчатский.mp4",
+        "source_sha256": "3b0dcd27e70b4e4fc8943f15be149e44edfe70ecde3857e860670586ddd852f4",
+        "frame_count": 7666,
+        "first_frame_pts": 0.066667,
+        "last_frame_pts": 255.681333,
+        "source_manifest": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/v04/manifest.json",
+        "facts": [
+          {
+            "ingredient": "Рис для роллов пф",
+            "display_grams": 100,
+            "evidence": {
+              "source_frame_index": 240,
+              "pts_seconds": 8.064989,
+              "elapsed_seconds": 7.998322000000001
+            },
+            "note": "Stable 7.065–9.332; empty scale158g at10.065 is removal lag, rejected."
+          },
+          {
+            "ingredient": "Снежный краб полуфабрикат",
+            "display_grams": 49,
+            "evidence": {
+              "source_frame_index": 3299,
+              "pts_seconds": 110.079989,
+              "elapsed_seconds": 110.013322
+            },
+            "note": "Stable after extrusion, before transfer; platform empty0 after113.582."
+          },
+          {
+            "ingredient": "Сыр творожный",
+            "display_grams": 30,
+            "evidence": {
+              "source_frame_index": 3988,
+              "pts_seconds": 133.059989,
+              "elapsed_seconds": 132.993322
+            },
+            "note": "Stable132.560–133.560;67g while nozzle/hand presses at132.060 is rejected."
+          },
+          {
+            "ingredient": "Огурец п/ф роллы",
+            "display_grams": 29,
+            "evidence": {
+              "source_frame_index": 4588,
+              "pts_seconds": 153.073333,
+              "elapsed_seconds": 153.006666
+            },
+            "note": "Root independently inspected native frame4588 /v04/root-cucumber-frames/frame-0004.jpg;29g with hands off.31g at152.072 while adding is transient. Residual11g after first transfer is ALSO transferred to same roll; do not treat11 as full cucumber dose."
+          },
+          {
+            "ingredient": "Кунжут белый",
+            "display_grams": 10,
+            "evidence": {
+              "source_frame_index": 2909,
+              "pts_seconds": 97.071667,
+              "elapsed_seconds": 97.00500000000001
+            },
+            "note": "Root independently inspected /v04/root-mat-sesame/frame-0026.jpg. Jar initially112g; tared0 at86; empty platform-112g; replaced jar shows-10g after dispensing. Empty94g at98.072 is transition, rejected. Cost is10g, not initial jar112g."
+          },
+          {
+            "ingredient": "Заготовка",
+            "display_grams": 219,
+            "evidence": {
+              "source_frame_index": 6552,
+              "pts_seconds": 218.579989,
+              "elapsed_seconds": 218.51332200000002
+            },
+            "note": "Stable218.313–218.813, no mat/container on platform. Sum ingredient grams218g excludes nori; consistency is not a separate gram measurement of nori."
+          }
+        ],
+        "stages": [
+          {
+            "name": "rice_mat_spreading_only",
+            "type": "manual_operation_calendar_envelope",
+            "start": {
+              "last_before": {
+                "source_frame_index": 480,
+                "pts_seconds": 16.064989,
+                "elapsed_seconds": 15.998322
+              },
+              "first_after": {
+                "source_frame_index": 540,
+                "pts_seconds": 18.064989,
+                "elapsed_seconds": 17.998322
+              },
+              "pts_interval": [
+                16.065,
+                18.065
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 2279,
+                "pts_seconds": 76.058333,
+                "elapsed_seconds": 75.99166600000001
+              },
+              "first_after": {
+                "source_frame_index": 2339,
+                "pts_seconds": 78.059989,
+                "elapsed_seconds": 77.993322
+              },
+              "pts_interval": [
+                76.058,
+                78.06
+              ]
+            },
+            "media_duration_interval_seconds": [
+              57.993,
+              61.995
+            ],
+            "note": "Start partly at left frame edge. Root independently reviewed /v04/root-mat-sesame; excludes rice weighing, sesame and flip.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "rice_mat_flip_and_edge_finish",
+            "type": "calendar_stage",
+            "start": {
+              "last_before": {
+                "source_frame_index": 2339,
+                "pts_seconds": 78.059989,
+                "elapsed_seconds": 77.993322
+              },
+              "first_after": {
+                "source_frame_index": 2369,
+                "pts_seconds": 79.059989,
+                "elapsed_seconds": 78.993322
+              },
+              "pts_interval": [
+                78.06,
+                79.06
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 2369,
+                "pts_seconds": 79.059989,
+                "elapsed_seconds": 78.993322
+              },
+              "first_after": {
+                "source_frame_index": 2399,
+                "pts_seconds": 80.059989,
+                "elapsed_seconds": 79.993322
+              },
+              "pts_interval": [
+                79.06,
+                80.06
+              ]
+            },
+            "media_duration_interval_seconds": [
+              0,
+              2.0
+            ],
+            "note": "Separate from spreading; mat turned nori side up.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "sesame_dispensing",
+            "type": "calendar_stage",
+            "start": {
+              "last_before": {
+                "source_frame_index": 2654,
+                "pts_seconds": 88.564989,
+                "elapsed_seconds": 88.498322
+              },
+              "first_after": {
+                "source_frame_index": 2684,
+                "pts_seconds": 89.566667,
+                "elapsed_seconds": 89.5
+              },
+              "pts_interval": [
+                88.565,
+                89.567
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 2864,
+                "pts_seconds": 95.569989,
+                "elapsed_seconds": 95.50332200000001
+              },
+              "first_after": {
+                "source_frame_index": 2894,
+                "pts_seconds": 96.569989,
+                "elapsed_seconds": 96.50332200000001
+              },
+              "pts_interval": [
+                95.57,
+                96.57
+              ]
+            },
+            "media_duration_interval_seconds": [
+              6.003,
+              8.005
+            ],
+            "note": "Sprinkling itself; jar weighing/taring82–87 and96.5–100 separate.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "filling_with_experiment_weighings",
+            "type": "calendar_stage",
+            "start": {
+              "last_before": {
+                "source_frame_index": 3119,
+                "pts_seconds": 104.074989,
+                "elapsed_seconds": 104.008322
+              },
+              "first_after": {
+                "source_frame_index": 3179,
+                "pts_seconds": 106.076667,
+                "elapsed_seconds": 106.01
+              },
+              "pts_interval": [
+                104.075,
+                106.077
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 5217,
+                "pts_seconds": 174.051667,
+                "elapsed_seconds": 173.985
+              },
+              "first_after": {
+                "source_frame_index": 5277,
+                "pts_seconds": 176.053333,
+                "elapsed_seconds": 175.986666
+              },
+              "pts_interval": [
+                174.052,
+                176.053
+              ]
+            },
+            "media_duration_interval_seconds": [
+              67.975,
+              71.978
+            ],
+            "note": "Crab/cheese/cucumber, with retrieving bags, extrusion onto scale, repeated transfers and arrangement. Not pure filling labor.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "forming_roll",
+            "type": "manual_operation_calendar_envelope",
+            "start": {
+              "last_before": {
+                "source_frame_index": 5157,
+                "pts_seconds": 172.051667
+              },
+              "first_after": {
+                "source_frame_index": 5217,
+                "pts_seconds": 174.051667
+              },
+              "pts_interval": [
+                172.052,
+                174.052
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 6417,
+                "pts_seconds": 214.076667,
+                "elapsed_seconds": 214.01
+              },
+              "first_after": {
+                "source_frame_index": 6477,
+                "pts_seconds": 216.078333,
+                "elapsed_seconds": 216.011666
+              },
+              "pts_interval": [
+                214.077,
+                216.078
+              ]
+            },
+            "media_duration_interval_seconds": [
+              40.025,
+              44.026
+            ],
+            "note": "Multiple tightening/straightening passes; finished blank placed on scales217.58.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "cutting",
+            "type": "manual_operation_calendar_envelope",
+            "start": {
+              "last_before": {
+                "source_frame_index": 6717,
+                "pts_seconds": 224.083333
+              },
+              "first_after": {
+                "source_frame_index": 6776,
+                "pts_seconds": 226.051667
+              },
+              "pts_interval": [
+                224.083,
+                226.052
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 7076,
+                "pts_seconds": 236.058333
+              },
+              "first_after": {
+                "source_frame_index": 7136,
+                "pts_seconds": 238.058333
+              },
+              "pts_interval": [
+                236.058,
+                238.058
+              ]
+            },
+            "media_duration_interval_seconds": [
+              10.006,
+              13.975
+            ],
+            "note": "Root independent clarification: whole roll still being positioned224.083; first cut226.052; last cut active236.058, arrangement238.058. About10–14s.",
+            "clock_calibrated": false
+          }
+        ],
+        "operation_windows": [
+          {
+            "name": "rice_weigh_adjust_transfer",
+            "pts_window": [
+              2.067,
+              12.065
+            ]
+          },
+          {
+            "name": "sesame_jar_weigh_tare",
+            "pts_window": [
+              82.062,
+              87.565
+            ]
+          },
+          {
+            "name": "sesame_jar_reweigh",
+            "pts_window": [
+              96.57,
+              100.073
+            ]
+          },
+          {
+            "name": "crab_extrusion_weigh",
+            "pts_window": [
+              106.077,
+              112.08
+            ]
+          },
+          {
+            "name": "crab_transfer_arrange",
+            "pts_window": [
+              112.08,
+              124.055
+            ]
+          },
+          {
+            "name": "cheese_extrusion_weigh",
+            "pts_window": [
+              128.057,
+              134.062
+            ]
+          },
+          {
+            "name": "cheese_transfer_arrange",
+            "pts_window": [
+              134.062,
+              144.067
+            ]
+          },
+          {
+            "name": "cucumber_weigh_and_part_transfers",
+            "pts_window": [
+              148.07,
+              162.078
+            ]
+          },
+          {
+            "name": "filling_arrangement",
+            "pts_window": [
+              162.078,
+              174.052
+            ]
+          },
+          {
+            "name": "finished_blank_weigh",
+            "pts_window": [
+              217.313,
+              219.313
+            ]
+          }
+        ],
+        "limitations": [
+          "Rice batch preparation absent; no temperatures or ingredient quality can be inferred visually.",
+          "No final packaging/closed container or courier handover shown."
+        ],
+        "product": "Камчатский",
+        "iiko_product_id_19oct_snapshot": "c80e1f8e-1607-44e0-a712-b39361c1dc96",
+        "current_recipe_grams_19oct_snapshot": {
+          "Рис для роллов пф": 130,
+          "Снежный краб полуфабрикат": 30,
+          "Сыр творожный": 20,
+          "Огурец п/ф роллы": 20,
+          "Кунжут белый": 10,
+          "Нори_шт": 0.5
+        },
+        "trial_grams": {
+          "Рис для роллов пф": 100,
+          "Снежный краб полуфабрикат": 49,
+          "Сыр творожный": 30,
+          "Огурец п/ф роллы": 29,
+          "Кунжут белый": 10,
+          "Нори_шт": 0.5
+        },
+        "finished_blank_mass_g": 219,
+        "finished_blank_mass_is": "before cutting, not finished plated portion",
+        "observed_full_process": {
+          "start_definition": "Rice portion weighing begins near initial source seconds; rice batch preparation absent.",
+          "end_definition": "Last cut complete, cut pieces remain on white board.",
+          "start_pts_interval": [
+            2.067,
+            4.067
+          ],
+          "end_pts_interval": [
+            236.058,
+            238.058
+          ],
+          "media_duration_interval_seconds": [
+            231.991,
+            235.991
+          ],
+          "not_video_length": true
+        },
+        "limits_extra": "Root verification supplies29g cucumber and10g sesame; original evidence retained under root v04 folders. This agent independently viewed coarse/dense evidence and then root153.073 native cucumber frame."
+      },
+      {
+        "source_id": "v05",
+        "source_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Лава с креветкой.mp4",
+        "source_sha256": "e7a0752658f2e7e62badd4c7a692cc02b7480f2cb72aa6ee0e1e86548f888365",
+        "frame_count": 6967,
+        "first_frame_pts": 0.066667,
+        "last_frame_pts": 232.363989,
+        "source_manifest": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/v05/manifest.json",
+        "facts": [
+          {
+            "ingredient": "Рис для роллов пф",
+            "display_grams": 101,
+            "evidence": {
+              "source_frame_index": 270,
+              "pts_seconds": 9.064989,
+              "elapsed_seconds": 8.998322
+            },
+            "note": "95g at7–8.565, final101g at9.065–9.332 before lift. Empty101g at10.065 ignored."
+          },
+          {
+            "ingredient": "Сыр творожный",
+            "display_grams": 49,
+            "evidence": {
+              "source_frame_index": 2444,
+              "pts_seconds": 81.558333,
+              "elapsed_seconds": 81.49166600000001
+            },
+            "note": "Stable81.057–81.825.163/179g during manual transfer are contact force, rejected."
+          },
+          {
+            "ingredient": "Креветка п/ф очищ отвар",
+            "display_grams": 40,
+            "evidence": {
+              "source_frame_index": 3284,
+              "pts_seconds": 109.574989,
+              "elapsed_seconds": 109.508322
+            },
+            "note": "Native /v05-refine/frame-0009.jpg f3284 PTS109.574989: hands hovering clear,40g. Previous37g at108.8 precedes final addition. Residual26 then18g are subsequent transfers to same roll, not reductions discarded."
+          },
+          {
+            "ingredient": "Заготовка",
+            "display_grams": 191,
+            "evidence": {
+              "source_frame_index": 4723,
+              "pts_seconds": 157.571667,
+              "elapsed_seconds": 157.505
+            },
+            "note": "Native /v05-refine/frame-0014.jpg f4723 PTS157.571667, stable through159.07."
+          },
+          {
+            "ingredient": "Соус Лава",
+            "display_grams": 80,
+            "evidence": {
+              "source_frame_index": 6941,
+              "pts_seconds": 231.551667,
+              "elapsed_seconds": 231.485
+            },
+            "note": "Second kitchen scale turned on with cut base resting on it200.566–202.567 (all segments briefly lit), then platform reads0 at203–204; topping added204.568–229.583, stable80g at230–232. This is sauce increment only, not whole serving mass."
+          }
+        ],
+        "stages": [
+          {
+            "name": "rice_mat_spreading_only",
+            "type": "manual_operation_calendar_envelope",
+            "start": {
+              "last_before": {
+                "source_frame_index": 315,
+                "pts_seconds": 10.564989,
+                "elapsed_seconds": 10.498322
+              },
+              "first_after": {
+                "source_frame_index": 480,
+                "pts_seconds": 16.064989,
+                "elapsed_seconds": 15.998322
+              },
+              "pts_interval": [
+                10.565,
+                16.065
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 1860,
+                "pts_seconds": 62.078333,
+                "elapsed_seconds": 62.011666
+              },
+              "first_after": {
+                "source_frame_index": 1875,
+                "pts_seconds": 62.579989,
+                "elapsed_seconds": 62.513321999999995
+              },
+              "pts_interval": [
+                62.078,
+                62.58
+              ]
+            },
+            "media_duration_interval_seconds": [
+              46.013,
+              52.015
+            ],
+            "note": "Start partly outside left crop between10.565 and16.065; visible rice along left mat edge by16.065. Bound46–52s, not an exact active total; excludes weighing and flip.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "rice_mat_flip_and_edge_finish",
+            "type": "calendar_stage",
+            "start": {
+              "last_before": {
+                "source_frame_index": 1860,
+                "pts_seconds": 62.078333,
+                "elapsed_seconds": 62.011666
+              },
+              "first_after": {
+                "source_frame_index": 1875,
+                "pts_seconds": 62.579989,
+                "elapsed_seconds": 62.513321999999995
+              },
+              "pts_interval": [
+                62.078,
+                62.58
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 1995,
+                "pts_seconds": 66.581667,
+                "elapsed_seconds": 66.515
+              },
+              "first_after": {
+                "source_frame_index": 2010,
+                "pts_seconds": 67.081667,
+                "elapsed_seconds": 67.015
+              },
+              "pts_interval": [
+                66.582,
+                67.082
+              ]
+            },
+            "media_duration_interval_seconds": [
+              4.002,
+              5.004
+            ],
+            "note": "Flip begins62.58; then edges adjusted. Separated from rice spreading.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "filling_with_experiment_weighings",
+            "type": "calendar_stage",
+            "start": {
+              "last_before": {
+                "source_frame_index": 2040,
+                "pts_seconds": 68.083333,
+                "elapsed_seconds": 68.016666
+              },
+              "first_after": {
+                "source_frame_index": 2100,
+                "pts_seconds": 70.083333,
+                "elapsed_seconds": 70.016666
+              },
+              "pts_interval": [
+                68.083,
+                70.083
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 3644,
+                "pts_seconds": 121.583333,
+                "elapsed_seconds": 121.516666
+              },
+              "first_after": {
+                "source_frame_index": 3659,
+                "pts_seconds": 122.083333,
+                "elapsed_seconds": 122.016666
+              },
+              "pts_interval": [
+                121.583,
+                122.083
+              ]
+            },
+            "media_duration_interval_seconds": [
+              51.5,
+              54.0
+            ],
+            "note": "Retrieve bag→weigh/extrude49g cheese→transfer→weigh40g shrimp→multiple transfers and arrangement. About52–54s includes experimental weighing.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "forming_roll",
+            "type": "manual_operation_calendar_envelope",
+            "start": {
+              "last_before": {
+                "source_frame_index": 3644,
+                "pts_seconds": 121.583333,
+                "elapsed_seconds": 121.516666
+              },
+              "first_after": {
+                "source_frame_index": 3659,
+                "pts_seconds": 122.083333,
+                "elapsed_seconds": 122.016666
+              },
+              "pts_interval": [
+                121.583,
+                122.083
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 4633,
+                "pts_seconds": 154.569989,
+                "elapsed_seconds": 154.503322
+              },
+              "first_after": {
+                "source_frame_index": 4648,
+                "pts_seconds": 155.069989,
+                "elapsed_seconds": 155.003322
+              },
+              "pts_interval": [
+                154.57,
+                155.07
+              ]
+            },
+            "media_duration_interval_seconds": [
+              32.487,
+              33.487
+            ],
+            "note": "First mat folding through last compression; finished roll lifted155.57.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "cutting",
+            "type": "manual_operation_calendar_envelope",
+            "start": {
+              "last_before": {
+                "source_frame_index": 4918,
+                "pts_seconds": 164.074989,
+                "elapsed_seconds": 164.008322
+              },
+              "first_after": {
+                "source_frame_index": 4933,
+                "pts_seconds": 164.576667,
+                "elapsed_seconds": 164.51
+              },
+              "pts_interval": [
+                164.075,
+                164.577
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 5517,
+                "pts_seconds": 184.054989,
+                "elapsed_seconds": 183.988322
+              },
+              "first_after": {
+                "source_frame_index": 5532,
+                "pts_seconds": 184.554989,
+                "elapsed_seconds": 184.488322
+              },
+              "pts_interval": [
+                184.055,
+                184.555
+              ]
+            },
+            "media_duration_interval_seconds": [
+              19.478,
+              20.48
+            ],
+            "note": "First blade engagement to last cut, includes intermediate wiping/repositioning. About20s; actual sawing-only time not separately summed.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "arrange_cut_pieces",
+            "type": "calendar_stage",
+            "start": {
+              "last_before": {
+                "source_frame_index": 5547,
+                "pts_seconds": 185.054989,
+                "elapsed_seconds": 184.988322
+              },
+              "first_after": {
+                "source_frame_index": 5562,
+                "pts_seconds": 185.556667,
+                "elapsed_seconds": 185.49
+              },
+              "pts_interval": [
+                185.055,
+                185.557
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 5697,
+                "pts_seconds": 190.058333,
+                "elapsed_seconds": 189.991666
+              },
+              "first_after": {
+                "source_frame_index": 5757,
+                "pts_seconds": 192.059989,
+                "elapsed_seconds": 191.993322
+              },
+              "pts_interval": [
+                190.058,
+                192.06
+              ]
+            },
+            "media_duration_interval_seconds": [
+              4.501,
+              7.005
+            ],
+            "note": "Eight pieces aligned on white board. Separate from later second-scale weighing.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "sauce_piping",
+            "type": "manual_operation_calendar_envelope",
+            "start": {
+              "last_before": {
+                "source_frame_index": 6117,
+                "pts_seconds": 204.066667,
+                "elapsed_seconds": 204.0
+              },
+              "first_after": {
+                "source_frame_index": 6132,
+                "pts_seconds": 204.568333,
+                "elapsed_seconds": 204.501666
+              },
+              "pts_interval": [
+                204.067,
+                204.568
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 6867,
+                "pts_seconds": 229.083333,
+                "elapsed_seconds": 229.01666600000001
+              },
+              "first_after": {
+                "source_frame_index": 6882,
+                "pts_seconds": 229.583333,
+                "elapsed_seconds": 229.51666600000001
+              },
+              "pts_interval": [
+                229.083,
+                229.583
+              ]
+            },
+            "media_duration_interval_seconds": [
+              24.515,
+              25.516
+            ],
+            "note": "Eight individual topping rosettes; about25s. Separate from scale setup198.563–204.067.",
+            "clock_calibrated": false
+          }
+        ],
+        "operation_windows": [
+          {
+            "name": "rice_weigh_adjust_transfer",
+            "pts_window": [
+              4.067,
+              10.565
+            ]
+          },
+          {
+            "name": "cheese_bag_retrieve_and_dose_weigh",
+            "pts_window": [
+              68.083,
+              82.058
+            ]
+          },
+          {
+            "name": "cheese_transfer_arrange",
+            "pts_window": [
+              82.058,
+              88.062
+            ]
+          },
+          {
+            "name": "shrimp_weigh_prepare",
+            "pts_window": [
+              90.063,
+              110.075
+            ]
+          },
+          {
+            "name": "shrimp_transfers_arrange",
+            "pts_window": [
+              110.075,
+              121.583
+            ]
+          },
+          {
+            "name": "finished_blank_weigh",
+            "pts_window": [
+              156.572,
+              159.073
+            ]
+          },
+          {
+            "name": "carry_base_to_second_scale_and_tare",
+            "pts_window": [
+              198.563,
+              204.067
+            ]
+          }
+        ],
+        "limitations": [
+          "Rice batch preparation absent; no temperatures or ingredient quality can be inferred visually.",
+          "No final packaging/closed container or courier handover shown."
+        ],
+        "product": "Лава с креветкой",
+        "iiko_product_id_19oct_snapshot": "704c0ccc-9a40-43c1-9bc8-e48dce390bd7",
+        "current_recipe_grams_19oct_snapshot": {
+          "Рис для роллов пф": 130,
+          "Сыр творожный": 20,
+          "Креветка п/ф очищ отвар": 30,
+          "Соус Лава": 60,
+          "Нори_шт": 0.5
+        },
+        "trial_grams": {
+          "Рис для роллов пф": 101,
+          "Сыр творожный": 49,
+          "Креветка п/ф очищ отвар": 40,
+          "Соус Лава": 80,
+          "Нори_шт": 0.5
+        },
+        "finished_blank_mass_g": 191,
+        "finished_portion_estimate_g": 271,
+        "finished_portion_estimate_reason": "191g blank+80g tared topping; cutting scraps/losses not separately weighed, so271g is estimate, not full portion measured",
+        "observed_full_process": {
+          "start_definition": "Rice portion placed/adjusted on scale; rice batch preparation absent.",
+          "end_definition": "Last topping rosette complete; all8 pieces on weighing platform, no container.",
+          "start_pts_interval": [
+            4.067,
+            6.067
+          ],
+          "end_pts_interval": [
+            229.083,
+            229.583
+          ],
+          "media_duration_interval_seconds": [
+            223.016,
+            225.516
+          ],
+          "not_video_length": true
+        }
+      },
+      {
+        "source_id": "v08",
+        "source_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Фиеста.mp4",
+        "source_sha256": "353621ba83516fcba47ec1eceaae46ab60950d1c7fd339cde29fa185eecf507c",
+        "frame_count": 9338,
+        "first_frame_pts": 0.066667,
+        "last_frame_pts": 311.467989,
+        "source_manifest": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/v08/manifest.json",
+        "facts": [
+          {
+            "ingredient": "Рис для роллов пф",
+            "display_grams": 100,
+            "evidence": {
+              "source_frame_index": 105,
+              "pts_seconds": 3.566667,
+              "elapsed_seconds": 3.5
+            },
+            "note": "Weighed ball100g before lifting4.067. No need infer from roll size."
+          },
+          {
+            "ingredient": "Сыр творожный",
+            "display_grams": 85,
+            "evidence": {
+              "source_frame_index": 2339,
+              "pts_seconds": 78.064989,
+              "elapsed_seconds": 77.998322
+            },
+            "note": "Initial48g→additional73g→final85g;77.565–78.565 no pressure. After transfer platform shows3g once then0; possible small residue/wiping, exact net transferred could be lower than85g."
+          },
+          {
+            "ingredient": "Огурец п/ф роллы",
+            "display_grams": 25,
+            "evidence": {
+              "source_frame_index": 3104,
+              "pts_seconds": 103.579989,
+              "elapsed_seconds": 103.513322
+            },
+            "note": "Initial16g then addition: stable25g103.580. Subsequently transferred in portions; do not use near-zero residual as full dose. Taring occurs during transfer;25g is gross prepared dose."
+          },
+          {
+            "ingredient": "Семга х/к п/ф",
+            "display_grams": 18,
+            "evidence": {
+              "source_frame_index": 5577,
+              "pts_seconds": 186.064989,
+              "elapsed_seconds": 185.998322
+            },
+            "note": "Single salmon panel stable18g185.065–188.567;184g at190.068 while hand lifts is pressure, rejected."
+          },
+          {
+            "ingredient": "Креветка п/ф очищ отвар",
+            "display_grams": 20,
+            "evidence": {
+              "source_frame_index": 6506,
+              "pts_seconds": 217.051667,
+              "elapsed_seconds": 216.985
+            },
+            "note": "Butterflied shrimp pieces on empty platform stable20g216.083–217.552, then transferred to outer top."
+          },
+          {
+            "ingredient": "Заготовка",
+            "display_grams": 248,
+            "evidence": {
+              "source_frame_index": 7736,
+              "pts_seconds": 258.076667,
+              "elapsed_seconds": 258.01
+            },
+            "note": "Finished after outer covering/pressing, before cutting; native base sampling f7736."
+          }
+        ],
+        "stages": [
+          {
+            "name": "rice_mat_spreading_only",
+            "type": "manual_operation_calendar_envelope",
+            "start": {
+              "last_before": {
+                "source_frame_index": 240,
+                "pts_seconds": 8.064989,
+                "elapsed_seconds": 7.998322000000001
+              },
+              "first_after": {
+                "source_frame_index": 255,
+                "pts_seconds": 8.564989,
+                "elapsed_seconds": 8.498322
+              },
+              "pts_interval": [
+                8.065,
+                8.565
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 1545,
+                "pts_seconds": 51.581667,
+                "elapsed_seconds": 51.515
+              },
+              "first_after": {
+                "source_frame_index": 1560,
+                "pts_seconds": 52.081667,
+                "elapsed_seconds": 52.015
+              },
+              "pts_interval": [
+                51.582,
+                52.082
+              ]
+            },
+            "media_duration_interval_seconds": [
+              43.017,
+              44.017
+            ],
+            "note": "First visible flattening of ball on nori to last rice spreading, excludes initial weighing and flipping. About44s.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "rice_mat_flip_and_edge_finish",
+            "type": "calendar_stage",
+            "start": {
+              "last_before": {
+                "source_frame_index": 1575,
+                "pts_seconds": 52.581667,
+                "elapsed_seconds": 52.515
+              },
+              "first_after": {
+                "source_frame_index": 1590,
+                "pts_seconds": 53.081667,
+                "elapsed_seconds": 53.015
+              },
+              "pts_interval": [
+                52.582,
+                53.082
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 1605,
+                "pts_seconds": 53.583333,
+                "elapsed_seconds": 53.516666
+              },
+              "first_after": {
+                "source_frame_index": 1620,
+                "pts_seconds": 54.083333,
+                "elapsed_seconds": 54.016666
+              },
+              "pts_interval": [
+                53.583,
+                54.083
+              ]
+            },
+            "media_duration_interval_seconds": [
+              0.501,
+              1.501
+            ],
+            "note": "Flip separate from rice spreading; prepared mat rests54–57.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "filling_with_experiment_weighings",
+            "type": "calendar_stage",
+            "start": {
+              "last_before": {
+                "source_frame_index": 1739,
+                "pts_seconds": 58.051667,
+                "elapsed_seconds": 57.985
+              },
+              "first_after": {
+                "source_frame_index": 1799,
+                "pts_seconds": 60.053333,
+                "elapsed_seconds": 59.986666
+              },
+              "pts_interval": [
+                58.052,
+                60.053
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 4138,
+                "pts_seconds": 138.068333,
+                "elapsed_seconds": 138.001666
+              },
+              "first_after": {
+                "source_frame_index": 4153,
+                "pts_seconds": 138.568333,
+                "elapsed_seconds": 138.501666
+              },
+              "pts_interval": [
+                138.068,
+                138.568
+              ]
+            },
+            "media_duration_interval_seconds": [
+              78.015,
+              80.516
+            ],
+            "note": "Retrieve/extrude/weigh cheese, transfer, clean/tare platform, cucumber weighing/transfers/arrangement. Roughly78–81s includes scale demonstrations and cleaning.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "forming_base_roll",
+            "type": "manual_operation_calendar_envelope",
+            "start": {
+              "last_before": {
+                "source_frame_index": 4138,
+                "pts_seconds": 138.068333,
+                "elapsed_seconds": 138.001666
+              },
+              "first_after": {
+                "source_frame_index": 4153,
+                "pts_seconds": 138.568333,
+                "elapsed_seconds": 138.501666
+              },
+              "pts_interval": [
+                138.068,
+                138.568
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 5112,
+                "pts_seconds": 170.554989,
+                "elapsed_seconds": 170.488322
+              },
+              "first_after": {
+                "source_frame_index": 5127,
+                "pts_seconds": 171.054989,
+                "elapsed_seconds": 170.988322
+              },
+              "pts_interval": [
+                170.555,
+                171.055
+              ]
+            },
+            "media_duration_interval_seconds": [
+              31.987,
+              32.987
+            ],
+            "note": "First mat folding to base released; about32.5s. Does not include later exterior topping/second forming.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "external_covering_calendar_with_weighings",
+            "type": "calendar_stage",
+            "start": {
+              "last_before": {
+                "source_frame_index": 5502,
+                "pts_seconds": 183.563333,
+                "elapsed_seconds": 183.496666
+              },
+              "first_after": {
+                "source_frame_index": 5532,
+                "pts_seconds": 184.564989,
+                "elapsed_seconds": 184.498322
+              },
+              "pts_interval": [
+                183.563,
+                184.565
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 6896,
+                "pts_seconds": 230.058333,
+                "elapsed_seconds": 229.991666
+              },
+              "first_after": {
+                "source_frame_index": 6956,
+                "pts_seconds": 232.059989,
+                "elapsed_seconds": 231.993322
+              },
+              "pts_interval": [
+                230.058,
+                232.058
+              ]
+            },
+            "media_duration_interval_seconds": [
+              45.493,
+              48.495
+            ],
+            "note": "Salmon18g weighed184.565–189.067, applied190.6–~207; pause through~215; shrimp20g weighed215.6–218, applied218.5–230+. Not pure decoration labor.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "external_covering_final_press",
+            "type": "manual_operation_calendar_envelope",
+            "start": {
+              "last_before": {
+                "source_frame_index": 6896,
+                "pts_seconds": 230.058333,
+                "elapsed_seconds": 229.991666
+              },
+              "first_after": {
+                "source_frame_index": 7196,
+                "pts_seconds": 240.064989,
+                "elapsed_seconds": 239.998322
+              },
+              "pts_interval": [
+                230.058,
+                240.065
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 7586,
+                "pts_seconds": 253.073333,
+                "elapsed_seconds": 253.006666
+              },
+              "first_after": {
+                "source_frame_index": 7601,
+                "pts_seconds": 253.573333,
+                "elapsed_seconds": 253.506666
+              },
+              "pts_interval": [
+                253.073,
+                253.573
+              ]
+            },
+            "media_duration_interval_seconds": [
+              13.008,
+              23.515
+            ],
+            "note": "Final pressing after external fish/shrimp; start not densely sampled231–239, interval intentionally broad. Separate from original base forming.",
+            "clock_calibrated": false
+          },
+          {
+            "name": "cutting",
+            "type": "manual_operation_calendar_envelope",
+            "start": {
+              "last_before": {
+                "source_frame_index": 8021,
+                "pts_seconds": 267.583333,
+                "elapsed_seconds": 267.516666
+              },
+              "first_after": {
+                "source_frame_index": 8036,
+                "pts_seconds": 268.083333,
+                "elapsed_seconds": 268.016666
+              },
+              "pts_interval": [
+                267.583,
+                268.083
+              ]
+            },
+            "end": {
+              "last_before": {
+                "source_frame_index": 8755,
+                "pts_seconds": 292.064989,
+                "elapsed_seconds": 291.99832200000003
+              },
+              "first_after": {
+                "source_frame_index": 8770,
+                "pts_seconds": 292.564989,
+                "elapsed_seconds": 292.49832200000003
+              },
+              "pts_interval": [
+                292.065,
+                292.565
+              ]
+            },
+            "media_duration_interval_seconds": [
+              23.982,
+              24.982
+            ],
+            "note": "First blade engagement to last cut; about24–25s including wipe/repositioning. Pieces then aligned and displayed on board.",
+            "clock_calibrated": false
+          }
+        ],
+        "operation_windows": [
+          {
+            "name": "cheese_retrieve_dose_weigh",
+            "pts_window": [
+              58.052,
+              79.065
+            ]
+          },
+          {
+            "name": "cheese_transfer_arrange",
+            "pts_window": [
+              79.065,
+              85.568
+            ]
+          },
+          {
+            "name": "scale_clean_tare",
+            "pts_window": [
+              85.568,
+              93.073
+            ]
+          },
+          {
+            "name": "cucumber_weigh_prepare",
+            "pts_window": [
+              93.073,
+              105.082
+            ]
+          },
+          {
+            "name": "cucumber_transfer_arrange",
+            "pts_window": [
+              105.082,
+              138.068
+            ]
+          },
+          {
+            "name": "salmon_weigh",
+            "pts_window": [
+              184.565,
+              190.568
+            ]
+          },
+          {
+            "name": "salmon_apply_arrange",
+            "pts_window": [
+              190.568,
+              207.078
+            ]
+          },
+          {
+            "name": "salmon_roll_stationary_wait_product",
+            "pts_window": [
+              207.078,
+              215.083
+            ],
+            "note": "Product stationary; does not establish employee idle."
+          },
+          {
+            "name": "shrimp_weigh",
+            "pts_window": [
+              215.583,
+              218.052
+            ]
+          },
+          {
+            "name": "shrimp_apply_arrange",
+            "pts_window": [
+              218.552,
+              230.058
+            ]
+          },
+          {
+            "name": "finished_blank_weigh",
+            "pts_window": [
+              257.078,
+              259.078
+            ]
+          }
+        ],
+        "limitations": [
+          "Rice batch preparation absent; no temperatures or ingredient quality can be inferred visually.",
+          "No final packaging/closed container or courier handover shown.",
+          "85g cheese and25g cucumber are gross doses on scales. Small residues transferred/scraped/wiped were not quantitatively resolved;248g overall is observed, not forced by summation."
+        ],
+        "product": "Фиеста",
+        "iiko_product_id_19oct_snapshot": "2a3f7463-db4c-48bd-a384-a20e3238a72d",
+        "current_recipe_grams_19oct_snapshot": {
+          "Рис для роллов пф": 130,
+          "Сыр творожный": 60,
+          "Огурец п/ф роллы": 15,
+          "Креветка п/ф очищ отвар": 20,
+          "Семга х/к п/ф": 20,
+          "Нори_шт": 0.5
+        },
+        "trial_grams": {
+          "Рис для роллов пф": 100,
+          "Сыр творожный": 85,
+          "Огурец п/ф роллы": 25,
+          "Креветка п/ф очищ отвар": 20,
+          "Семга х/к п/ф": 18,
+          "Нори_шт": 0.5
+        },
+        "finished_blank_mass_g": 248,
+        "finished_blank_mass_is": "outer salmon and shrimp added and pressed, before cutting",
+        "observed_full_process": {
+          "start_definition": "Rice ball placed on scale near beginning; batch rice preparation absent.",
+          "end_definition": "Last cut complete, eight pieces remain on white board; later demonstration/rearrangement not prep completion.",
+          "start_pts_interval": [
+            2.067,
+            3.067
+          ],
+          "end_pts_interval": [
+            292.065,
+            292.565
+          ],
+          "media_duration_interval_seconds": [
+            288.998,
+            290.498
+          ],
+          "not_video_length": true
+        },
+        "outer_finishing": {
+          "covers": "18g salmon panel plus20g exterior shrimp, positioning and final press",
+          "calendar_start_pts_interval": [
+            183.563,
+            184.565
+          ],
+          "calendar_end_pts_interval": [
+            253.073,
+            253.573
+          ],
+          "calendar_duration_seconds": [
+            68.508,
+            70.01
+          ],
+          "subphases": "external_covering_calendar_with_weighings then external_covering_final_press; split uncertain at230–240, do not sum their max bounds as independent measurements",
+          "note": "Interior filling is a separate58–138 phase. Base forming138–171 occurs before outer covering183–254. No parallel process summed.",
+          "application_to_finished_press": {
+            "start_pts_interval": [
+              190.068,
+              190.568
+            ],
+            "end_pts_interval": [
+              253.073,
+              253.573
+            ],
+            "media_duration_interval_seconds": [
+              62.505,
+              63.505
+            ],
+            "note": "Starts applying first salmon panel, ends final exterior compression; includes pauses, shrimp reweighing and exterior placement. Not pure manual63s."
+          }
+        }
+      }
+    ]
+  },
+  "ataka_sakura": {
+    "status": "complete",
+    "analysis_date": "2026-10-21",
+    "analyst": "video_atakama_sakura",
+    "time_basis": "Source-frame best_effort_timestamp_time minus first-frame PTS0.066667; no visible independent clock/stopwatch in start/middle/end review. PTS are media seconds; real-time continuity not independently calibrated.",
+    "ingredient_identity": "Owner confirmed products and preparations unchanged from iiko; visual descriptors mapped using current recipe, not identified by appearance alone.",
+    "rolls": [
+      {
+        "name": "Атакама",
+        "main_source": "v01",
+        "cut_source": "v13",
+        "weights_g": {
+          "rice": 100,
+          "mozzarella": 41,
+          "smoked_salmon": 41,
+          "cucumber": 20,
+          "raw_formed_roll": 203,
+          "fried_finished_roll": null,
+          "batter": null,
+          "breadcrumbs": null,
+          "nori_sheets": null
+        },
+        "weight_observations": [
+          {
+            "ingredient": "rice",
+            "frame": 405,
+            "pts": 13.564989,
+            "display_kg": 0.1,
+            "note": "99g stable before small additional pinch;100g without hand pressure before removal. Scale empty0 before and after; subsequent additions on mat not proven absent.",
+            "elapsed": 13.498322
+          },
+          {
+            "ingredient": "mozzarella",
+            "frame": 2444,
+            "pts": 81.566667,
+            "display_kg": 0.041,
+            "note": "White strips:42g then adjusts to41g; transferred to mat. No tare vessel.",
+            "elapsed": 81.5
+          },
+          {
+            "ingredient": "smoked_salmon",
+            "frame": 2909,
+            "pts": 97.076667,
+            "display_kg": 0.041,
+            "note": "Orange strips:29g then adds to41g. Transfers in portions, remaining29 then8 then0; all portions go toward mat.",
+            "elapsed": 97.01
+          },
+          {
+            "ingredient": "cucumber",
+            "frame": 3373,
+            "pts": 112.551667,
+            "display_kg": 0.02,
+            "note": "Green strips20g without pressure; transfers15g, remaining5g then clears platform. Some pieces fall near work surface during handling.",
+            "elapsed": 112.485
+          },
+          {
+            "ingredient": "raw_formed_roll",
+            "frame": 5112,
+            "pts": 170.554989,
+            "display_kg": 0.203,
+            "note": "Uncoated formed roll alone on directly zeroed platform; no fried weight.",
+            "elapsed": 170.488322
+          }
+        ],
+        "timing": [
+          {
+            "source_id": "v01",
+            "phase": "rice_weighing_and_transfer",
+            "start": {
+              "frame_before": {
+                "frame": 270,
+                "pts": 9.064989,
+                "elapsed": 8.998322
+              },
+              "frame_after": {
+                "frame": 285,
+                "pts": 9.564989,
+                "elapsed": 9.498322
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 465,
+                "pts": 15.564989,
+                "elapsed": 15.498322
+              },
+              "frame_after": {
+                "frame": 495,
+                "pts": 16.564989,
+                "elapsed": 16.498322
+              }
+            },
+            "duration_s": [
+              6.0,
+              7.5
+            ],
+            "duration_display_s": [
+              6,
+              8
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "Experimental rice weighing/adjustment then transfer; not mat spreading. Nori preparation began earlier."
+          },
+          {
+            "source_id": "v01",
+            "phase": "rice_mat_spreading_only",
+            "start": {
+              "frame_before": {
+                "frame": 510,
+                "pts": 17.064989,
+                "elapsed": 16.998322
+              },
+              "frame_after": {
+                "frame": 525,
+                "pts": 17.564989,
+                "elapsed": 17.498322
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 1754,
+                "pts": 58.551667,
+                "elapsed": 58.485
+              },
+              "frame_after": {
+                "frame": 1769,
+                "pts": 59.051667,
+                "elapsed": 58.985
+              }
+            },
+            "duration_s": [
+              40.987,
+              41.987
+            ],
+            "duration_display_s": [
+              40,
+              42
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "First sustained pressing rice on nori to end of spreading before flip. ~41s. No scale handling in this interval."
+          },
+          {
+            "source_id": "v01",
+            "phase": "rice_mat_including_flip",
+            "start": {
+              "frame_before": {
+                "frame": 510,
+                "pts": 17.064989,
+                "elapsed": 16.998322
+              },
+              "frame_after": {
+                "frame": 525,
+                "pts": 17.564989,
+                "elapsed": 17.498322
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 1784,
+                "pts": 59.551667,
+                "elapsed": 59.485
+              },
+              "frame_after": {
+                "frame": 1814,
+                "pts": 60.553333,
+                "elapsed": 60.486666
+              }
+            },
+            "duration_s": [
+              41.987,
+              43.488
+            ],
+            "duration_display_s": [
+              41,
+              44
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "Spreading and flipping to nori side up. ~43s; includes flip and edge adjustment."
+          },
+          {
+            "source_id": "v01",
+            "phase": "filling_preparation_weighing_placement",
+            "start": {
+              "frame_before": {
+                "frame": 1934,
+                "pts": 64.554989,
+                "elapsed": 64.48832200000001
+              },
+              "frame_after": {
+                "frame": 1979,
+                "pts": 66.056667,
+                "elapsed": 65.99000000000001
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 3808,
+                "pts": 127.061667,
+                "elapsed": 126.995
+              },
+              "frame_after": {
+                "frame": 3823,
+                "pts": 127.561667,
+                "elapsed": 127.495
+              }
+            },
+            "duration_s": [
+              61.005,
+              63.007
+            ],
+            "duration_display_s": [
+              61,
+              64
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "Includes fetching ingredients, scale adjustment, transfer in several portions, arranging filling and short pauses. Not an active-labour estimate."
+          },
+          {
+            "source_id": "v01",
+            "phase": "rolling_and_repeated_shaping",
+            "start": {
+              "frame_before": {
+                "frame": 3823,
+                "pts": 127.561667,
+                "elapsed": 127.495
+              },
+              "frame_after": {
+                "frame": 3853,
+                "pts": 128.561667,
+                "elapsed": 128.495
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 4992,
+                "pts": 166.551667,
+                "elapsed": 166.485
+              },
+              "frame_after": {
+                "frame": 5022,
+                "pts": 167.553333,
+                "elapsed": 167.486666
+              }
+            },
+            "duration_s": [
+              37.99,
+              39.992
+            ],
+            "duration_display_s": [
+              37,
+              40
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "First mat tuck to last pressing/unwrapping. Includes repeated shaping and short gestures/pauses; not40s of uninterrupted mechanical rolling."
+          },
+          {
+            "source_id": "v01",
+            "phase": "observed_main_clip_cycle_to_raw_weight",
+            "start": {
+              "frame_before": {
+                "frame": 0,
+                "pts": 0.066667,
+                "elapsed": 0.0
+              },
+              "frame_after": {
+                "frame": 0,
+                "pts": 0.066667,
+                "elapsed": 0.0
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 5082,
+                "pts": 169.554989,
+                "elapsed": 169.488322
+              },
+              "frame_after": {
+                "frame": 5112,
+                "pts": 170.554989,
+                "elapsed": 170.488322
+              }
+            },
+            "duration_s": [
+              169.488,
+              170.488
+            ],
+            "duration_display_s": [
+              169,
+              171
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "Video start to raw roll stable on scale. This is not the full edible-product cycle; breading/frying/cutting absent."
+          },
+          {
+            "source_id": "v13",
+            "phase": "cutting_first_to_last_cut",
+            "start": {
+              "frame_before": {
+                "frame": 30,
+                "pts": 1.066667,
+                "elapsed": 1.0
+              },
+              "frame_after": {
+                "frame": 45,
+                "pts": 1.566667,
+                "elapsed": 1.5
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 495,
+                "pts": 16.564989,
+                "elapsed": 16.498322
+              },
+              "frame_after": {
+                "frame": 510,
+                "pts": 17.064989,
+                "elapsed": 16.998322
+              }
+            },
+            "duration_s": [
+              14.998,
+              15.998
+            ],
+            "duration_display_s": [
+              14,
+              16
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "First blade stroke through roll to completion of final stroke. Includes alignment, wiping blade and repeated strokes."
+          },
+          {
+            "source_id": "v13",
+            "phase": "arranging_cut_pieces_on_board",
+            "start": {
+              "frame_before": {
+                "frame": 510,
+                "pts": 17.064989,
+                "elapsed": 16.998322
+              },
+              "frame_after": {
+                "frame": 540,
+                "pts": 18.064989,
+                "elapsed": 17.998322
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 615,
+                "pts": 20.563333,
+                "elapsed": 20.496666
+              },
+              "frame_after": {
+                "frame": 630,
+                "pts": 21.063333,
+                "elapsed": 20.996666
+              }
+            },
+            "duration_s": [
+              2.498,
+              3.998
+            ],
+            "duration_display_s": [
+              2,
+              4
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "Arrangement/display on chopping board, not packing into a container."
+          },
+          {
+            "source_id": "v13",
+            "phase": "observed_cut_clip_cycle_to_board_arrangement",
+            "start": {
+              "frame_before": {
+                "frame": 0,
+                "pts": 0.066667,
+                "elapsed": 0.0
+              },
+              "frame_after": {
+                "frame": 0,
+                "pts": 0.066667,
+                "elapsed": 0.0
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 615,
+                "pts": 20.563333,
+                "elapsed": 20.496666
+              },
+              "frame_after": {
+                "frame": 630,
+                "pts": 21.063333,
+                "elapsed": 20.996666
+              }
+            },
+            "duration_s": [
+              20.497,
+              20.997
+            ],
+            "duration_display_s": [
+              20,
+              21
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "Clip starts with whole fried roll already on board; ends with cut pieces laid out. No frying shown."
+          }
+        ],
+        "unknowns": [
+          "Nori leaf fraction not measured; use iiko0.5sheet only as conditional carryover.",
+          "Battering, breading and frying absent between separate videos; neither duration nor dose measured.",
+          "No post-fry mass;203g is raw assembly only.",
+          "Recipe sourcing weight202g plus nori is consistent with203g but does not prove no hidden loss/addition."
+        ]
+      },
+      {
+        "name": "Сакура",
+        "main_source": "v07",
+        "cut_source": "v06",
+        "weights_g": {
+          "rice": 100,
+          "snow_crab_preparation": 50,
+          "tomato": 26,
+          "iceberg_dispensed": 19,
+          "masago_dispensed": 10,
+          "raw_formed_roll": 201,
+          "fried_finished_roll": null,
+          "batter": null,
+          "breadcrumbs": null,
+          "nori_sheets": null
+        },
+        "weight_observations": [
+          {
+            "ingredient": "rice",
+            "frame": 120,
+            "pts": 4.066667,
+            "display_kg": 0.1,
+            "note": "Rice alone. Transient98/99 while settling;100g before grasp/removal.",
+            "elapsed": 4.0
+          },
+          {
+            "ingredient": "snow_crab_preparation",
+            "frame": 2040,
+            "pts": 68.069989,
+            "display_kg": 0.05,
+            "note": "Pale paste dispensed from bag on empty platform; after release50g. Then fully scooped toward mat.",
+            "elapsed": 68.00332200000001
+          },
+          {
+            "ingredient": "tomato",
+            "frame": 2340,
+            "pts": 78.076667,
+            "display_kg": 0.026,
+            "note": "Red strips26g at rest. Subsequent29/140 etc coincide with fingers touching platform; do not use them as mass.",
+            "elapsed": 78.01
+          },
+          {
+            "ingredient": "iceberg_dispensed",
+            "frame": 3254,
+            "pts": 108.561667,
+            "display_kg": 0.019,
+            "note": "Leaf19g dispensed (initial14g then adds). Transfers with remaining3g on scale. Subsequent leaf tearing/selection on mat and possible return of excess to bin; retained mass not separately weighed.",
+            "elapsed": 108.495
+          },
+          {
+            "ingredient": "masago_dispensed",
+            "frame": 4378,
+            "pts": 146.051667,
+            "display_kg": 0.01,
+            "note": "Red granules initially7g, adds to10g hands off platform. Transfers in pinches;3g remains at150s, then below1g residue still visible. Hand-pressure172/362g ignored.",
+            "elapsed": 145.985
+          },
+          {
+            "ingredient": "raw_formed_roll",
+            "frame": 6477,
+            "pts": 216.061667,
+            "display_kg": 0.201,
+            "note": "Uncoated roll alone on platform after explicit cleaning and zero check;201g before grasp/removal.",
+            "elapsed": 215.995
+          }
+        ],
+        "timing": [
+          {
+            "source_id": "v07",
+            "phase": "rice_weighing_and_transfer",
+            "start": {
+              "frame_before": {
+                "frame": 75,
+                "pts": 2.566667,
+                "elapsed": 2.5
+              },
+              "frame_after": {
+                "frame": 90,
+                "pts": 3.066667,
+                "elapsed": 3.0
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 135,
+                "pts": 4.566667,
+                "elapsed": 4.5
+              },
+              "frame_after": {
+                "frame": 165,
+                "pts": 5.566667,
+                "elapsed": 5.5
+              }
+            },
+            "duration_s": [
+              1.5,
+              3.0
+            ],
+            "duration_display_s": [
+              1,
+              3
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "Rice portion100g measured before mat stage. No assumed normative weighing time."
+          },
+          {
+            "source_id": "v07",
+            "phase": "rice_mat_spreading_only",
+            "start": {
+              "frame_before": {
+                "frame": 255,
+                "pts": 8.564989,
+                "elapsed": 8.498322
+              },
+              "frame_after": {
+                "frame": 285,
+                "pts": 9.564989,
+                "elapsed": 9.498322
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 1575,
+                "pts": 52.559989,
+                "elapsed": 52.493322
+              },
+              "frame_after": {
+                "frame": 1605,
+                "pts": 53.561667,
+                "elapsed": 53.495
+              }
+            },
+            "duration_s": [
+              42.995,
+              44.997
+            ],
+            "duration_display_s": [
+              42,
+              45
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "First visible pressing rice on nori to beginning of flip. ~43-45s; no scale handling."
+          },
+          {
+            "source_id": "v07",
+            "phase": "rice_mat_including_flip_and_adjustment",
+            "start": {
+              "frame_before": {
+                "frame": 255,
+                "pts": 8.564989,
+                "elapsed": 8.498322
+              },
+              "frame_after": {
+                "frame": 285,
+                "pts": 9.564989,
+                "elapsed": 9.498322
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 1695,
+                "pts": 56.563333,
+                "elapsed": 56.496666
+              },
+              "frame_after": {
+                "frame": 1725,
+                "pts": 57.563333,
+                "elapsed": 57.496666
+              }
+            },
+            "duration_s": [
+              46.998,
+              48.998
+            ],
+            "duration_display_s": [
+              46,
+              49
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "Spreading, flip and edge adjustment until worker goes for filling. ~47-49s."
+          },
+          {
+            "source_id": "v07",
+            "phase": "filling_preparation_weighing_placement",
+            "start": {
+              "frame_before": {
+                "frame": 1710,
+                "pts": 57.063333,
+                "elapsed": 56.996666
+              },
+              "frame_after": {
+                "frame": 1755,
+                "pts": 58.564989,
+                "elapsed": 58.498321999999995
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 5008,
+                "pts": 167.064989,
+                "elapsed": 166.998322
+              },
+              "frame_after": {
+                "frame": 5053,
+                "pts": 168.566667,
+                "elapsed": 168.5
+              }
+            },
+            "duration_s": [
+              108.5,
+              111.503
+            ],
+            "duration_display_s": [
+              108,
+              112
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "Includes preparation of piping bag, weighing each component, tearing/selecting leaf, pinches of masago, filling placement and pauses. Not active labour estimate."
+          },
+          {
+            "source_id": "v07",
+            "phase": "rolling_and_repeated_shaping_including_scale_cleaning",
+            "start": {
+              "frame_before": {
+                "frame": 5038,
+                "pts": 168.066667,
+                "elapsed": 168.0
+              },
+              "frame_after": {
+                "frame": 5068,
+                "pts": 169.066667,
+                "elapsed": 169.0
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 6402,
+                "pts": 213.561667,
+                "elapsed": 213.495
+              },
+              "frame_after": {
+                "frame": 6432,
+                "pts": 214.561667,
+                "elapsed": 214.495
+              }
+            },
+            "duration_s": [
+              44.495,
+              46.495
+            ],
+            "duration_display_s": [
+              44,
+              47
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "First fold to final unwrapping, with cleaning/zeroing scales around200-210s inserted between shaping attempts."
+          },
+          {
+            "source_id": "v07",
+            "phase": "scale_cleaning_during_forming",
+            "start": {
+              "frame_before": {
+                "frame": 5982,
+                "pts": 199.551667,
+                "elapsed": 199.485
+              },
+              "frame_after": {
+                "frame": 6012,
+                "pts": 200.553333,
+                "elapsed": 200.486666
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 6282,
+                "pts": 209.558333,
+                "elapsed": 209.491666
+              },
+              "frame_after": {
+                "frame": 6312,
+                "pts": 210.558333,
+                "elapsed": 210.491666
+              }
+            },
+            "duration_s": [
+              9.005,
+              11.007
+            ],
+            "duration_display_s": [
+              9,
+              12
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "Product remains on mat while worker cleans scale for final weighing. ~9-11s within forming calendar span; must not be added again."
+          },
+          {
+            "source_id": "v07",
+            "phase": "observed_main_clip_cycle_to_raw_weight",
+            "start": {
+              "frame_before": {
+                "frame": 0,
+                "pts": 0.066667,
+                "elapsed": 0.0
+              },
+              "frame_after": {
+                "frame": 0,
+                "pts": 0.066667,
+                "elapsed": 0.0
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 6462,
+                "pts": 215.561667,
+                "elapsed": 215.495
+              },
+              "frame_after": {
+                "frame": 6492,
+                "pts": 216.563333,
+                "elapsed": 216.496666
+              }
+            },
+            "duration_s": [
+              215.495,
+              216.497
+            ],
+            "duration_display_s": [
+              215,
+              217
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "Video start to raw201g roll alone on cleaned scale. No battering, breading, frying, slicing or packing shown."
+          },
+          {
+            "source_id": "v06",
+            "phase": "cutting_first_to_last_cut",
+            "start": {
+              "frame_before": {
+                "frame": 15,
+                "pts": 0.566667,
+                "elapsed": 0.5
+              },
+              "frame_after": {
+                "frame": 30,
+                "pts": 1.066667,
+                "elapsed": 1.0
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 735,
+                "pts": 24.563333,
+                "elapsed": 24.496666
+              },
+              "frame_after": {
+                "frame": 750,
+                "pts": 25.063333,
+                "elapsed": 24.996666
+              }
+            },
+            "duration_s": [
+              23.497,
+              24.497
+            ],
+            "duration_display_s": [
+              23,
+              25
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "First visible stroke through center to completion of final blade stroke. Includes alignment, blade wiping and pauses."
+          },
+          {
+            "source_id": "v06",
+            "phase": "arranging_cut_pieces_on_board",
+            "start": {
+              "frame_before": {
+                "frame": 750,
+                "pts": 25.063333,
+                "elapsed": 24.996666
+              },
+              "frame_after": {
+                "frame": 765,
+                "pts": 25.563333,
+                "elapsed": 25.496666
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 915,
+                "pts": 30.561667,
+                "elapsed": 30.495
+              },
+              "frame_after": {
+                "frame": 945,
+                "pts": 31.561667,
+                "elapsed": 31.495
+              }
+            },
+            "duration_s": [
+              4.998,
+              6.498
+            ],
+            "duration_display_s": [
+              4,
+              7
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "Pieces displayed on chopping board; no containers or order handoff."
+          },
+          {
+            "source_id": "v06",
+            "phase": "observed_cut_clip_cycle_to_board_arrangement",
+            "start": {
+              "frame_before": {
+                "frame": 0,
+                "pts": 0.066667,
+                "elapsed": 0.0
+              },
+              "frame_after": {
+                "frame": 0,
+                "pts": 0.066667,
+                "elapsed": 0.0
+              }
+            },
+            "end": {
+              "frame_before": {
+                "frame": 915,
+                "pts": 30.561667,
+                "elapsed": 30.495
+              },
+              "frame_after": {
+                "frame": 945,
+                "pts": 31.561667,
+                "elapsed": 31.495
+              }
+            },
+            "duration_s": [
+              30.495,
+              31.495
+            ],
+            "duration_display_s": [
+              30,
+              32
+            ],
+            "time_kind": "product_elapsed",
+            "visibility": "visible_at_reviewed_source_frames",
+            "note": "Fried roll already at cutting station, before first center cut; no proof of real interval from v07 to v06."
+          }
+        ],
+        "unknowns": [
+          "Weight sum205g of dispensed components plus nori does not reconcile exactly to raw201g: leaf selection, residues and handling loss visible; do not force a balance or invent retained component masses.",
+          "No independent final weight of each filling after selection;19giceberg and10gmasago are dispensed quantities.",
+          "Nori fraction not measured; iiko0.5sheet conditional only.",
+          "Battering, breading and frying absent between separate videos; neither duration nor dose measured.",
+          "No post-fry mass;201g is raw assembly only."
+        ]
+      }
+    ],
+    "sources": {
+      "v01": {
+        "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Атакама.mp4",
+        "sha256": "ba94dbf4c192432c94eced4e506fbed6e52b9a1b24cd3e2d509df4f6cd65bda6",
+        "bytes": 44060416,
+        "duration": "177.964000",
+        "actual_frame_count": 5335,
+        "first_frame_pts": 0.066667,
+        "last_frame_pts": 177.942667,
+        "pts_monotone": true,
+        "max_pts_delta": 0.03500000000002501,
+        "clock_checks": {
+          "start": "No independent clock visible",
+          "middle": "No independent clock visible",
+          "end": "No independent clock visible",
+          "result": "Media PTS only; wall-clock continuity unverified"
+        }
+      },
+      "v13": {
+        "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Атакама нарезка.mp4",
+        "sha256": "e0894a02869feb2a291a059ace7ebc878efb1da30dc56ff5942bf87c2f53a95c",
+        "bytes": 7256318,
+        "duration": "27.863334",
+        "actual_frame_count": 835,
+        "first_frame_pts": 0.066667,
+        "last_frame_pts": 27.841333,
+        "pts_monotone": true,
+        "max_pts_delta": 0.03500000000000014,
+        "clock_checks": {
+          "start": "No independent clock visible",
+          "middle": "No independent clock visible",
+          "end": "No independent clock visible",
+          "result": "Media PTS only; wall-clock continuity unverified"
+        }
+      },
+      "v07": {
+        "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Сакура.mp4",
+        "sha256": "a842d38ec9dd2e12da0d62bf8bd7f6178445071f85413afbf0977b3a5d72ff3e",
+        "bytes": 68903533,
+        "duration": "224.577313",
+        "actual_frame_count": 6733,
+        "first_frame_pts": 0.066667,
+        "last_frame_pts": 224.555989,
+        "pts_monotone": true,
+        "max_pts_delta": 0.03500000000002501,
+        "clock_checks": {
+          "start": "No independent clock visible",
+          "middle": "No independent clock visible",
+          "end": "No independent clock visible",
+          "result": "Media PTS only; wall-clock continuity unverified"
+        }
+      },
+      "v06": {
+        "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Сакура нарезка.mp4",
+        "sha256": "9956bda0100f09b5ee1026483b788ff65e09919d4a35c4bcc9c882a99a54b49d",
+        "bytes": 8791572,
+        "duration": "37.313313",
+        "actual_frame_count": 1118,
+        "first_frame_pts": 0.066667,
+        "last_frame_pts": 37.291989,
+        "pts_monotone": true,
+        "max_pts_delta": 0.0333440000000067,
+        "clock_checks": {
+          "start": "No independent clock visible",
+          "middle": "No independent clock visible",
+          "end": "No independent clock visible",
+          "result": "Media PTS only; wall-clock continuity unverified"
+        }
+      }
+    },
+    "per_file_table": [
+      {
+        "source_id": "v01",
+        "name": "Атакама.mp4",
+        "mat_spreading_s": [
+          41,
+          42
+        ],
+        "mat_with_flip_s": [
+          42,
+          44
+        ],
+        "filling_calendar_s": [
+          61,
+          63
+        ],
+        "forming_calendar_s": [
+          38,
+          40
+        ],
+        "cutting_s": null,
+        "arranging_s": null,
+        "full_observed_scope_s": [
+          169,
+          171
+        ],
+        "full_observed_scope": "start to raw assembly weighed; not full finished cycle",
+        "note": "Мат с переворотом42–44 с. Начинка со взвешиваниями и поэтапными переносами; формование с повторной доводкой. Жарки и нарезки нет."
+      },
+      {
+        "source_id": "v13",
+        "name": "Атакама нарезка.mp4",
+        "mat_spreading_s": null,
+        "filling_calendar_s": null,
+        "forming_calendar_s": null,
+        "cutting_s": [
+          15,
+          16
+        ],
+        "arranging_s": [
+          2,
+          4
+        ],
+        "full_observed_scope_s": [
+          20,
+          21
+        ],
+        "full_observed_scope": "fried roll on board to displayed pieces",
+        "note": "Нарезка включает выравнивание и протирку ножа; последующая раскладка на доске, контейнера нет."
+      },
+      {
+        "source_id": "v07",
+        "name": "Сакура.mp4",
+        "mat_spreading_s": [
+          43,
+          45
+        ],
+        "mat_with_flip_s": [
+          47,
+          49
+        ],
+        "filling_calendar_s": [
+          108,
+          112
+        ],
+        "forming_calendar_s": [
+          44,
+          47
+        ],
+        "forming_included_scale_cleaning_s": [
+          9,
+          11
+        ],
+        "cutting_s": null,
+        "arranging_s": null,
+        "full_observed_scope_s": [
+          215,
+          217
+        ],
+        "full_observed_scope": "start to raw assembly weighed; not full finished cycle",
+        "note": "В формование44–47 с входит9–11 с чистки/тарирования весов. После очистки есть доводка. Жарки и нарезки нет."
+      },
+      {
+        "source_id": "v06",
+        "name": "Сакура нарезка.mp4",
+        "mat_spreading_s": null,
+        "filling_calendar_s": null,
+        "forming_calendar_s": null,
+        "cutting_s": [
+          23,
+          25
+        ],
+        "arranging_s": [
+          5,
+          7
+        ],
+        "full_observed_scope_s": [
+          30,
+          32
+        ],
+        "full_observed_scope": "fried roll on board to displayed pieces",
+        "note": "Нарезка с выравниванием и протиркой ножа; затем раскладка на доске, контейнера нет."
+      }
+    ],
+    "global_unknowns": [
+      "No independent wall-clock/stopwatch calibration in any of the four files.",
+      "Different clips cannot be summed into a full calendar production cycle; unrecorded intervals between clips include unmeasured coating/frying.",
+      "No active person-second total or kitchen productivity/FOT norm derived from these experimental rolls.",
+      "Audio was not transcribed; mass observations are from visible scale displays.",
+      "Subsecond PTS stored for audit only; human-readable durations intentionally rounded to broad ranges."
+    ]
+  },
+  "yakudza_phila_shrimp": {
+    "status": "complete_for_assigned_visual_analysis",
+    "identity_confirmation": "Owner confirmed ingredients and semi-prepared foods identical to iiko, quantities changed only.",
+    "time_status": "mediaPTS only; no visible external clocks",
+    "rolls": [
+      {
+        "name": "Якудза",
+        "main_source": "v12",
+        "cut_source": "v11",
+        "quantities": [
+          {
+            "ingredient": "Рис для роллов пф",
+            "grams": 100,
+            "pts": 2.066667,
+            "confidence": "high",
+            "note": "В начале уже взвешен; отдельного набора риса нет.",
+            "evidence": {
+              "source_frame_index": 60,
+              "pts": 2.066667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-over/frame-0001.jpg"
+            }
+          },
+          {
+            "ingredient": "Кунжут белый",
+            "grams": 10,
+            "pts": 46.351667,
+            "confidence": "high",
+            "note": "Банка122г до, обнуление с банкой, затем устойчивое -0.010кг после посыпки.",
+            "evidence": {
+              "source_frame_index": 1388,
+              "pts": 46.351667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-sesame/frame-0007.jpg"
+            }
+          },
+          {
+            "ingredient": "Снежный краб полуфабрикат",
+            "grams": 52,
+            "pts": 63.33,
+            "confidence": "high",
+            "note": "49г первоначально; добавлено, конечные52г до переноса, не остаток.",
+            "evidence": {
+              "source_frame_index": 1897,
+              "pts": 63.329989,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-finalweight/frame-0005.jpg"
+            }
+          },
+          {
+            "ingredient": "Огурец п/ф роллы",
+            "grams": 21,
+            "pts": 85.076667,
+            "confidence": "high",
+            "note": "Вся взвешенная кучка до контакта руки, далее переложена.",
+            "evidence": {
+              "source_frame_index": 2549,
+              "pts": 85.076667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-finalweight/frame-0010.jpg"
+            }
+          },
+          {
+            "ingredient": "Семга х/к п/ф",
+            "grams": 30,
+            "pts": 114.828333,
+            "confidence": "high",
+            "note": "Устойчивые30г всей кучки до переноса. 26г после снятия не финальная порция.",
+            "evidence": {
+              "source_frame_index": 3441,
+              "pts": 114.828333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-finalweight/frame-0015.jpg"
+            }
+          },
+          {
+            "ingredient": "Нори",
+            "units": 0.5,
+            "confidence": "medium",
+            "note": "Виден один прямоугольный лист; соответствует половине в исходной карте, отдельно не взвешен."
+          }
+        ],
+        "raw_roll_weight_g": 212,
+        "raw_roll_weight_pts": 158.921667,
+        "postfrying_weight_g": null,
+        "notes": [
+          "Основной файл начинается с готового100г комка риса.",
+          "Реальные часы/секундомер отсутствуют. Только mediaPTS.",
+          "На другом файле видна нарезка, непрерывность между файлами не доказана.",
+          "Кунжут10г — выдано из банки, часть могла остаться на коврике."
+        ],
+        "stages": {
+          "rice_mat": {
+            "source_id": "v12",
+            "event": "Разровнять рис в мат на нори",
+            "kind": "elapsed_phase",
+            "start_pts_interval": [
+              3.567,
+              6.067
+            ],
+            "end_pts_interval": [
+              33.077,
+              33.577
+            ],
+            "duration_media_seconds_interval": [
+              27.01,
+              30.01
+            ],
+            "start_before": {
+              "source_frame_index": 105,
+              "pts": 3.566667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0001.jpg"
+            },
+            "start_after": {
+              "source_frame_index": 180,
+              "pts": 6.066667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0006.jpg"
+            },
+            "end_before": {
+              "source_frame_index": 990,
+              "pts": 33.076667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0009.jpg"
+            },
+            "end_after": {
+              "source_frame_index": 1005,
+              "pts": 33.576667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0010.jpg"
+            },
+            "note": "Начало частично за левым краем кадра, взвешивание риса уже было до клипа. Без кунжута и переворота.",
+            "real_wall_time_verified": false
+          },
+          "sesame_application": {
+            "source_id": "v12",
+            "event": "Посыпка кунжутом",
+            "kind": "elapsed_phase",
+            "start_pts_interval": [
+              40.082,
+              41.082
+            ],
+            "end_pts_interval": [
+              43.083,
+              44.083
+            ],
+            "duration_media_seconds_interval": [
+              2.001,
+              4.001
+            ],
+            "start_before": {
+              "source_frame_index": 1200,
+              "pts": 40.081667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-weights/frame-0007.jpg"
+            },
+            "start_after": {
+              "source_frame_index": 1230,
+              "pts": 41.081667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-weights/frame-0008.jpg"
+            },
+            "end_before": {
+              "source_frame_index": 1290,
+              "pts": 43.083333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-weights/frame-0010.jpg"
+            },
+            "end_after": {
+              "source_frame_index": 1320,
+              "pts": 44.083333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-over/frame-0013.jpg"
+            },
+            "note": "Отдельно от тарирования и контрольного взвешивания банки.",
+            "real_wall_time_verified": false
+          },
+          "filling_with_experimental_weighing": {
+            "source_id": "v12",
+            "event": "Приготовить порции начинки и выложить на мат",
+            "kind": "elapsed_phase",
+            "start_pts_interval": [
+              53.057,
+              54.057
+            ],
+            "end_pts_interval": [
+              127.068,
+              128.07
+            ],
+            "duration_media_seconds_interval": [
+              73.011,
+              75.013
+            ],
+            "start_before": {
+              "source_frame_index": 1589,
+              "pts": 53.056667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0016.jpg"
+            },
+            "start_after": {
+              "source_frame_index": 1619,
+              "pts": 54.056667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0017.jpg"
+            },
+            "end_before": {
+              "source_frame_index": 3808,
+              "pts": 127.068333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0038.jpg"
+            },
+            "end_after": {
+              "source_frame_index": 3838,
+              "pts": 128.069989,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0039.jpg"
+            },
+            "note": "Включает подготовку мешка, все взвешивания, перекладывание, раскладку. Не равно чистому времени выкладки.",
+            "real_wall_time_verified": false
+          },
+          "forming": {
+            "source_id": "v12",
+            "event": "Начать сворачивание до окончательной расправки и открытия коврика",
+            "kind": "elapsed_phase",
+            "start_pts_interval": [
+              129.07,
+              129.57
+            ],
+            "end_pts_interval": [
+              155.553,
+              156.553
+            ],
+            "duration_media_seconds_interval": [
+              25.983,
+              27.483
+            ],
+            "start_before": {
+              "source_frame_index": 3868,
+              "pts": 129.069989,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0041.jpg"
+            },
+            "start_after": {
+              "source_frame_index": 3883,
+              "pts": 129.569989,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0042.jpg"
+            },
+            "end_before": {
+              "source_frame_index": 4662,
+              "pts": 155.553333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0044.jpg"
+            },
+            "end_after": {
+              "source_frame_index": 4692,
+              "pts": 156.553333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0046.jpg"
+            },
+            "note": "Последующая транспортировка на весы исключена.",
+            "real_wall_time_verified": false
+          },
+          "cutting_elapsed": {
+            "source_id": "v11",
+            "event": "Первое движение ножа в ролл до окончания последнего разреза",
+            "kind": "elapsed_phase",
+            "start_pts_interval": [
+              1.067,
+              1.567
+            ],
+            "end_pts_interval": [
+              21.563,
+              22.063
+            ],
+            "duration_media_seconds_interval": [
+              19.996,
+              20.996
+            ],
+            "start_before": {
+              "source_frame_index": 30,
+              "pts": 1.066667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-cut-boundaries/frame-0003.jpg"
+            },
+            "start_after": {
+              "source_frame_index": 45,
+              "pts": 1.566667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-cut-boundaries/frame-0004.jpg"
+            },
+            "end_before": {
+              "source_frame_index": 645,
+              "pts": 21.563333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-cut-boundaries/frame-0022.jpg"
+            },
+            "end_after": {
+              "source_frame_index": 660,
+              "pts": 22.063333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-cut-boundaries/frame-0023.jpg"
+            },
+            "note": "Календарный этап включает перекладывания половин и протирку ножа; сумма чистых ходов ножа отдельно не размечена.",
+            "real_wall_time_verified": false
+          },
+          "arranging_on_board_after_cutting": {
+            "source_id": "v11",
+            "event": "Разложить кусочки на доске для показа",
+            "kind": "elapsed_phase",
+            "start_pts_interval": [
+              22.063,
+              22.563
+            ],
+            "end_pts_interval": [
+              27.563,
+              30.063
+            ],
+            "duration_media_seconds_interval": [
+              5.0,
+              8.0
+            ],
+            "start_before": {
+              "source_frame_index": 660,
+              "pts": 22.063333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-cut-boundaries/frame-0023.jpg"
+            },
+            "start_after": {
+              "source_frame_index": 675,
+              "pts": 22.563333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-cut-boundaries/frame-0024.jpg"
+            },
+            "end_before": {
+              "source_frame_index": 825,
+              "pts": 27.563333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-cut-boundaries/frame-0034.jpg"
+            },
+            "end_after": {
+              "source_frame_index": 900,
+              "pts": 30.063333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/v11/frame-0011.jpg"
+            },
+            "note": "Это не контейнер и не отдача заказа.",
+            "real_wall_time_verified": false
+          },
+          "container_placement": null,
+          "active_person_seconds": null,
+          "weighing_subphases": [
+            {
+              "source_id": "v12",
+              "event": "Банка кунжута: установка и тара",
+              "kind": "elapsed_phase",
+              "start_pts_interval": [
+                34.078,
+                35.078
+              ],
+              "end_pts_interval": [
+                37.08,
+                39.082
+              ],
+              "duration_media_seconds_interval": [
+                2.002,
+                5.004
+              ],
+              "start_before": {
+                "source_frame_index": 1020,
+                "pts": 34.078333,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0011.jpg"
+              },
+              "start_after": {
+                "source_frame_index": 1050,
+                "pts": 35.078333,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-weights/frame-0002.jpg"
+              },
+              "end_before": {
+                "source_frame_index": 1110,
+                "pts": 37.079989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-weights/frame-0004.jpg"
+              },
+              "end_after": {
+                "source_frame_index": 1170,
+                "pts": 39.081667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-weights/frame-0006.jpg"
+              },
+              "note": "Контроль выдачи из банки, не производство рисового мата.",
+              "real_wall_time_verified": false
+            },
+            {
+              "source_id": "v12",
+              "event": "Банка кунжута: повторная установка и чтение",
+              "kind": "elapsed_phase",
+              "start_pts_interval": [
+                45.552,
+                45.818
+              ],
+              "end_pts_interval": [
+                46.652,
+                48.053
+              ],
+              "duration_media_seconds_interval": [
+                0.834,
+                2.501
+              ],
+              "start_before": {
+                "source_frame_index": 1364,
+                "pts": 45.551667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-sesame/frame-0002.jpg"
+              },
+              "start_after": {
+                "source_frame_index": 1372,
+                "pts": 45.818333,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-sesame/frame-0003.jpg"
+              },
+              "end_before": {
+                "source_frame_index": 1397,
+                "pts": 46.651667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-sesame/frame-0010.jpg"
+              },
+              "end_after": {
+                "source_frame_index": 1439,
+                "pts": 48.053333,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-over/frame-0015.jpg"
+              },
+              "note": "Устойчивое конечное -10г.",
+              "real_wall_time_verified": false
+            },
+            {
+              "source_id": "v12",
+              "event": "Крабовый п/ф: отсадка, довеска и перенос с весов",
+              "kind": "elapsed_phase",
+              "start_pts_interval": [
+                54.057,
+                56.058
+              ],
+              "end_pts_interval": [
+                64.563,
+                65.063
+              ],
+              "duration_media_seconds_interval": [
+                8.505,
+                11.006
+              ],
+              "start_before": {
+                "source_frame_index": 1619,
+                "pts": 54.056667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0017.jpg"
+              },
+              "start_after": {
+                "source_frame_index": 1679,
+                "pts": 56.058333,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-over/frame-0018.jpg"
+              },
+              "end_before": {
+                "source_frame_index": 1934,
+                "pts": 64.563333,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0018.jpg"
+              },
+              "end_after": {
+                "source_frame_index": 1949,
+                "pts": 65.063333,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0019.jpg"
+              },
+              "note": "Финальная вся порция52г; включает подготовку экспериментального взвешивания.",
+              "real_wall_time_verified": false
+            },
+            {
+              "source_id": "v12",
+              "event": "Огурец: взвешивание до переноса",
+              "kind": "elapsed_phase",
+              "start_pts_interval": [
+                83.075,
+                84.075
+              ],
+              "end_pts_interval": [
+                85.31,
+                86.077
+              ],
+              "duration_media_seconds_interval": [
+                1.235,
+                3.002
+              ],
+              "start_before": {
+                "source_frame_index": 2489,
+                "pts": 83.074989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-weights/frame-0025.jpg"
+              },
+              "start_after": {
+                "source_frame_index": 2519,
+                "pts": 84.074989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-over/frame-0029.jpg"
+              },
+              "end_before": {
+                "source_frame_index": 2556,
+                "pts": 85.309989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-finalweight/frame-0011.jpg"
+              },
+              "end_after": {
+                "source_frame_index": 2579,
+                "pts": 86.076667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-over/frame-0030.jpg"
+              },
+              "note": "21г до контакта рукой.",
+              "real_wall_time_verified": false
+            },
+            {
+              "source_id": "v12",
+              "event": "Семга: отбор и взвешивание до переноса",
+              "kind": "elapsed_phase",
+              "start_pts_interval": [
+                113.06,
+                114.062
+              ],
+              "end_pts_interval": [
+                115.328,
+                116.062
+              ],
+              "duration_media_seconds_interval": [
+                1.266,
+                3.002
+              ],
+              "start_before": {
+                "source_frame_index": 3388,
+                "pts": 113.059989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-boundaries/frame-0032.jpg"
+              },
+              "start_after": {
+                "source_frame_index": 3418,
+                "pts": 114.061667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-weights/frame-0035.jpg"
+              },
+              "end_before": {
+                "source_frame_index": 3456,
+                "pts": 115.328333,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-finalweight/frame-0017.jpg"
+              },
+              "end_after": {
+                "source_frame_index": 3478,
+                "pts": 116.061667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/yakudza-finalweight/frame-0020.jpg"
+              },
+              "note": "30г до снятия,26г при снятии не порция.",
+              "real_wall_time_verified": false
+            }
+          ]
+        },
+        "source_sha256": "989e9b63d978e14d09f331daae3583e25db45803871d1a4be38ddb81317b03f1",
+        "main_duration_pts_s": 159.166666,
+        "sources": [
+          {
+            "id": "v12",
+            "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Якудза.mp4",
+            "sha256": "989e9b63d978e14d09f331daae3583e25db45803871d1a4be38ddb81317b03f1",
+            "frame_count": 4774,
+            "first_pts": 0.066667,
+            "last_pts": 159.233333,
+            "max_pts_gap": 0.0350000000000108
+          },
+          {
+            "id": "v11",
+            "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Якудза нарезка.mp4",
+            "sha256": "0064a57d7ae4537755c4f36fa73f3d0ca25191f0b4dc6137c045fd2c5d52f4fc",
+            "frame_count": 1339,
+            "first_pts": 0.066667,
+            "last_pts": 44.651989,
+            "max_pts_gap": 0.03500000000000014
+          }
+        ],
+        "clock_validation": {
+          "status": "no_external_clock_visible",
+          "checked": "Beginning, middle and end of each primary and associated clip were visually inspected; no camera clock/stopwatch visible.",
+          "media_pts_monotone": true,
+          "real_time_speed_factor": null
+        },
+        "complete_product_cycle_seconds": null,
+        "observed_main_clip_span": {
+          "from": "first video frame",
+          "to": "last video frame",
+          "seconds": 159.166666,
+          "note": "Container duration and observed clip span are not a complete production cycle."
+        },
+        "cut_clip_note": "Нарезка видна с первого движения ножа до конца; весь клип также содержит демонстрацию разреза.",
+        "raw_roll_weight_evidence": {
+          "source_frame_index": 4763,
+          "pts": 158.921667,
+          "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/v12/frame-0017.jpg"
+        },
+        "component_sum_reconciles_to_finished_mass": false
+      },
+      {
+        "name": "Филадельфия темпура",
+        "main_source": "v10",
+        "cut_source": "v09",
+        "quantities": [
+          {
+            "ingredient": "Рис для роллов пф",
+            "grams": 100,
+            "pts": 11.064989,
+            "confidence": "high",
+            "note": "97г первоначально; после добавки100г перед снятием.",
+            "evidence": {
+              "source_frame_index": 330,
+              "pts": 11.064989,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-weights/frame-0006.jpg"
+            }
+          },
+          {
+            "ingredient": "Сыр творожный",
+            "grams": 41,
+            "pts": 72.056667,
+            "confidence": "high",
+            "note": "36г первоначально; после довески41г, вся порция перенесена.",
+            "evidence": {
+              "source_frame_index": 2160,
+              "pts": 72.056667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-weights/frame-0011.jpg"
+            }
+          },
+          {
+            "ingredient": "Семга с/м вакуум п/ф",
+            "grams": 41,
+            "pts": 91.053333,
+            "confidence": "high",
+            "note": "30г первоначально; после довески41г, вся порция перенесена. Промежуточные33г и30г не конечные.",
+            "evidence": {
+              "source_frame_index": 2730,
+              "pts": 91.053333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-weights/frame-0023.jpg"
+            }
+          },
+          {
+            "ingredient": "Огурец п/ф роллы",
+            "grams": 21,
+            "pts": 112.551667,
+            "confidence": "high",
+            "note": "17/19г первоначально; после добавки21г перед переносом.",
+            "evidence": {
+              "source_frame_index": 3375,
+              "pts": 112.551667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-weights/frame-0033.jpg"
+            }
+          },
+          {
+            "ingredient": "Нори",
+            "units": 1,
+            "confidence": "medium",
+            "note": "Один лист на коврике; не взвешен."
+          },
+          {
+            "ingredient": "Кляр",
+            "grams": null,
+            "confidence": "not_observed",
+            "note": "Обработка не снята."
+          },
+          {
+            "ingredient": "Сухари Голд",
+            "grams": null,
+            "confidence": "not_observed",
+            "note": "Обработка не снята."
+          }
+        ],
+        "raw_roll_weight_g": 205,
+        "raw_roll_weight_pts": 161.078333,
+        "postfrying_weight_g": null,
+        "notes": [
+          "Основной файл до необжаренного сформованного ролла.",
+          "v09 начинается уже с готовыми нарезанными кусочками; самой нарезки нет.",
+          "Внешних часов/секундомера не видно.",
+          "Панировка, масло и финальная масса не измерены."
+        ],
+        "stages": {
+          "rice_mat": {
+            "source_id": "v10",
+            "event": "Разровнять рис в мат на нори",
+            "kind": "elapsed_phase",
+            "start_pts_interval": [
+              22.063,
+              27.563
+            ],
+            "end_pts_interval": [
+              57.558,
+              58.058
+            ],
+            "duration_media_seconds_interval": [
+              29.995,
+              35.995
+            ],
+            "start_before": {
+              "source_frame_index": 660,
+              "pts": 22.063333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-over/frame-0008.jpg"
+            },
+            "start_after": {
+              "source_frame_index": 825,
+              "pts": 27.563333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-boundaries/frame-0008.jpg"
+            },
+            "end_before": {
+              "source_frame_index": 1725,
+              "pts": 57.558333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-boundaries/frame-0015.jpg"
+            },
+            "end_after": {
+              "source_frame_index": 1740,
+              "pts": 58.058333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-boundaries/frame-0016.jpg"
+            },
+            "note": "Начало за левым краем кадра; лист стоит в22.063, к27.563 рис уже разравнивают. Интервал30.0–36.0с, точнее не доказано.",
+            "real_wall_time_verified": false
+          },
+          "filling_with_experimental_weighing": {
+            "source_id": "v10",
+            "event": "Подготовить/взвесить сыр, рыбу, огурец и разложить на мат",
+            "kind": "elapsed_phase",
+            "start_pts_interval": [
+              61.558,
+              62.058
+            ],
+            "end_pts_interval": [
+              129.082,
+              129.582
+            ],
+            "duration_media_seconds_interval": [
+              67.024,
+              68.024
+            ],
+            "start_before": {
+              "source_frame_index": 1845,
+              "pts": 61.558333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-boundaries/frame-0021.jpg"
+            },
+            "start_after": {
+              "source_frame_index": 1860,
+              "pts": 62.058333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-boundaries/frame-0022.jpg"
+            },
+            "end_before": {
+              "source_frame_index": 3871,
+              "pts": 129.081667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-boundaries/frame-0049.jpg"
+            },
+            "end_after": {
+              "source_frame_index": 3886,
+              "pts": 129.581667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-boundaries/frame-0050.jpg"
+            },
+            "note": "Включает взвешивания и перенос, не равно чистой выкладке.",
+            "real_wall_time_verified": false
+          },
+          "forming": {
+            "source_id": "v10",
+            "event": "Первое сворачивание до открытия коврика и готовой заготовки",
+            "kind": "elapsed_phase",
+            "start_pts_interval": [
+              130.082,
+              130.582
+            ],
+            "end_pts_interval": [
+              156.578,
+              157.078
+            ],
+            "duration_media_seconds_interval": [
+              25.996,
+              26.996
+            ],
+            "start_before": {
+              "source_frame_index": 3901,
+              "pts": 130.081667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-boundaries/frame-0051.jpg"
+            },
+            "start_after": {
+              "source_frame_index": 3916,
+              "pts": 130.581667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-boundaries/frame-0052.jpg"
+            },
+            "end_before": {
+              "source_frame_index": 4696,
+              "pts": 156.578333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-boundaries/frame-0057.jpg"
+            },
+            "end_after": {
+              "source_frame_index": 4711,
+              "pts": 157.078333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-boundaries/frame-0058.jpg"
+            },
+            "note": "После этого убирают рабочее место/весы и ставят ролл на весы; это не формование.",
+            "real_wall_time_verified": false
+          },
+          "cutting_elapsed": null,
+          "batter_or_breading": null,
+          "frying": null,
+          "container_placement": null,
+          "active_person_seconds": null,
+          "weighing_subphases": [
+            {
+              "source_id": "v10",
+              "event": "Рис: положить, скорректировать97→100г и взять",
+              "kind": "elapsed_phase",
+              "start_pts_interval": [
+                6.065,
+                7.065
+              ],
+              "end_pts_interval": [
+                11.065,
+                11.565
+              ],
+              "duration_media_seconds_interval": [
+                4.0,
+                5.5
+              ],
+              "start_before": {
+                "source_frame_index": 180,
+                "pts": 6.064989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-over/frame-0002.jpg"
+              },
+              "start_after": {
+                "source_frame_index": 210,
+                "pts": 7.064989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-weights/frame-0001.jpg"
+              },
+              "end_before": {
+                "source_frame_index": 330,
+                "pts": 11.064989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-weights/frame-0006.jpg"
+              },
+              "end_after": {
+                "source_frame_index": 345,
+                "pts": 11.564989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-weights/frame-0007.jpg"
+              },
+              "note": "Часть взвешивания риса; приготовление партии риса не снято.",
+              "real_wall_time_verified": false
+            },
+            {
+              "source_id": "v10",
+              "event": "Сыр: отсадка и довеска36→41г, перенос",
+              "kind": "elapsed_phase",
+              "start_pts_interval": [
+                66.058,
+                69.057
+              ],
+              "end_pts_interval": [
+                73.057,
+                75.057
+              ],
+              "duration_media_seconds_interval": [
+                4.0,
+                8.999
+              ],
+              "start_before": {
+                "source_frame_index": 1980,
+                "pts": 66.058333,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-over/frame-0019.jpg"
+              },
+              "start_after": {
+                "source_frame_index": 2070,
+                "pts": 69.056667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-weights/frame-0008.jpg"
+              },
+              "end_before": {
+                "source_frame_index": 2190,
+                "pts": 73.056667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-weights/frame-0013.jpg"
+              },
+              "end_after": {
+                "source_frame_index": 2250,
+                "pts": 75.056667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-boundaries/frame-0024.jpg"
+              },
+              "note": "Финальные41г до снятия.",
+              "real_wall_time_verified": false
+            },
+            {
+              "source_id": "v10",
+              "event": "Семга: отбор и довеска30→41г до переноса",
+              "kind": "elapsed_phase",
+              "start_pts_interval": [
+                84.055,
+                85.055
+              ],
+              "end_pts_interval": [
+                91.053,
+                91.553
+              ],
+              "duration_media_seconds_interval": [
+                5.998,
+                7.498
+              ],
+              "start_before": {
+                "source_frame_index": 2520,
+                "pts": 84.054989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-over/frame-0026.jpg"
+              },
+              "start_after": {
+                "source_frame_index": 2550,
+                "pts": 85.054989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-weights/frame-0016.jpg"
+              },
+              "end_before": {
+                "source_frame_index": 2730,
+                "pts": 91.053333,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-weights/frame-0023.jpg"
+              },
+              "end_after": {
+                "source_frame_index": 2745,
+                "pts": 91.553333,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-weights/frame-0024.jpg"
+              },
+              "note": "Финальные41г до снятия.",
+              "real_wall_time_verified": false
+            },
+            {
+              "source_id": "v10",
+              "event": "Огурец: отбор и довеска17→21г до переноса",
+              "kind": "elapsed_phase",
+              "start_pts_interval": [
+                106.052,
+                107.052
+              ],
+              "end_pts_interval": [
+                112.552,
+                113.552
+              ],
+              "duration_media_seconds_interval": [
+                5.5,
+                7.5
+              ],
+              "start_before": {
+                "source_frame_index": 3180,
+                "pts": 106.051667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-boundaries/frame-0039.jpg"
+              },
+              "start_after": {
+                "source_frame_index": 3210,
+                "pts": 107.051667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-weights/frame-0027.jpg"
+              },
+              "end_before": {
+                "source_frame_index": 3375,
+                "pts": 112.551667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-weights/frame-0033.jpg"
+              },
+              "end_after": {
+                "source_frame_index": 3405,
+                "pts": 113.551667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-boundaries/frame-0040.jpg"
+              },
+              "note": "21г целиком; затем видно отдельно оставшиеся соломки, которые тоже переносят.",
+              "real_wall_time_verified": false
+            }
+          ]
+        },
+        "source_sha256": "f8c2f1fd788ced3702876996650d2c495d7eb03d7a76a8e7e22c023f664eebff",
+        "main_duration_pts_s": 162.30266600000002,
+        "sources": [
+          {
+            "id": "v10",
+            "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Филадельфия темпура.mp4",
+            "sha256": "f8c2f1fd788ced3702876996650d2c495d7eb03d7a76a8e7e22c023f664eebff",
+            "frame_count": 4871,
+            "first_pts": 0.066667,
+            "last_pts": 162.369333,
+            "max_pts_gap": 0.0350000000000108
+          },
+          {
+            "id": "v09",
+            "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Филадельфия темпура нарезка.mp4",
+            "sha256": "8f4305fe019e0e0466065f8597ab59cb5673571a74ce7a977a75232eb411ff1c",
+            "frame_count": 234,
+            "first_pts": 0.066667,
+            "last_pts": 7.809333,
+            "max_pts_gap": 0.033344000000000484
+          }
+        ],
+        "clock_validation": {
+          "status": "no_external_clock_visible",
+          "checked": "Beginning, middle and end of each primary and associated clip were visually inspected; no camera clock/stopwatch visible.",
+          "media_pts_monotone": true,
+          "real_time_speed_factor": null
+        },
+        "complete_product_cycle_seconds": null,
+        "observed_main_clip_span": {
+          "from": "first video frame",
+          "to": "last video frame",
+          "seconds": 162.30266600000002,
+          "note": "Container duration and observed clip span are not a complete production cycle."
+        },
+        "cut_clip_note": "С первого кадра ролл уже нарезан. Название файла не доказывает присутствие операции нарезки.",
+        "raw_roll_weight_evidence": {
+          "source_frame_index": 4831,
+          "pts": 161.078333,
+          "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/phila-over/frame-0055.jpg"
+        },
+        "component_sum_reconciles_to_finished_mass": false
+      },
+      {
+        "name": "Жареный с креветкой",
+        "main_source": "v03",
+        "cut_source": "v02",
+        "quantities": [
+          {
+            "ingredient": "Рис для роллов пф",
+            "grams": 102,
+            "pts": 12.564989,
+            "confidence": "high",
+            "note": "104г первоначально; скорректирован до102г перед снятием.",
+            "evidence": {
+              "source_frame_index": 375,
+              "pts": 12.564989,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-weights/frame-0005.jpg"
+            }
+          },
+          {
+            "ingredient": "Креветка п/ф очищ отвар",
+            "grams": 40,
+            "pts": 80.054989,
+            "confidence": "high",
+            "note": "35г первоначально; после добавки40г перед переносом. Берем всю порцию, не остаток.",
+            "evidence": {
+              "source_frame_index": 2400,
+              "pts": 80.054989,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-weights/frame-0011.jpg"
+            }
+          },
+          {
+            "ingredient": "Моцарелла",
+            "grams": 30,
+            "pts": 117.083333,
+            "confidence": "high",
+            "note": "Отдельная порция на весах перед переносом.",
+            "evidence": {
+              "source_frame_index": 3511,
+              "pts": 117.083333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-weights/frame-0019.jpg"
+            }
+          },
+          {
+            "ingredient": "Огурец п/ф роллы",
+            "grams": 26,
+            "pts": 139.081667,
+            "confidence": "medium",
+            "note": "22г первоначально, затем26г при свободной руке. Далее руки закрывают шкалу, ломают/собирают соломку; после них стабильного отдельного веса нет. Проверить финальный перенос.",
+            "evidence": {
+              "source_frame_index": 4171,
+              "pts": 139.081667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-weights/frame-0028.jpg"
+            }
+          },
+          {
+            "ingredient": "Соус Юкихиро(new)",
+            "grams": 9,
+            "pts": 184.576667,
+            "confidence": "high",
+            "note": "Бутылка152г, обнуление с бутылкой. После нанесения и повторного устойчивого взвешивания -0.009кг.",
+            "evidence": {
+              "source_frame_index": 5536,
+              "pts": 184.576667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-weights/frame-0052.jpg"
+            }
+          },
+          {
+            "ingredient": "Нори",
+            "units": 1,
+            "confidence": "medium",
+            "note": "Один лист на коврике; не взвешен."
+          },
+          {
+            "ingredient": "Кляр",
+            "grams": null,
+            "confidence": "not_weighed",
+            "note": "Нанесение видно, масса не измерена."
+          },
+          {
+            "ingredient": "Сухари Голд",
+            "grams": null,
+            "confidence": "not_weighed",
+            "note": "Обваливание видно, масса не измерена."
+          }
+        ],
+        "raw_roll_weight_g": 202,
+        "raw_roll_weight_pts": 232.573333,
+        "postfrying_weight_g": null,
+        "notes": [
+          "Файл заканчивается вскоре после погружения во фритюр. Извлечения/стекания/финальной массы нет.",
+          "v02 уже показывает нарезанные роллы; нарезки нет.",
+          "Внешних часов/секундомера нет.",
+          "Сумма компонентных показаний не точно равна202г: перенос, контакт рук/нулевойдрейф; огурец уточняется."
+        ],
+        "stages": {
+          "rice_mat": {
+            "source_id": "v03",
+            "event": "Разровнять рис в мат на нори",
+            "kind": "elapsed_phase",
+            "start_pts_interval": [
+              27.563,
+              28.563
+            ],
+            "end_pts_interval": [
+              67.057,
+              67.557
+            ],
+            "duration_media_seconds_interval": [
+              38.494,
+              39.994
+            ],
+            "start_before": {
+              "source_frame_index": 825,
+              "pts": 27.563333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-a/frame-0004.jpg"
+            },
+            "start_after": {
+              "source_frame_index": 855,
+              "pts": 28.563333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-a/frame-0006.jpg"
+            },
+            "end_before": {
+              "source_frame_index": 2010,
+              "pts": 67.056667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-a/frame-0014.jpg"
+            },
+            "end_after": {
+              "source_frame_index": 2025,
+              "pts": 67.556667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-a/frame-0015.jpg"
+            },
+            "note": "Взвешивание риса и подготовка листа нори происходят ранее.",
+            "real_wall_time_verified": false
+          },
+          "filling_with_experimental_weighing": {
+            "source_id": "v03",
+            "event": "Отбор/взвешивание всех начинок, выкладка и контроль соуса",
+            "kind": "elapsed_phase",
+            "start_pts_interval": [
+              69.057,
+              72.057
+            ],
+            "end_pts_interval": [
+              186.077,
+              187.078
+            ],
+            "duration_media_seconds_interval": [
+              114.02,
+              118.021
+            ],
+            "start_before": {
+              "source_frame_index": 2070,
+              "pts": 69.056667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-a/frame-0017.jpg"
+            },
+            "start_after": {
+              "source_frame_index": 2160,
+              "pts": 72.056667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-over/frame-0021.jpg"
+            },
+            "end_before": {
+              "source_frame_index": 5581,
+              "pts": 186.076667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-b/frame-0020.jpg"
+            },
+            "end_after": {
+              "source_frame_index": 5611,
+              "pts": 187.078333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-b/frame-0021.jpg"
+            },
+            "note": "Включает эксперименты с весами, перекладывания, отсчет9г соуса по бутылке. Сам соус нанесен до177.075; до186.077 повторно взвешивают бутылку.",
+            "real_wall_time_verified": false
+          },
+          "forming": {
+            "source_id": "v03",
+            "event": "Сворачивание до окончательного открытия коврика",
+            "kind": "elapsed_phase",
+            "start_pts_interval": [
+              189.078,
+              189.58
+            ],
+            "end_pts_interval": [
+              231.072,
+              231.572
+            ],
+            "duration_media_seconds_interval": [
+              41.492,
+              42.494
+            ],
+            "start_before": {
+              "source_frame_index": 5671,
+              "pts": 189.078333,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-b/frame-0024.jpg"
+            },
+            "start_after": {
+              "source_frame_index": 5686,
+              "pts": 189.579989,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-b/frame-0025.jpg"
+            },
+            "end_before": {
+              "source_frame_index": 6930,
+              "pts": 231.071667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-b/frame-0035.jpg"
+            },
+            "end_after": {
+              "source_frame_index": 6945,
+              "pts": 231.571667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-b/frame-0036.jpg"
+            },
+            "note": "Включает несколько повторных обжимов. На202г ролл взвешен уже после.",
+            "real_wall_time_verified": false
+          },
+          "cutting_elapsed": null,
+          "frying_full_duration": null,
+          "container_placement": null,
+          "active_person_seconds": null,
+          "separate_heat_station_observation": {
+            "source_id": "v03",
+            "event": "Обработка одной из двух заготовок кляром/панировкой до начала жарки",
+            "kind": "identity_unverified_process",
+            "start_pts_interval": [
+              237.075,
+              238.077
+            ],
+            "end_pts_interval": [
+              274.065,
+              275.066
+            ],
+            "duration_media_seconds_interval": [
+              35.988,
+              37.991
+            ],
+            "start_before": {
+              "source_frame_index": 7110,
+              "pts": 237.074989,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-b/frame-0040.jpg"
+            },
+            "start_after": {
+              "source_frame_index": 7140,
+              "pts": 238.076667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-b/frame-0041.jpg"
+            },
+            "end_before": {
+              "source_frame_index": 8219,
+              "pts": 274.064989,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-b/frame-0057.jpg"
+            },
+            "end_after": {
+              "source_frame_index": 8249,
+              "pts": 275.066667,
+              "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-b/frame-0058.jpg"
+            },
+            "note": "В кадре есть еще одна черная заготовка на столе. Не доказано, что панируют именно взвешенную202г заготовку. Время не переносить автоматически в цикл конкретного ролла.",
+            "real_wall_time_verified": false
+          },
+          "weighing_subphases": [
+            {
+              "source_id": "v03",
+              "event": "Рис: отбор и коррекция104→102г",
+              "kind": "elapsed_phase",
+              "start_pts_interval": [
+                6.065,
+                8.065
+              ],
+              "end_pts_interval": [
+                12.565,
+                13.565
+              ],
+              "duration_media_seconds_interval": [
+                4.5,
+                7.5
+              ],
+              "start_before": {
+                "source_frame_index": 180,
+                "pts": 6.064989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-over/frame-0003.jpg"
+              },
+              "start_after": {
+                "source_frame_index": 240,
+                "pts": 8.064989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-over/frame-0004.jpg"
+              },
+              "end_before": {
+                "source_frame_index": 375,
+                "pts": 12.564989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-weights/frame-0005.jpg"
+              },
+              "end_after": {
+                "source_frame_index": 405,
+                "pts": 13.564989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-weights/frame-0007.jpg"
+              },
+              "note": "102г до контакта/снятия.",
+              "real_wall_time_verified": false
+            },
+            {
+              "source_id": "v03",
+              "event": "Креветка: отбор и довеска35→40г до переноса",
+              "kind": "elapsed_phase",
+              "start_pts_interval": [
+                70.057,
+                72.057
+              ],
+              "end_pts_interval": [
+                80.055,
+                80.555
+              ],
+              "duration_media_seconds_interval": [
+                7.998,
+                10.498
+              ],
+              "start_before": {
+                "source_frame_index": 2100,
+                "pts": 70.056667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-a/frame-0018.jpg"
+              },
+              "start_after": {
+                "source_frame_index": 2160,
+                "pts": 72.056667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-over/frame-0021.jpg"
+              },
+              "end_before": {
+                "source_frame_index": 2400,
+                "pts": 80.054989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-weights/frame-0011.jpg"
+              },
+              "end_after": {
+                "source_frame_index": 2415,
+                "pts": 80.554989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-weights/frame-0012.jpg"
+              },
+              "note": "40г вся кучка перед снятием; последующие4г остатка/перехода не порция.",
+              "real_wall_time_verified": false
+            },
+            {
+              "source_id": "v03",
+              "event": "Моцарелла: отбор/взвешивание30г",
+              "kind": "elapsed_phase",
+              "start_pts_interval": [
+                114.052,
+                116.083
+              ],
+              "end_pts_interval": [
+                117.583,
+                118.083
+              ],
+              "duration_media_seconds_interval": [
+                1.5,
+                4.031
+              ],
+              "start_before": {
+                "source_frame_index": 3420,
+                "pts": 114.051667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-over/frame-0038.jpg"
+              },
+              "start_after": {
+                "source_frame_index": 3481,
+                "pts": 116.083333,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-over/frame-0039.jpg"
+              },
+              "end_before": {
+                "source_frame_index": 3526,
+                "pts": 117.583333,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-weights/frame-0020.jpg"
+              },
+              "end_after": {
+                "source_frame_index": 3541,
+                "pts": 118.083333,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-over/frame-0040.jpg"
+              },
+              "note": "Взвешенная отдельная порция30г.",
+              "real_wall_time_verified": false
+            },
+            {
+              "source_id": "v03",
+              "event": "Огурец: отбор, показания22→26г, переломить соломку и взять",
+              "kind": "elapsed_phase",
+              "start_pts_interval": [
+                133.082,
+                136.075
+              ],
+              "end_pts_interval": [
+                142.58,
+                143.08
+              ],
+              "duration_media_seconds_interval": [
+                6.505,
+                9.998
+              ],
+              "start_before": {
+                "source_frame_index": 3991,
+                "pts": 133.081667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-a/frame-0046.jpg"
+              },
+              "start_after": {
+                "source_frame_index": 4081,
+                "pts": 136.081667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-over/frame-0047.jpg"
+              },
+              "end_before": {
+                "source_frame_index": 4276,
+                "pts": 142.579989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-cucumber/frame-0013.jpg"
+              },
+              "end_after": {
+                "source_frame_index": 4291,
+                "pts": 143.079989,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-b/frame-0001.jpg"
+              },
+              "note": "26г — последнее читаемое до закрытия/давления руки, medium. Не подгонять к финальным202г.",
+              "real_wall_time_verified": false
+            },
+            {
+              "source_id": "v03",
+              "event": "Соус: бутылка152г, тара, нанесение, повторный контроль",
+              "kind": "elapsed_phase",
+              "start_pts_interval": [
+                167.077,
+                168.077
+              ],
+              "end_pts_interval": [
+                184.577,
+                186.077
+              ],
+              "duration_media_seconds_interval": [
+                16.5,
+                19.0
+              ],
+              "start_before": {
+                "source_frame_index": 5011,
+                "pts": 167.076667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-weights/frame-0034.jpg"
+              },
+              "start_after": {
+                "source_frame_index": 5041,
+                "pts": 168.076667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-over/frame-0060.jpg"
+              },
+              "end_before": {
+                "source_frame_index": 5536,
+                "pts": 184.576667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-weights/frame-0052.jpg"
+              },
+              "end_after": {
+                "source_frame_index": 5581,
+                "pts": 186.076667,
+                "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-boundary-b/frame-0020.jpg"
+              },
+              "note": "Расход9г по устойчивому -0.009кг. Весь интервал не равно нанесению.",
+              "real_wall_time_verified": false
+            }
+          ]
+        },
+        "source_sha256": "e407dd37511521485723e0a9c69e84d10219f081fe317162614a1dd036d29da0",
+        "main_duration_pts_s": 290.729322,
+        "sources": [
+          {
+            "id": "v03",
+            "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Жаренный с креветкой.mp4",
+            "sha256": "e407dd37511521485723e0a9c69e84d10219f081fe317162614a1dd036d29da0",
+            "frame_count": 8722,
+            "first_pts": 0.066667,
+            "last_pts": 290.795989,
+            "max_pts_gap": 0.03500000000002501
+          },
+          {
+            "id": "v02",
+            "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Жаренный с креветкой нарзека.mp4",
+            "sha256": "922443316f945378e25d9675b532c195e60317e99f9c20be3a512a002f402068",
+            "frame_count": 396,
+            "first_pts": 0.066667,
+            "last_pts": 13.227989,
+            "max_pts_gap": 0.03334400000000137
+          }
+        ],
+        "clock_validation": {
+          "status": "no_external_clock_visible",
+          "checked": "Beginning, middle and end of each primary and associated clip were visually inspected; no camera clock/stopwatch visible.",
+          "media_pts_monotone": true,
+          "real_time_speed_factor": null
+        },
+        "complete_product_cycle_seconds": null,
+        "observed_main_clip_span": {
+          "from": "first video frame",
+          "to": "last video frame",
+          "seconds": 290.729322,
+          "note": "Container duration and observed clip span are not a complete production cycle."
+        },
+        "cut_clip_note": "С первого кадра ролл уже нарезан. Название файла не доказывает присутствие операции нарезки.",
+        "raw_roll_weight_evidence": {
+          "source_frame_index": 6975,
+          "pts": 232.573333,
+          "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/agent-fried-b/shrimp-weights/frame-0059.jpg"
+        },
+        "component_sum_reconciles_to_finished_mass": false
+      }
+    ],
+    "limitations": [
+      "Time is mediaPTS only, not wall clock calibrated.",
+      "Three main files are experimental preparation with weighing and pauses, not production norms.",
+      "No complete cycle through boxed product is shown for any of these3 rolls.",
+      "Inputs issued and final product weights need not match: leftovers on tools/mat, transfer, dynamic scale settling.",
+      "Do not infer employee saving or throughput from these samples.",
+      "No technical recipe was edited."
+    ]
+  }
+}

@@ -1,0 +1,281 @@
+{
+  "status": "PASS_WITH_NONBLOCKING_SEMANTIC_NOTES",
+  "review_scope": "Final8recipe consolidation, arithmetic/units/conditions/agent quantity provenance and13file coverage; no new video viewing. Root inputs unmodified.",
+  "input_hashes": {
+    "results.json": "10ff8e951784f7081474faad1fe387d552efed5bdbefc8ee1dde55ba6a333c19",
+    "timing-table.json": "a943d1bcfc7a77f74aef0a931d45428c4cd6c496aa70b6a242dda6a81072cd52",
+    "agent-fried-a/result.json": "025819d3d4102ab38fac4ce383782488423e854c6725698370bc1c79f45e5408",
+    "agent-cold/cold-trials-findings.json": "0adadf3cd3133f4f9bc8844e5f962c22fffeee2e89be2261cd1819df9ae11b83",
+    "agent-fried-b/facts-final.json": "6441987894df3e428a15d9b3c8691140f4bdc5f206cab7617f463d3cc4e97777"
+  },
+  "checks": [
+    {
+      "name": "8unique_recipe_names",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "13unique_timing_ids",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "timing_inventory_exact",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "recipe_sources_cover_all13",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "timing_filenames_exact",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "recipe_arithmetic_units_unknowns_Фиеста",
+      "passed": true,
+      "note": "Independent raw-tree recursion and each line, totals, delta, percentage, catalog-price FC, conditional quantities; all non-water raw prices confirmed."
+    },
+    {
+      "name": "recipe_arithmetic_units_unknowns_Филадельфия темпура",
+      "passed": true,
+      "note": "Independent raw-tree recursion and each line, totals, delta, percentage, catalog-price FC, conditional quantities; all non-water raw prices confirmed."
+    },
+    {
+      "name": "recipe_arithmetic_units_unknowns_Лава с креветкой",
+      "passed": true,
+      "note": "Independent raw-tree recursion and each line, totals, delta, percentage, catalog-price FC, conditional quantities; all non-water raw prices confirmed."
+    },
+    {
+      "name": "recipe_arithmetic_units_unknowns_Сакура",
+      "passed": true,
+      "note": "Independent raw-tree recursion and each line, totals, delta, percentage, catalog-price FC, conditional quantities; all non-water raw prices confirmed."
+    },
+    {
+      "name": "recipe_arithmetic_units_unknowns_Якудза",
+      "passed": true,
+      "note": "Independent raw-tree recursion and each line, totals, delta, percentage, catalog-price FC, conditional quantities; all non-water raw prices confirmed."
+    },
+    {
+      "name": "recipe_arithmetic_units_unknowns_Камчатский",
+      "passed": true,
+      "note": "Independent raw-tree recursion and each line, totals, delta, percentage, catalog-price FC, conditional quantities; all non-water raw prices confirmed."
+    },
+    {
+      "name": "recipe_arithmetic_units_unknowns_Атакама",
+      "passed": true,
+      "note": "Independent raw-tree recursion and each line, totals, delta, percentage, catalog-price FC, conditional quantities; all non-water raw prices confirmed."
+    },
+    {
+      "name": "recipe_arithmetic_units_unknowns_Жареный с креветкой",
+      "passed": true,
+      "note": "Independent raw-tree recursion and each line, totals, delta, percentage, catalog-price FC, conditional quantities; all non-water raw prices confirmed."
+    },
+    {
+      "name": "agent_A_qty_Атакама",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "agent_A_qty_Сакура",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "agent_C_qty_Камчатский",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "agent_C_qty_Лава с креветкой",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "agent_C_qty_Фиеста",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "agent_F_qty_Якудза",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "agent_F_qty_Филадельфия темпура",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "agent_F_qty_Жареный с креветкой",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "agent_A_timing_exact_v01",
+      "passed": true,
+      "note": "Alloriginalagent-tablefields preserved exactly; root only added notes."
+    },
+    {
+      "name": "agent_A_timing_exact_v13",
+      "passed": true,
+      "note": "Alloriginalagent-tablefields preserved exactly; root only added notes."
+    },
+    {
+      "name": "agent_A_timing_exact_v07",
+      "passed": true,
+      "note": "Alloriginalagent-tablefields preserved exactly; root only added notes."
+    },
+    {
+      "name": "agent_A_timing_exact_v06",
+      "passed": true,
+      "note": "Alloriginalagent-tablefields preserved exactly; root only added notes."
+    },
+    {
+      "name": "unmeasured_finished_weights_not_zero",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "oil_water_limits_explicit",
+      "passed": true,
+      "note": ""
+    }
+  ],
+  "cost_recalculation": [
+    {
+      "name": "Фиеста",
+      "old": 112.11410187366891,
+      "trial_conditional": 118.28820352029803,
+      "delta": 6.174101646629111,
+      "missing_ids": [
+        "ce899eb6-6265-4039-b62d-016b7bf66d5d"
+      ],
+      "conditional_items": [
+        "Нори"
+      ]
+    },
+    {
+      "name": "Филадельфия темпура",
+      "old": 104.4938467170485,
+      "trial_conditional": 135.70760355897673,
+      "delta": 31.21375684192823,
+      "missing_ids": [
+        "ce899eb6-6265-4039-b62d-016b7bf66d5d"
+      ],
+      "conditional_items": [
+        "Нори",
+        "Кляр",
+        "Сухари Голд"
+      ]
+    },
+    {
+      "name": "Лава с креветкой",
+      "old": 90.69807044160049,
+      "trial_conditional": 123.7864445139447,
+      "delta": 33.08837407234421,
+      "missing_ids": [
+        "ce899eb6-6265-4039-b62d-016b7bf66d5d"
+      ],
+      "conditional_items": [
+        "Нори"
+      ]
+    },
+    {
+      "name": "Сакура",
+      "old": 44.69988617277167,
+      "trial_conditional": 52.237723937758275,
+      "delta": 7.537837764986605,
+      "missing_ids": [
+        "ce899eb6-6265-4039-b62d-016b7bf66d5d"
+      ],
+      "conditional_items": [
+        "Кляр",
+        "Сухари Голд",
+        "Нори"
+      ]
+    },
+    {
+      "name": "Якудза",
+      "old": 85.57401675510638,
+      "trial_conditional": 91.3114473985954,
+      "delta": 5.73743064348902,
+      "missing_ids": [
+        "ce899eb6-6265-4039-b62d-016b7bf66d5d"
+      ],
+      "conditional_items": [
+        "Нори"
+      ]
+    },
+    {
+      "name": "Камчатский",
+      "old": 34.13213281066194,
+      "trial_conditional": 42.58187241695289,
+      "delta": 8.449739606290947,
+      "missing_ids": [
+        "ce899eb6-6265-4039-b62d-016b7bf66d5d"
+      ],
+      "conditional_items": [
+        "Нори"
+      ]
+    },
+    {
+      "name": "Атакама",
+      "old": 92.3973166187579,
+      "trial_conditional": 117.40436220983145,
+      "delta": 25.00704559107355,
+      "missing_ids": [
+        "ce899eb6-6265-4039-b62d-016b7bf66d5d"
+      ],
+      "conditional_items": [
+        "Кляр",
+        "Сухари Голд",
+        "Нори"
+      ]
+    },
+    {
+      "name": "Жареный с креветкой",
+      "old": 82.56780106931626,
+      "trial_conditional": 102.04337628783775,
+      "delta": 19.475575218521485,
+      "missing_ids": [
+        "ce899eb6-6265-4039-b62d-016b7bf66d5d"
+      ],
+      "conditional_items": [
+        "Нори",
+        "Кляр",
+        "Сухари Голд"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "severity": "note",
+      "subject": "Сакура: net mass and issued amounts",
+      "detail": "19giceberg and10gmasago are dispensed; do not equate to retained filling.205gdispensed ingredients plus unweighed nori versus201graw roll is explicit in root notes. Difference must not be forcibly assigned to leaf or deducted from material cost; usable returns versus paid waste unmeasured."
+    },
+    {
+      "severity": "note",
+      "subject": "Timing totals are not a partition of full cycle",
+      "detail": "Per-phase intervals may include repeated work, pauses and scale cleaning; full scope has additional setup/weighing. Do not sum main/cut clips or cumulative mat+flip with mat-only."
+    },
+    {
+      "severity": "note",
+      "subject": "Machine-schema consistency",
+      "detail": "timing-table *_s fields mix numeric intervals, null and human strings (v03/v10/v11/v12 full scope; v05/v08 arranging). Human report can display them, but future automated arithmetic needs normalization. No present value changed."
+    },
+    {
+      "severity": "note",
+      "subject": "Unit-cost metadata label",
+      "detail": "ingredient-unit-costs.unit_cost_ex_water_rub is per base kg for mass items althoughunit saysг. results.json correctly uses rub_per_gram/converted unit_cost_rub; no numerical error."
+    },
+    {
+      "severity": "note",
+      "subject": "Catalog FC denominator",
+      "detail": "FC values use catalog prices, not verified channel net receipts or applied discounts. Root explicitly labels catalog_price_rub and conditional FC; do not use these as actual realized FC."
+    }
+  ]
+}

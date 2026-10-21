@@ -1,0 +1,311 @@
+{
+  "analysis_date": "2026-10-21",
+  "business_scope": "Черникова",
+  "archive": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls",
+  "source_video_count": 13,
+  "distinct_recipe_count": 8,
+  "source_video_total_bytes": 579278554,
+  "container_seconds_sum": 1945.513182,
+  "source_videos": [
+    {
+      "id": "v01",
+      "name": "Атакама.mp4",
+      "sha256": "ba94dbf4c192432c94eced4e506fbed6e52b9a1b24cd3e2d509df4f6cd65bda6",
+      "bytes": 44060416,
+      "source_original_path": "/Users/grigorii/Downloads/Атакама.mp4",
+      "archived_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Атакама.mp4",
+      "frames": 5335,
+      "first_pts": 0.066667,
+      "last_pts": 177.942667,
+      "max_pts_gap": 0.03500000000002501
+    },
+    {
+      "id": "v02",
+      "name": "Жаренный с креветкой нарзека.mp4",
+      "sha256": "922443316f945378e25d9675b532c195e60317e99f9c20be3a512a002f402068",
+      "bytes": 3843557,
+      "source_original_path": "/Users/grigorii/Downloads/Жаренный с креветкой нарзека.mp4",
+      "archived_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Жаренный с креветкой нарзека.mp4",
+      "frames": 396,
+      "first_pts": 0.066667,
+      "last_pts": 13.227989,
+      "max_pts_gap": 0.03334400000000137
+    },
+    {
+      "id": "v03",
+      "name": "Жаренный с креветкой.mp4",
+      "sha256": "e407dd37511521485723e0a9c69e84d10219f081fe317162614a1dd036d29da0",
+      "bytes": 91448288,
+      "source_original_path": "/Users/grigorii/Downloads/Жаренный с креветкой.mp4",
+      "archived_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Жаренный с креветкой.mp4",
+      "frames": 8722,
+      "first_pts": 0.066667,
+      "last_pts": 290.795989,
+      "max_pts_gap": 0.03500000000002501
+    },
+    {
+      "id": "v04",
+      "name": "Камчатский.mp4",
+      "sha256": "3b0dcd27e70b4e4fc8943f15be149e44edfe70ecde3857e860670586ddd852f4",
+      "bytes": 80848206,
+      "source_original_path": "/Users/grigorii/Downloads/Камчатский.mp4",
+      "archived_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Камчатский.mp4",
+      "frames": 7666,
+      "first_pts": 0.066667,
+      "last_pts": 255.681333,
+      "max_pts_gap": 0.03500000000002501
+    },
+    {
+      "id": "v05",
+      "name": "Лава с креветкой.mp4",
+      "sha256": "e7a0752658f2e7e62badd4c7a692cc02b7480f2cb72aa6ee0e1e86548f888365",
+      "bytes": 70052083,
+      "source_original_path": "/Users/grigorii/Downloads/Лава с креветкой.mp4",
+      "archived_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Лава с креветкой.mp4",
+      "frames": 6967,
+      "first_pts": 0.066667,
+      "last_pts": 232.363989,
+      "max_pts_gap": 0.03500000000002501
+    },
+    {
+      "id": "v06",
+      "name": "Сакура нарезка.mp4",
+      "sha256": "9956bda0100f09b5ee1026483b788ff65e09919d4a35c4bcc9c882a99a54b49d",
+      "bytes": 8791572,
+      "source_original_path": "/Users/grigorii/Downloads/Сакура нарезка.mp4",
+      "archived_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Сакура нарезка.mp4",
+      "frames": 1118,
+      "first_pts": 0.066667,
+      "last_pts": 37.291989,
+      "max_pts_gap": 0.0333440000000067
+    },
+    {
+      "id": "v07",
+      "name": "Сакура.mp4",
+      "sha256": "a842d38ec9dd2e12da0d62bf8bd7f6178445071f85413afbf0977b3a5d72ff3e",
+      "bytes": 68903533,
+      "source_original_path": "/Users/grigorii/Downloads/Сакура.mp4",
+      "archived_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Сакура.mp4",
+      "frames": 6733,
+      "first_pts": 0.066667,
+      "last_pts": 224.555989,
+      "max_pts_gap": 0.03500000000002501
+    },
+    {
+      "id": "v08",
+      "name": "Фиеста.mp4",
+      "sha256": "353621ba83516fcba47ec1eceaae46ab60950d1c7fd339cde29fa185eecf507c",
+      "bytes": 98227231,
+      "source_original_path": "/Users/grigorii/Downloads/Фиеста.mp4",
+      "archived_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Фиеста.mp4",
+      "frames": 9338,
+      "first_pts": 0.066667,
+      "last_pts": 311.467989,
+      "max_pts_gap": 0.03500000000002501
+    },
+    {
+      "id": "v09",
+      "name": "Филадельфия темпура нарезка.mp4",
+      "sha256": "8f4305fe019e0e0466065f8597ab59cb5673571a74ce7a977a75232eb411ff1c",
+      "bytes": 2198743,
+      "source_original_path": "/Users/grigorii/Downloads/Филадельфия темпура нарезка.mp4",
+      "archived_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Филадельфия темпура нарезка.mp4",
+      "frames": 234,
+      "first_pts": 0.066667,
+      "last_pts": 7.809333,
+      "max_pts_gap": 0.033344000000000484
+    },
+    {
+      "id": "v10",
+      "name": "Филадельфия темпура.mp4",
+      "sha256": "f8c2f1fd788ced3702876996650d2c495d7eb03d7a76a8e7e22c023f664eebff",
+      "bytes": 43560402,
+      "source_original_path": "/Users/grigorii/Downloads/Филадельфия темпура.mp4",
+      "archived_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Филадельфия темпура.mp4",
+      "frames": 4871,
+      "first_pts": 0.066667,
+      "last_pts": 162.369333,
+      "max_pts_gap": 0.0350000000000108
+    },
+    {
+      "id": "v11",
+      "name": "Якудза нарезка.mp4",
+      "sha256": "0064a57d7ae4537755c4f36fa73f3d0ca25191f0b4dc6137c045fd2c5d52f4fc",
+      "bytes": 12148144,
+      "source_original_path": "/Users/grigorii/Downloads/Якудза нарезка.mp4",
+      "archived_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Якудза нарезка.mp4",
+      "frames": 1339,
+      "first_pts": 0.066667,
+      "last_pts": 44.651989,
+      "max_pts_gap": 0.03500000000000014
+    },
+    {
+      "id": "v12",
+      "name": "Якудза.mp4",
+      "sha256": "989e9b63d978e14d09f331daae3583e25db45803871d1a4be38ddb81317b03f1",
+      "bytes": 47940061,
+      "source_original_path": "/Users/grigorii/Downloads/Якудза.mp4",
+      "archived_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Якудза.mp4",
+      "frames": 4774,
+      "first_pts": 0.066667,
+      "last_pts": 159.233333,
+      "max_pts_gap": 0.0350000000000108
+    },
+    {
+      "id": "v13",
+      "name": "Атакама нарезка.mp4",
+      "sha256": "e0894a02869feb2a291a059ace7ebc878efb1da30dc56ff5942bf87c2f53a95c",
+      "bytes": 7256318,
+      "source_original_path": "/Users/grigorii/Downloads/Атакама нарезка.mp4",
+      "archived_path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/originals/Атакама нарезка.mp4",
+      "frames": 835,
+      "first_pts": 0.066667,
+      "last_pts": 27.841333,
+      "max_pts_gap": 0.03500000000000014
+    }
+  ],
+  "iiko_sources": [
+    {
+      "name": "products",
+      "endpoint": "/v2/entities/products/list",
+      "params": {
+        "includeDeleted": "true"
+      },
+      "read_utc": "2026-10-21T09:56:30.255914+00:00",
+      "sha256": "ec329226e4c07027fed74bb2c9b7eca9b6495cdc63fa21c668f9c761a9a30eba"
+    },
+    {
+      "name": "groups",
+      "endpoint": "/v2/entities/products/group/list",
+      "params": {
+        "includeDeleted": "true"
+      },
+      "read_utc": "2026-10-21T09:56:30.356367+00:00",
+      "sha256": "bc66ed74d4c8b683fdb42d168cc5213cd644df35cfae3451a9bc5e6dde889897"
+    },
+    {
+      "name": "units",
+      "endpoint": "/v2/entities/list",
+      "params": {
+        "rootType": "MeasureUnit"
+      },
+      "read_utc": "2026-10-21T09:56:30.416142+00:00",
+      "sha256": "87a75f145e646dae8eea0a2f00e99caa03df11474516e1f7996972cc75b1c223"
+    },
+    {
+      "name": "tree-c80e1f8e-1607-44e0-a712-b39361c1dc96",
+      "endpoint": "/v2/assemblyCharts/getTree",
+      "params": {
+        "date": "2026-10-21",
+        "productId": "c80e1f8e-1607-44e0-a712-b39361c1dc96",
+        "departmentId": "d8d4a22e-3abd-4f02-b82d-7d4712f32729"
+      },
+      "read_utc": "2026-10-21T09:56:30.465718+00:00",
+      "sha256": "21a2b6a35765cb498bfa5d3d05186aaa4181a54ed69f6e3e4f17d0ba212783ff"
+    },
+    {
+      "name": "tree-2a3f7463-db4c-48bd-a384-a20e3238a72d",
+      "endpoint": "/v2/assemblyCharts/getTree",
+      "params": {
+        "date": "2026-10-21",
+        "productId": "2a3f7463-db4c-48bd-a384-a20e3238a72d",
+        "departmentId": "d8d4a22e-3abd-4f02-b82d-7d4712f32729"
+      },
+      "read_utc": "2026-10-21T09:56:30.512825+00:00",
+      "sha256": "30b2e19d7c95b6ece33b884f85fbfb474de4f3fe333a374ffcce50c75901462d"
+    },
+    {
+      "name": "tree-704c0ccc-9a40-43c1-9bc8-e48dce390bd7",
+      "endpoint": "/v2/assemblyCharts/getTree",
+      "params": {
+        "date": "2026-10-21",
+        "productId": "704c0ccc-9a40-43c1-9bc8-e48dce390bd7",
+        "departmentId": "d8d4a22e-3abd-4f02-b82d-7d4712f32729"
+      },
+      "read_utc": "2026-10-21T09:56:30.563903+00:00",
+      "sha256": "409dc7323d49f981d42b4292d4094c2cbed5da632fa14bbbb90d88167c51c0ef"
+    },
+    {
+      "name": "tree-bd1e0a8b-febb-40fc-a7c3-9690f012dae6",
+      "endpoint": "/v2/assemblyCharts/getTree",
+      "params": {
+        "date": "2026-10-21",
+        "productId": "bd1e0a8b-febb-40fc-a7c3-9690f012dae6",
+        "departmentId": "d8d4a22e-3abd-4f02-b82d-7d4712f32729"
+      },
+      "read_utc": "2026-10-21T09:56:30.621656+00:00",
+      "sha256": "2b230dfb36ac73fe076a3030fc2a147560dd9928e72c5c1aa5fe3b0d772f996c"
+    },
+    {
+      "name": "tree-a792d828-e14f-4c29-ab6b-5958a0c9e1ae",
+      "endpoint": "/v2/assemblyCharts/getTree",
+      "params": {
+        "date": "2026-10-21",
+        "productId": "a792d828-e14f-4c29-ab6b-5958a0c9e1ae",
+        "departmentId": "d8d4a22e-3abd-4f02-b82d-7d4712f32729"
+      },
+      "read_utc": "2026-10-21T09:56:30.670803+00:00",
+      "sha256": "b42ffbca4bb0bcdd8dc768d82bce1a8d525776cc83882084d17c7c446ea4c0bd"
+    },
+    {
+      "name": "tree-efc93f40-ac88-4480-b37d-0964c6a2f073",
+      "endpoint": "/v2/assemblyCharts/getTree",
+      "params": {
+        "date": "2026-10-21",
+        "productId": "efc93f40-ac88-4480-b37d-0964c6a2f073",
+        "departmentId": "d8d4a22e-3abd-4f02-b82d-7d4712f32729"
+      },
+      "read_utc": "2026-10-21T09:56:30.722913+00:00",
+      "sha256": "b22193db0cfac41a54c640936cd6e59d2fd8768bd25aeca9602eae27c14b8b43"
+    },
+    {
+      "name": "tree-d264e747-e54f-45e3-b0a6-62054b452418",
+      "endpoint": "/v2/assemblyCharts/getTree",
+      "params": {
+        "date": "2026-10-21",
+        "productId": "d264e747-e54f-45e3-b0a6-62054b452418",
+        "departmentId": "d8d4a22e-3abd-4f02-b82d-7d4712f32729"
+      },
+      "read_utc": "2026-10-21T09:56:30.777439+00:00",
+      "sha256": "e9888d015a1787b3cb36381b766e8626e68c29e6a06fe77cad9b1df961af966d"
+    },
+    {
+      "name": "tree-625a6ea2-af09-41de-aacd-4dbd41a9ec78",
+      "endpoint": "/v2/assemblyCharts/getTree",
+      "params": {
+        "date": "2026-10-21",
+        "productId": "625a6ea2-af09-41de-aacd-4dbd41a9ec78",
+        "departmentId": "d8d4a22e-3abd-4f02-b82d-7d4712f32729"
+      },
+      "read_utc": "2026-10-21T09:56:30.839711+00:00",
+      "sha256": "cbfa52dd71e5b063ce1f151e7ecc1efd5b25cff471a02db6ce34b63edf0ca341"
+    },
+    {
+      "name": "incoming-invoices",
+      "endpoint": "/documents/export/incomingInvoice",
+      "params": {
+        "from": "2026-07-01",
+        "to": "2026-10-22"
+      },
+      "read_utc": "2026-10-21T09:56:31.063886+00:00",
+      "sha256": "f28f690dbeec6702f6b7542d266faee9f99574049146bfbaed2f473334835ee2"
+    }
+  ],
+  "pricebook_as_of": "2026-10-21",
+  "read_only_production": true,
+  "method": "Actual source-frame PTS; stable scale values; dispensed quantities and product final weight distinct. Latest positive processed invoice lines at specified store. Both recipes use same21Oct prices. Unmeasured doses explicit carryover scenario.",
+  "final_result_source": "results.json",
+  "timing_source": "timing-table.json",
+  "primary_annotations": "observations.json",
+  "independent_audit": "final-audit.json",
+  "audit_status": "PASS_WITH_NONBLOCKING_SEMANTIC_NOTES",
+  "artifact_sha256": {
+    "results.json": "10ff8e951784f7081474faad1fe387d552efed5bdbefc8ee1dde55ba6a333c19",
+    "timing-table.json": "a943d1bcfc7a77f74aef0a931d45428c4cd6c496aa70b6a242dda6a81072cd52",
+    "observations.json": "3007a95c9e8e767a08249cd065abb0da74bb836dc9fe68b808c7b5904a5dec04",
+    "report.html": "db3b6126e3d29d4a4c8c8f26787d94db164003e9a96e7aec4e9152e3b59b7279",
+    "final-audit.json": "45a88cd3bdc4654a9a2457b4678a98f9dc75897f313e9f796530b5b1cc87d2bf"
+  },
+  "audited_result_original_sha256": "10ff8e951784f7081474faad1fe387d552efed5bdbefc8ee1dde55ba6a333c19",
+  "publication_note": "Source and evidence paths relocated from temporary working directory into private permanent archive; numeric observations and calculations unchanged. Original audited results retained as analysis/results-as-audited.json."
+}

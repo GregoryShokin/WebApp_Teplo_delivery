@@ -1,0 +1,300 @@
+[
+  {
+    "source_id": "v01",
+    "name": "Атакама.mp4",
+    "mat_spreading_s": [
+      41,
+      42
+    ],
+    "mat_with_flip_s": [
+      42,
+      44
+    ],
+    "filling_calendar_s": [
+      61,
+      63
+    ],
+    "forming_calendar_s": [
+      38,
+      40
+    ],
+    "cutting_s": null,
+    "arranging_s": null,
+    "full_observed_scope_s": [
+      169,
+      171
+    ],
+    "full_observed_scope": "start to raw assembly weighed; not full finished cycle",
+    "note": "Мат с переворотом42–44 с. Начинка со взвешиваниями и поэтапными переносами; формование с повторной доводкой. Жарки и нарезки нет."
+  },
+  {
+    "source_id": "v02",
+    "name": "Жаренный с креветкой нарзека.mp4",
+    "cutting_s": null,
+    "arranging_s": null,
+    "full_observed_scope_s": null,
+    "full_observed_scope": "показ уже нарезанного блюда",
+    "note": "С первого кадра кусочки уже нарезаны. Время самой резки и подготовки не восстановить; файл не равен длительности операции."
+  },
+  {
+    "source_id": "v03",
+    "name": "Жаренный с креветкой.mp4",
+    "mat_spreading_s": [
+      38.5,
+      40.0
+    ],
+    "mat_with_flip_s": "отдельно не выделено",
+    "filling_calendar_s": [
+      114.0,
+      118.0
+    ],
+    "forming_calendar_s": [
+      41.5,
+      42.5
+    ],
+    "cutting_s": null,
+    "arranging_s": null,
+    "full_observed_scope_s": "0→232,5 с",
+    "full_observed_scope": "от начала видео до кадра взвешивания заготовки",
+    "note": "После202 г есть обработка одной из двух заготовок: идентичность не подтверждена. Полная жарка не измерена."
+  },
+  {
+    "source_id": "v04",
+    "name": "Камчатский.mp4",
+    "mat_spreading_s": [
+      58.0,
+      62.0
+    ],
+    "mat_with_flip_s": [
+      61.0,
+      64.0
+    ],
+    "filling_calendar_s": [
+      68.0,
+      72.0
+    ],
+    "forming_calendar_s": [
+      40.0,
+      44.0
+    ],
+    "cutting_s": [
+      10.0,
+      14.0
+    ],
+    "arranging_s": null,
+    "note": "Мат: начало у левого края кадра. Начинка включает взвешивания. Отдельно кунжут6–8 с и контроль банки. После резки кусочки на доске, контейнер не показан.",
+    "full_observed_scope_s": [
+      232.0,
+      236.0
+    ],
+    "full_observed_scope": "от взвешивания риса до последнего реза; кусочки на доске"
+  },
+  {
+    "source_id": "v05",
+    "name": "Лава с креветкой.mp4",
+    "mat_spreading_s": [
+      46.0,
+      52.0
+    ],
+    "mat_with_flip_s": [
+      50.5,
+      56.5
+    ],
+    "filling_calendar_s": [
+      51.5,
+      54.0
+    ],
+    "forming_calendar_s": [
+      32.5,
+      33.5
+    ],
+    "cutting_s": [
+      19.5,
+      20.5
+    ],
+    "arranging_s": "4,5–7 раскладка;24,5–25,5 соус",
+    "note": "Начало мата частично за левым краем. Раскладка на доске4,5–7 с; затем перенос на вторые весы и тара; отсадка Лава24,5–25,5 с.",
+    "full_observed_scope_s": [
+      223.0,
+      225.5
+    ],
+    "full_observed_scope": "от взвешивания риса до завершения шапок на весах"
+  },
+  {
+    "source_id": "v06",
+    "name": "Сакура нарезка.mp4",
+    "mat_spreading_s": null,
+    "filling_calendar_s": null,
+    "forming_calendar_s": null,
+    "cutting_s": [
+      23,
+      25
+    ],
+    "arranging_s": [
+      5,
+      7
+    ],
+    "full_observed_scope_s": [
+      30,
+      32
+    ],
+    "full_observed_scope": "fried roll on board to displayed pieces",
+    "note": "Нарезка с выравниванием и протиркой ножа; затем раскладка на доске, контейнера нет."
+  },
+  {
+    "source_id": "v07",
+    "name": "Сакура.mp4",
+    "mat_spreading_s": [
+      43,
+      45
+    ],
+    "mat_with_flip_s": [
+      47,
+      49
+    ],
+    "filling_calendar_s": [
+      108,
+      112
+    ],
+    "forming_calendar_s": [
+      44,
+      47
+    ],
+    "forming_included_scale_cleaning_s": [
+      9,
+      11
+    ],
+    "cutting_s": null,
+    "arranging_s": null,
+    "full_observed_scope_s": [
+      215,
+      217
+    ],
+    "full_observed_scope": "start to raw assembly weighed; not full finished cycle",
+    "note": "В формование44–47 с входит9–11 с чистки/тарирования весов. После очистки есть доводка. Жарки и нарезки нет."
+  },
+  {
+    "source_id": "v08",
+    "name": "Фиеста.mp4",
+    "mat_spreading_s": [
+      43.0,
+      44.0
+    ],
+    "mat_with_flip_s": [
+      45.0,
+      46.0
+    ],
+    "filling_calendar_s": [
+      78.0,
+      80.5
+    ],
+    "forming_calendar_s": [
+      32.0,
+      33.0
+    ],
+    "cutting_s": [
+      24.0,
+      25.0
+    ],
+    "arranging_s": "68,5–70 наружный этап до резки",
+    "note": "Начинка внутри78–80,5 с. Наружное покрытие рыбой и креветкой с взвешиваниями и доводкой отдельным этапом68,5–70 с. Первое формование32–33 с; финальный обжим13–23,5 с внутри наружного этапа, повторно не складывать.",
+    "full_observed_scope_s": [
+      289.0,
+      290.5
+    ],
+    "full_observed_scope": "от взвешивания риса до последнего реза; кусочки на доске",
+    "outer_stage_s": [
+      68.5,
+      70
+    ]
+  },
+  {
+    "source_id": "v09",
+    "name": "Филадельфия темпура нарезка.mp4",
+    "cutting_s": null,
+    "arranging_s": null,
+    "full_observed_scope_s": null,
+    "full_observed_scope": "показ уже нарезанного блюда",
+    "note": "С первого кадра кусочки уже нарезаны. Время самой резки и подготовки не восстановить; файл не равен длительности операции."
+  },
+  {
+    "source_id": "v10",
+    "name": "Филадельфия темпура.mp4",
+    "mat_spreading_s": [
+      30.0,
+      36.0
+    ],
+    "mat_with_flip_s": "отдельно не выделено",
+    "filling_calendar_s": [
+      67.0,
+      68.0
+    ],
+    "forming_calendar_s": [
+      26.0,
+      27.0
+    ],
+    "cutting_s": null,
+    "arranging_s": null,
+    "full_observed_scope_s": "0→161,0 с",
+    "full_observed_scope": "от начала видео до кадра взвешивания заготовки",
+    "note": "Начало мата скрыто краем кадра; окончание — необжаренная заготовка."
+  },
+  {
+    "source_id": "v11",
+    "name": "Якудза нарезка.mp4",
+    "cutting_s": [
+      20.0,
+      21.0
+    ],
+    "arranging_s": [
+      5.0,
+      8.0
+    ],
+    "full_observed_scope_s": "0→30 с",
+    "full_observed_scope": "целый ролл на доске → разложенные кусочки",
+    "note": "Резка включает перекладывания половин и протирку ножа. После неё раскладка на доске; контейнера нет."
+  },
+  {
+    "source_id": "v12",
+    "name": "Якудза.mp4",
+    "mat_spreading_s": [
+      27.0,
+      30.0
+    ],
+    "mat_with_flip_s": "отдельно не выделено",
+    "filling_calendar_s": [
+      73.0,
+      75.0
+    ],
+    "forming_calendar_s": [
+      26.0,
+      27.5
+    ],
+    "cutting_s": null,
+    "arranging_s": null,
+    "full_observed_scope_s": "0→158,9 с",
+    "full_observed_scope": "от начала видео до кадра взвешивания заготовки",
+    "note": "Начало мата частично скрыто. Рис уже взвешен к началу видео; кунжут2–4 с отдельно."
+  },
+  {
+    "source_id": "v13",
+    "name": "Атакама нарезка.mp4",
+    "mat_spreading_s": null,
+    "filling_calendar_s": null,
+    "forming_calendar_s": null,
+    "cutting_s": [
+      15,
+      16
+    ],
+    "arranging_s": [
+      2,
+      4
+    ],
+    "full_observed_scope_s": [
+      20,
+      21
+    ],
+    "full_observed_scope": "fried roll on board to displayed pieces",
+    "note": "Нарезка включает выравнивание и протирку ножа; последующая раскладка на доске, контейнера нет."
+  }
+]

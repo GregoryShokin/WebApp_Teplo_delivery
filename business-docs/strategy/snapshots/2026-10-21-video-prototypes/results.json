@@ -1,0 +1,1342 @@
+{
+  "analysis_date": "2026-10-21",
+  "status": "complete_with_explicit_unmeasured_quantities_and_media_time_limits",
+  "owner_confirmed": [
+    "Improved trials; goal large attractive rolls, gram targets were not preset.",
+    "All ingredient products and preparations identical to current iiko, quantities changed.",
+    "Work autonomously, no further questions while owner away."
+  ],
+  "pricing_method": "All variants repriced on same last-purchase book as of21Oct, positive PROCESSED invoice lines at Chernikova main store. Prepared yields applied exactly once and all8raw trees crosschecked against prepared iiko.",
+  "not_full_cost": "Material amounts excluding unpriced water; no labor, energy, order packaging, portion sauces, delivery, commissions or taxes. Fryer oil outside recipes not imputed.",
+  "carryover_method": "Unmeasured nori/batter/breadcrumbs/sesame use prior iiko quantities only for an explicit conditional scenario, never as observed video quantities.",
+  "time_method": "Source-frame actual PTS, no external clock observed. Trial weighing and transfer work retained separately; not a sustainable production norm.",
+  "rows": [
+    {
+      "name": "Фиеста",
+      "roll_guid": "2a3f7463-db4c-48bd-a384-a20e3238a72d",
+      "sources": [
+        "v08"
+      ],
+      "observed_raw_formed_roll_g": 248,
+      "observed_finished_after_fry_g": null,
+      "old_cost_ex_water_rub": 112.11410187366891,
+      "trial_cost_conditional_ex_water_rub": 118.28820352029803,
+      "delta_cost_rub": 6.174101646629111,
+      "delta_cost_percent": 0.05506980427481056,
+      "observed_components_cost_ex_water_rub": 113.58820352029802,
+      "conditional_components": [
+        "Нори"
+      ],
+      "catalog_price_rub": 280,
+      "old_fc_at_catalog_price_ex_water": 0.4004075066916747,
+      "trial_fc_at_catalog_price_conditional_ex_water": 0.4224578697153501,
+      "items": [
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "unit": "г",
+          "old_amount": 130.0,
+          "trial_amount": 100,
+          "pricing_amount": 100,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 7.505222438681265,
+          "trial_pricing_cost_ex_water_rub": 5.77324802975482,
+          "delta_cost_rub": -1.7319744089264457,
+          "unit_cost_rub": 0.05773248029754819
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "unit": "шт",
+          "old_amount": 0.5,
+          "trial_amount": null,
+          "pricing_amount": 0.5,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 4.7,
+          "trial_pricing_cost_ex_water_rub": 4.7,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 9.4
+        },
+        {
+          "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+          "name": "Сыр творожный",
+          "unit": "г",
+          "old_amount": 60.0,
+          "trial_amount": 85,
+          "pricing_amount": 85,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 23.099999999999998,
+          "trial_pricing_cost_ex_water_rub": 32.725,
+          "delta_cost_rub": 9.625000000000004,
+          "unit_cost_rub": 0.385
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "unit": "г",
+          "old_amount": 15.0,
+          "trial_amount": 25,
+          "pricing_amount": 25,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 3.574074083333333,
+          "trial_pricing_cost_ex_water_rub": 5.956790138888889,
+          "delta_cost_rub": 2.3827160555555555,
+          "unit_cost_rub": 0.23827160555555554
+        },
+        {
+          "product_id": "cfc06311-539c-4c41-9d99-21baf376c5de",
+          "name": "Креветка п/ф очищ отвар",
+          "unit": "г",
+          "old_amount": 20.0,
+          "trial_amount": 20,
+          "pricing_amount": 20,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 32.21840535165431,
+          "trial_pricing_cost_ex_water_rub": 32.21840535165431,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 1.6109202675827157
+        },
+        {
+          "product_id": "c6f89aab-a5c7-4c4f-bec7-8c21ab2361de",
+          "name": "Семга х/к п/ф",
+          "unit": "г",
+          "old_amount": 20.0,
+          "trial_amount": 18,
+          "pricing_amount": 18,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 41.016400000000004,
+          "trial_pricing_cost_ex_water_rub": 36.91476,
+          "delta_cost_rub": -4.101640000000003,
+          "unit_cost_rub": 2.0508200000000003
+        }
+      ],
+      "evidence": [
+        {
+          "ingredient": "Рис для роллов пф",
+          "grams": 100,
+          "source_id": "v08",
+          "frame": 105,
+          "pts": 3.566667,
+          "note": "Weighed ball100g before lifting4.067. No need infer from roll size."
+        },
+        {
+          "ingredient": "Сыр творожный",
+          "grams": 85,
+          "source_id": "v08",
+          "frame": 2339,
+          "pts": 78.064989,
+          "note": "Initial48g→additional73g→final85g;77.565–78.565 no pressure. After transfer platform shows3g once then0; possible small residue/wiping, exact net transferred could be lower than85g."
+        },
+        {
+          "ingredient": "Огурец п/ф роллы",
+          "grams": 25,
+          "source_id": "v08",
+          "frame": 3104,
+          "pts": 103.579989,
+          "note": "Initial16g then addition: stable25g103.580. Subsequently transferred in portions; do not use near-zero residual as full dose. Taring occurs during transfer;25g is gross prepared dose."
+        },
+        {
+          "ingredient": "Семга х/к п/ф",
+          "grams": 18,
+          "source_id": "v08",
+          "frame": 5577,
+          "pts": 186.064989,
+          "note": "Single salmon panel stable18g185.065–188.567;184g at190.068 while hand lifts is pressure, rejected."
+        },
+        {
+          "ingredient": "Креветка п/ф очищ отвар",
+          "grams": 20,
+          "source_id": "v08",
+          "frame": 6506,
+          "pts": 217.051667,
+          "note": "Butterflied shrimp pieces on empty platform stable20g216.083–217.552, then transferred to outer top."
+        },
+        {
+          "ingredient": "Заготовка",
+          "grams": 248,
+          "source_id": "v08",
+          "frame": 7736,
+          "pts": 258.076667,
+          "note": "Finished after outer covering/pressing, before cutting; native base sampling f7736."
+        }
+      ],
+      "notes": [
+        "85 г сыра — выдано на весы; небольшие остатки при переносе не позволяют объявить всё это массой сыра внутри готовой порции. Рыба18 г и креветка20 г уложены снаружи после первого формования, поэтому их время показано отдельным этапом.",
+        "Нори оставлено по исходной карте для условной калькуляции. Размер доли полного листа и его масса отдельно не измерены."
+      ],
+      "weight_note": "После наружной рыбы и креветки, до нарезки."
+    },
+    {
+      "name": "Филадельфия темпура",
+      "roll_guid": "625a6ea2-af09-41de-aacd-4dbd41a9ec78",
+      "sources": [
+        "v10",
+        "v09"
+      ],
+      "observed_raw_formed_roll_g": 205,
+      "observed_finished_after_fry_g": null,
+      "old_cost_ex_water_rub": 104.4938467170485,
+      "trial_cost_conditional_ex_water_rub": 135.70760355897676,
+      "delta_cost_rub": 31.21375684192826,
+      "delta_cost_percent": 0.29871382691508885,
+      "observed_components_cost_ex_water_rub": 123.80554149001124,
+      "conditional_components": [
+        "Нори",
+        "Кляр",
+        "Сухари Голд"
+      ],
+      "catalog_price_rub": 309,
+      "old_fc_at_catalog_price_ex_water": 0.33816778872831227,
+      "trial_fc_at_catalog_price_conditional_ex_water": 0.43918318303875975,
+      "items": [
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "unit": "шт",
+          "old_amount": 1.0,
+          "trial_amount": null,
+          "pricing_amount": 1.0,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 9.4,
+          "trial_pricing_cost_ex_water_rub": 9.4,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 9.4
+        },
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "unit": "г",
+          "old_amount": 130.0,
+          "trial_amount": 100,
+          "pricing_amount": 100,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 7.505222438681265,
+          "trial_pricing_cost_ex_water_rub": 5.77324802975482,
+          "delta_cost_rub": -1.7319744089264457,
+          "unit_cost_rub": 0.05773248029754819
+        },
+        {
+          "product_id": "2b9465ac-eab7-4b7c-aa14-548253b02024",
+          "name": "Семга с/м вакуум п/ф",
+          "unit": "г",
+          "old_amount": 30.0,
+          "trial_amount": 41,
+          "pricing_amount": 41,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 71.15384615384616,
+          "trial_pricing_cost_ex_water_rub": 97.24358974358975,
+          "delta_cost_rub": 26.08974358974359,
+          "unit_cost_rub": 2.3717948717948723
+        },
+        {
+          "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+          "name": "Сыр творожный",
+          "unit": "г",
+          "old_amount": 30.0,
+          "trial_amount": 41,
+          "pricing_amount": 41,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 11.549999999999999,
+          "trial_pricing_cost_ex_water_rub": 15.785,
+          "delta_cost_rub": 4.235000000000001,
+          "unit_cost_rub": 0.385
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "unit": "г",
+          "old_amount": 10.0,
+          "trial_amount": 21,
+          "pricing_amount": 21,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 2.3827160555555555,
+          "trial_pricing_cost_ex_water_rub": 5.003703716666666,
+          "delta_cost_rub": 2.6209876611111107,
+          "unit_cost_rub": 0.23827160555555554
+        },
+        {
+          "product_id": "16ff10d9-6516-4a65-a843-fc72c9639e45",
+          "name": "Кляр",
+          "unit": "г",
+          "old_amount": 20.0,
+          "trial_amount": null,
+          "pricing_amount": 20.0,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 0.5820620689655173,
+          "trial_pricing_cost_ex_water_rub": 0.5820620689655173,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 0.029103103448275863
+        },
+        {
+          "product_id": "f1bb5ee8-2f9a-48d2-af15-65c69419568e",
+          "name": "Сухари Голд",
+          "unit": "г",
+          "old_amount": 10.0,
+          "trial_amount": null,
+          "pricing_amount": 10.0,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 1.92,
+          "trial_pricing_cost_ex_water_rub": 1.92,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 0.192
+        }
+      ],
+      "evidence": [
+        {
+          "ingredient": "Рис для роллов пф",
+          "grams": 100,
+          "source_id": "v10",
+          "frame": 330,
+          "pts": 11.064989,
+          "note": "97г первоначально; после добавки100г перед снятием.",
+          "confidence": "high"
+        },
+        {
+          "ingredient": "Сыр творожный",
+          "grams": 41,
+          "source_id": "v10",
+          "frame": 2160,
+          "pts": 72.056667,
+          "note": "36г первоначально; после довески41г, вся порция перенесена.",
+          "confidence": "high"
+        },
+        {
+          "ingredient": "Семга с/м вакуум п/ф",
+          "grams": 41,
+          "source_id": "v10",
+          "frame": 2730,
+          "pts": 91.053333,
+          "note": "30г первоначально; после довески41г, вся порция перенесена. Промежуточные33г и30г не конечные.",
+          "confidence": "high"
+        },
+        {
+          "ingredient": "Огурец п/ф роллы",
+          "grams": 21,
+          "source_id": "v10",
+          "frame": 3375,
+          "pts": 112.551667,
+          "note": "17/19г первоначально; после добавки21г перед переносом.",
+          "confidence": "high"
+        },
+        {
+          "ingredient": "Сформованная заготовка",
+          "grams": 205,
+          "source_id": "v10",
+          "pts": 161.078333,
+          "note": "Масса до панировки/жарки для жареных роллов; отдельный кадр взвешивания, не сумма ингредиентов."
+        }
+      ],
+      "notes": [
+        "Нори оставлено по исходной карте для условной калькуляции. Размер доли полного листа и его масса отдельно не измерены."
+      ],
+      "weight_note": "До панировки и жарки; готовая жареная масса не измерена."
+    },
+    {
+      "name": "Лава с креветкой",
+      "roll_guid": "704c0ccc-9a40-43c1-9bc8-e48dce390bd7",
+      "sources": [
+        "v05"
+      ],
+      "observed_raw_formed_roll_g": 191,
+      "observed_finished_after_fry_g": null,
+      "old_cost_ex_water_rub": 90.6980704416005,
+      "trial_cost_conditional_ex_water_rub": 123.78644451394469,
+      "delta_cost_rub": 33.08837407234418,
+      "delta_cost_percent": 0.36481894169567175,
+      "observed_components_cost_ex_water_rub": 119.08644451394468,
+      "conditional_components": [
+        "Нори"
+      ],
+      "catalog_price_rub": 260,
+      "old_fc_at_catalog_price_ex_water": 0.34883873246769426,
+      "trial_fc_at_catalog_price_conditional_ex_water": 0.47610170966901805,
+      "items": [
+        {
+          "product_id": "cfc06311-539c-4c41-9d99-21baf376c5de",
+          "name": "Креветка п/ф очищ отвар",
+          "unit": "г",
+          "old_amount": 30.0,
+          "trial_amount": 40,
+          "pricing_amount": 40,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 48.32760802748147,
+          "trial_pricing_cost_ex_water_rub": 64.43681070330862,
+          "delta_cost_rub": 16.109202675827156,
+          "unit_cost_rub": 1.6109202675827157
+        },
+        {
+          "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+          "name": "Сыр творожный",
+          "unit": "г",
+          "old_amount": 20.0,
+          "trial_amount": 49,
+          "pricing_amount": 49,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 7.7,
+          "trial_pricing_cost_ex_water_rub": 18.865000000000002,
+          "delta_cost_rub": 11.165000000000003,
+          "unit_cost_rub": 0.385
+        },
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "unit": "г",
+          "old_amount": 130.0,
+          "trial_amount": 101,
+          "pricing_amount": 101,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 7.505222438681265,
+          "trial_pricing_cost_ex_water_rub": 5.830980510052368,
+          "delta_cost_rub": -1.6742419286288976,
+          "unit_cost_rub": 0.05773248029754819
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "unit": "шт",
+          "old_amount": 0.5,
+          "trial_amount": null,
+          "pricing_amount": 0.5,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 4.7,
+          "trial_pricing_cost_ex_water_rub": 4.7,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 9.4
+        },
+        {
+          "product_id": "6ad9e1a0-9c13-44ca-b1b4-904f1b9bb11a",
+          "name": "Соус Лава",
+          "unit": "г",
+          "old_amount": 60.0,
+          "trial_amount": 80,
+          "pricing_amount": 80,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 22.46523997543777,
+          "trial_pricing_cost_ex_water_rub": 29.953653300583692,
+          "delta_cost_rub": 7.488413325145924,
+          "unit_cost_rub": 0.37442066625729614
+        }
+      ],
+      "evidence": [
+        {
+          "ingredient": "Рис для роллов пф",
+          "grams": 101,
+          "source_id": "v05",
+          "frame": 270,
+          "pts": 9.064989,
+          "note": "95g at7–8.565, final101g at9.065–9.332 before lift. Empty101g at10.065 ignored."
+        },
+        {
+          "ingredient": "Сыр творожный",
+          "grams": 49,
+          "source_id": "v05",
+          "frame": 2444,
+          "pts": 81.558333,
+          "note": "Stable81.057–81.825.163/179g during manual transfer are contact force, rejected."
+        },
+        {
+          "ingredient": "Креветка п/ф очищ отвар",
+          "grams": 40,
+          "source_id": "v05",
+          "frame": 3284,
+          "pts": 109.574989,
+          "note": "Native /v05-refine/frame-0009.jpg f3284 PTS109.574989: hands hovering clear,40g. Previous37g at108.8 precedes final addition. Residual26 then18g are subsequent transfers to same roll, not reductions discarded."
+        },
+        {
+          "ingredient": "Заготовка",
+          "grams": 191,
+          "source_id": "v05",
+          "frame": 4723,
+          "pts": 157.571667,
+          "note": "Native /v05-refine/frame-0014.jpg f4723 PTS157.571667, stable through159.07."
+        },
+        {
+          "ingredient": "Соус Лава",
+          "grams": 80,
+          "source_id": "v05",
+          "frame": 6941,
+          "pts": 231.551667,
+          "note": "Second kitchen scale turned on with cut base resting on it200.566–202.567 (all segments briefly lit), then platform reads0 at203–204; topping added204.568–229.583, stable80g at230–232. This is sauce increment only, not whole serving mass."
+        }
+      ],
+      "notes": [
+        "Креветка40 г — вся отмеренная порция до поэтапного переноса, а не26/18 г остававшихся на весах.",
+        "Масса191 г относится к основе без соуса. После тарирования этой основы нанесено80 г соуса. 271 г — расчётная сумма двух измерений, не независимое итоговое взвешивание.",
+        "Нори оставлено по исходной карте для условной калькуляции. Размер доли полного листа и его масса отдельно не измерены."
+      ],
+      "weight_note": "Основа без соуса; отдельно измерено80 г соуса Лава."
+    },
+    {
+      "name": "Сакура",
+      "roll_guid": "a792d828-e14f-4c29-ab6b-5958a0c9e1ae",
+      "sources": [
+        "v07",
+        "v06"
+      ],
+      "observed_raw_formed_roll_g": 201,
+      "observed_finished_after_fry_g": null,
+      "old_cost_ex_water_rub": 44.69988617277167,
+      "trial_cost_conditional_ex_water_rub": 52.23772393775827,
+      "delta_cost_rub": 7.537837764986598,
+      "delta_cost_percent": 0.1686321467542835,
+      "observed_components_cost_ex_water_rub": 45.03566186879275,
+      "conditional_components": [
+        "Кляр",
+        "Сухари Голд",
+        "Нори"
+      ],
+      "catalog_price_rub": 199,
+      "old_fc_at_catalog_price_ex_water": 0.2246225435817672,
+      "trial_fc_at_catalog_price_conditional_ex_water": 0.2625011253153682,
+      "items": [
+        {
+          "product_id": "2d88fd7a-a498-46db-8d8b-ce141250c71a",
+          "name": "Помидор п/ф",
+          "unit": "г",
+          "old_amount": 20.0,
+          "trial_amount": 26,
+          "pricing_amount": 26,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 7.5,
+          "trial_pricing_cost_ex_water_rub": 9.75,
+          "delta_cost_rub": 2.25,
+          "unit_cost_rub": 0.375
+        },
+        {
+          "product_id": "44bc9abc-ab21-4bce-ace9-333e8e2eac80",
+          "name": "Айсберг ",
+          "unit": "г",
+          "old_amount": 10.0,
+          "trial_amount": 19,
+          "pricing_amount": 19,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 2.9024,
+          "trial_pricing_cost_ex_water_rub": 5.51456,
+          "delta_cost_rub": 2.6121600000000003,
+          "unit_cost_rub": 0.29024
+        },
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "unit": "г",
+          "old_amount": 130.0,
+          "trial_amount": 100,
+          "pricing_amount": 100,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 7.505222438681265,
+          "trial_pricing_cost_ex_water_rub": 5.77324802975482,
+          "delta_cost_rub": -1.7319744089264457,
+          "unit_cost_rub": 0.05773248029754819
+        },
+        {
+          "product_id": "901ac275-994e-45a4-8c90-71a3fed3ce43",
+          "name": "Масаго п/ф",
+          "unit": "г",
+          "old_amount": 10.0,
+          "trial_amount": 10,
+          "pricing_amount": 10,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 12.97872340425532,
+          "trial_pricing_cost_ex_water_rub": 12.97872340425532,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 1.297872340425532
+        },
+        {
+          "product_id": "16ff10d9-6516-4a65-a843-fc72c9639e45",
+          "name": "Кляр",
+          "unit": "г",
+          "old_amount": 20.0,
+          "trial_amount": null,
+          "pricing_amount": 20.0,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 0.5820620689655173,
+          "trial_pricing_cost_ex_water_rub": 0.5820620689655173,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 0.029103103448275863
+        },
+        {
+          "product_id": "f1bb5ee8-2f9a-48d2-af15-65c69419568e",
+          "name": "Сухари Голд",
+          "unit": "г",
+          "old_amount": 10.0,
+          "trial_amount": null,
+          "pricing_amount": 10.0,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 1.92,
+          "trial_pricing_cost_ex_water_rub": 1.92,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 0.192
+        },
+        {
+          "product_id": "9d5cfeae-8717-4f4e-903d-6877561bb32c",
+          "name": "Снежный краб полуфабрикат",
+          "unit": "г",
+          "old_amount": 30.0,
+          "trial_amount": 50,
+          "pricing_amount": 50,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 6.611478260869565,
+          "trial_pricing_cost_ex_water_rub": 11.01913043478261,
+          "delta_cost_rub": 4.407652173913045,
+          "unit_cost_rub": 0.22038260869565218
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "unit": "шт",
+          "old_amount": 0.5,
+          "trial_amount": null,
+          "pricing_amount": 0.5,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 4.7,
+          "trial_pricing_cost_ex_water_rub": 4.7,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 9.4
+        }
+      ],
+      "evidence": [
+        {
+          "ingredient": "Рис для роллов пф",
+          "grams": 100.0,
+          "source_id": "v07",
+          "frame": 120,
+          "pts": 4.066667,
+          "note": "Rice alone. Transient98/99 while settling;100g before grasp/removal."
+        },
+        {
+          "ingredient": "Снежный краб полуфабрикат",
+          "grams": 50.0,
+          "source_id": "v07",
+          "frame": 2040,
+          "pts": 68.069989,
+          "note": "Pale paste dispensed from bag on empty platform; after release50g. Then fully scooped toward mat."
+        },
+        {
+          "ingredient": "Помидор п/ф",
+          "grams": 26.0,
+          "source_id": "v07",
+          "frame": 2340,
+          "pts": 78.076667,
+          "note": "Red strips26g at rest. Subsequent29/140 etc coincide with fingers touching platform; do not use them as mass."
+        },
+        {
+          "ingredient": "Айсберг",
+          "grams": 19.0,
+          "source_id": "v07",
+          "frame": 3254,
+          "pts": 108.561667,
+          "note": "Leaf19g dispensed (initial14g then adds). Transfers with remaining3g on scale. Subsequent leaf tearing/selection on mat and possible return of excess to bin; retained mass not separately weighed."
+        },
+        {
+          "ingredient": "Масаго п/ф",
+          "grams": 10.0,
+          "source_id": "v07",
+          "frame": 4378,
+          "pts": 146.051667,
+          "note": "Red granules initially7g, adds to10g hands off platform. Transfers in pinches;3g remains at150s, then below1g residue still visible. Hand-pressure172/362g ignored."
+        },
+        {
+          "ingredient": "Сформованная заготовка",
+          "grams": 201.0,
+          "source_id": "v07",
+          "frame": 6477,
+          "pts": 216.061667,
+          "note": "Uncoated roll alone on platform after explicit cleaning and zero check;201g before grasp/removal."
+        }
+      ],
+      "notes": [
+        "19 г айсберга и 10 г масаго — выданные взвешенные количества. На мате есть отбор листа и остатки. Их точная масса внутри готового изделия не измерена; стоимость не уменьшалась произвольно на разницу масс.",
+        "Сумма отмеренных компонентов 205 г плюс нори не равна взвешенным 201 г заготовки. Остатки, отбор и точность показаний сохранены как ограничение.",
+        "Нори оставлено по исходной карте для условной калькуляции. Размер доли полного листа и его масса отдельно не измерены."
+      ],
+      "weight_note": "До панировки и жарки; готовая жареная масса не измерена."
+    },
+    {
+      "name": "Якудза",
+      "roll_guid": "bd1e0a8b-febb-40fc-a7c3-9690f012dae6",
+      "sources": [
+        "v12",
+        "v11"
+      ],
+      "observed_raw_formed_roll_g": 212,
+      "observed_finished_after_fry_g": null,
+      "old_cost_ex_water_rub": 85.57401675510638,
+      "trial_cost_conditional_ex_water_rub": 91.3114473985954,
+      "delta_cost_rub": 5.73743064348902,
+      "delta_cost_percent": 0.0670464103596804,
+      "observed_components_cost_ex_water_rub": 86.6114473985954,
+      "conditional_components": [
+        "Нори"
+      ],
+      "catalog_price_rub": 330,
+      "old_fc_at_catalog_price_ex_water": 0.25931520228820115,
+      "trial_fc_at_catalog_price_conditional_ex_water": 0.2767013557533194,
+      "items": [
+        {
+          "product_id": "9d5cfeae-8717-4f4e-903d-6877561bb32c",
+          "name": "Снежный краб полуфабрикат",
+          "unit": "г",
+          "old_amount": 30.0,
+          "trial_amount": 52,
+          "pricing_amount": 52,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 6.611478260869565,
+          "trial_pricing_cost_ex_water_rub": 11.459895652173913,
+          "delta_cost_rub": 4.848417391304348,
+          "unit_cost_rub": 0.22038260869565218
+        },
+        {
+          "product_id": "c6f89aab-a5c7-4c4f-bec7-8c21ab2361de",
+          "name": "Семга х/к п/ф",
+          "unit": "г",
+          "old_amount": 30.0,
+          "trial_amount": 30,
+          "pricing_amount": 30,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 61.5246,
+          "trial_pricing_cost_ex_water_rub": 61.5246,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 2.0508200000000003
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "unit": "шт",
+          "old_amount": 0.5,
+          "trial_amount": null,
+          "pricing_amount": 0.5,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 4.7,
+          "trial_pricing_cost_ex_water_rub": 4.7,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 9.4
+        },
+        {
+          "product_id": "a9eb0f18-d512-4053-aeee-19c2034e42fb",
+          "name": "Кунжут белый",
+          "unit": "г",
+          "old_amount": 10.0,
+          "trial_amount": 10,
+          "pricing_amount": 10,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 2.85,
+          "trial_pricing_cost_ex_water_rub": 2.85,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 0.285
+        },
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "unit": "г",
+          "old_amount": 130.0,
+          "trial_amount": 100,
+          "pricing_amount": 100,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 7.505222438681265,
+          "trial_pricing_cost_ex_water_rub": 5.77324802975482,
+          "delta_cost_rub": -1.7319744089264457,
+          "unit_cost_rub": 0.05773248029754819
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "unit": "г",
+          "old_amount": 10.0,
+          "trial_amount": 21,
+          "pricing_amount": 21,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 2.3827160555555555,
+          "trial_pricing_cost_ex_water_rub": 5.003703716666666,
+          "delta_cost_rub": 2.6209876611111107,
+          "unit_cost_rub": 0.23827160555555554
+        }
+      ],
+      "evidence": [
+        {
+          "ingredient": "Рис для роллов пф",
+          "grams": 100,
+          "source_id": "v12",
+          "frame": 60,
+          "pts": 2.066667,
+          "note": "В начале уже взвешен; отдельного набора риса нет.",
+          "confidence": "high"
+        },
+        {
+          "ingredient": "Кунжут белый",
+          "grams": 10,
+          "source_id": "v12",
+          "frame": 1388,
+          "pts": 46.351667,
+          "note": "Банка122г до, обнуление с банкой, затем устойчивое -0.010кг после посыпки.",
+          "confidence": "high"
+        },
+        {
+          "ingredient": "Снежный краб полуфабрикат",
+          "grams": 52,
+          "source_id": "v12",
+          "frame": 1897,
+          "pts": 63.329989,
+          "note": "49г первоначально; добавлено, конечные52г до переноса, не остаток.",
+          "confidence": "high"
+        },
+        {
+          "ingredient": "Огурец п/ф роллы",
+          "grams": 21,
+          "source_id": "v12",
+          "frame": 2549,
+          "pts": 85.076667,
+          "note": "Вся взвешенная кучка до контакта руки, далее переложена.",
+          "confidence": "high"
+        },
+        {
+          "ingredient": "Семга х/к п/ф",
+          "grams": 30,
+          "source_id": "v12",
+          "frame": 3441,
+          "pts": 114.828333,
+          "note": "Устойчивые30г всей кучки до переноса. 26г после снятия не финальная порция.",
+          "confidence": "high"
+        },
+        {
+          "ingredient": "Сформованная заготовка",
+          "grams": 212,
+          "source_id": "v12",
+          "pts": 158.921667,
+          "note": "Масса до панировки/жарки для жареных роллов; отдельный кадр взвешивания, не сумма ингредиентов."
+        }
+      ],
+      "notes": [
+        "Кунжут10 г измерен по тарированной банке. Нарезка записана другим файлом; реальный промежуток между сборкой и резкой не установлен.",
+        "Нори оставлено по исходной карте для условной калькуляции. Размер доли полного листа и его масса отдельно не измерены."
+      ],
+      "weight_note": "До нарезки; не масса контейнера."
+    },
+    {
+      "name": "Камчатский",
+      "roll_guid": "c80e1f8e-1607-44e0-a712-b39361c1dc96",
+      "sources": [
+        "v04"
+      ],
+      "observed_raw_formed_roll_g": 219,
+      "observed_finished_after_fry_g": null,
+      "old_cost_ex_water_rub": 34.13213281066194,
+      "trial_cost_conditional_ex_water_rub": 42.58187241695289,
+      "delta_cost_rub": 8.449739606290947,
+      "delta_cost_percent": 0.24755967208856866,
+      "observed_components_cost_ex_water_rub": 37.88187241695289,
+      "conditional_components": [
+        "Нори"
+      ],
+      "catalog_price_rub": 289,
+      "old_fc_at_catalog_price_ex_water": 0.11810426578083717,
+      "trial_fc_at_catalog_price_conditional_ex_water": 0.14734211908980238,
+      "items": [
+        {
+          "product_id": "9d5cfeae-8717-4f4e-903d-6877561bb32c",
+          "name": "Снежный краб полуфабрикат",
+          "unit": "г",
+          "old_amount": 30.0,
+          "trial_amount": 49,
+          "pricing_amount": 49,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 6.611478260869565,
+          "trial_pricing_cost_ex_water_rub": 10.798747826086958,
+          "delta_cost_rub": 4.187269565217393,
+          "unit_cost_rub": 0.22038260869565218
+        },
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "unit": "г",
+          "old_amount": 130.0,
+          "trial_amount": 100,
+          "pricing_amount": 100,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 7.505222438681265,
+          "trial_pricing_cost_ex_water_rub": 5.77324802975482,
+          "delta_cost_rub": -1.7319744089264457,
+          "unit_cost_rub": 0.05773248029754819
+        },
+        {
+          "product_id": "a9eb0f18-d512-4053-aeee-19c2034e42fb",
+          "name": "Кунжут белый",
+          "unit": "г",
+          "old_amount": 10.0,
+          "trial_amount": 10,
+          "pricing_amount": 10,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 2.85,
+          "trial_pricing_cost_ex_water_rub": 2.85,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 0.285
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "unit": "г",
+          "old_amount": 20.0,
+          "trial_amount": 29,
+          "pricing_amount": 29,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 4.765432111111111,
+          "trial_pricing_cost_ex_water_rub": 6.909876561111111,
+          "delta_cost_rub": 2.14444445,
+          "unit_cost_rub": 0.23827160555555554
+        },
+        {
+          "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+          "name": "Сыр творожный",
+          "unit": "г",
+          "old_amount": 20.0,
+          "trial_amount": 30,
+          "pricing_amount": 30,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 7.7,
+          "trial_pricing_cost_ex_water_rub": 11.549999999999999,
+          "delta_cost_rub": 3.8499999999999988,
+          "unit_cost_rub": 0.385
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "unit": "шт",
+          "old_amount": 0.5,
+          "trial_amount": null,
+          "pricing_amount": 0.5,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 4.7,
+          "trial_pricing_cost_ex_water_rub": 4.7,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 9.4
+        }
+      ],
+      "evidence": [
+        {
+          "ingredient": "Рис для роллов пф",
+          "grams": 100,
+          "source_id": "v04",
+          "frame": 240,
+          "pts": 8.064989,
+          "note": "Stable 7.065–9.332; empty scale158g at10.065 is removal lag, rejected."
+        },
+        {
+          "ingredient": "Снежный краб полуфабрикат",
+          "grams": 49,
+          "source_id": "v04",
+          "frame": 3299,
+          "pts": 110.079989,
+          "note": "Stable after extrusion, before transfer; platform empty0 after113.582."
+        },
+        {
+          "ingredient": "Сыр творожный",
+          "grams": 30,
+          "source_id": "v04",
+          "frame": 3988,
+          "pts": 133.059989,
+          "note": "Stable132.560–133.560;67g while nozzle/hand presses at132.060 is rejected."
+        },
+        {
+          "ingredient": "Огурец п/ф роллы",
+          "grams": 29,
+          "source_id": "v04",
+          "frame": 4588,
+          "pts": 153.073333,
+          "note": "Root independently inspected native frame4588 /v04/root-cucumber-frames/frame-0004.jpg;29g with hands off.31g at152.072 while adding is transient. Residual11g after first transfer is ALSO transferred to same roll; do not treat11 as full cucumber dose."
+        },
+        {
+          "ingredient": "Кунжут белый",
+          "grams": 10,
+          "source_id": "v04",
+          "frame": 2909,
+          "pts": 97.071667,
+          "note": "Root independently inspected /v04/root-mat-sesame/frame-0026.jpg. Jar initially112g; tared0 at86; empty platform-112g; replaced jar shows-10g after dispensing. Empty94g at98.072 is transition, rejected. Cost is10g, not initial jar112g."
+        },
+        {
+          "ingredient": "Заготовка",
+          "grams": 219,
+          "source_id": "v04",
+          "frame": 6552,
+          "pts": 218.579989,
+          "note": "Stable218.313–218.813, no mat/container on platform. Sum ingredient grams218g excludes nori; consistency is not a separate gram measurement of nori."
+        }
+      ],
+      "notes": [
+        "Огурец 29 г подтверждён независимым просмотром кадра PTS153,073. Ранние 31 г в момент добавления и 11 г остатка после частичного переноса не приняты за закладку.",
+        "Кунжут 10 г: банка112 г, тара, повторное взвешивание−10 г. Переходные94 г после снятия банки исключены.",
+        "Нори оставлено по исходной карте для условной калькуляции. Размер доли полного листа и его масса отдельно не измерены."
+      ],
+      "weight_note": "До нарезки; не масса контейнера."
+    },
+    {
+      "name": "Атакама",
+      "roll_guid": "d264e747-e54f-45e3-b0a6-62054b452418",
+      "sources": [
+        "v01",
+        "v13"
+      ],
+      "observed_raw_formed_roll_g": 203,
+      "observed_finished_after_fry_g": null,
+      "old_cost_ex_water_rub": 92.3973166187579,
+      "trial_cost_conditional_ex_water_rub": 117.40436220983146,
+      "delta_cost_rub": 25.007045591073563,
+      "delta_cost_percent": 0.27064688138353143,
+      "observed_components_cost_ex_water_rub": 110.20230014086594,
+      "conditional_components": [
+        "Кляр",
+        "Сухари Голд",
+        "Нори"
+      ],
+      "catalog_price_rub": 230,
+      "old_fc_at_catalog_price_ex_water": 0.4017274635598169,
+      "trial_fc_at_catalog_price_conditional_ex_water": 0.5104537487383977,
+      "items": [
+        {
+          "product_id": "55452094-cdd5-41e2-8437-1e7b74de8d56",
+          "name": "Моцарелла",
+          "unit": "г",
+          "old_amount": 30.0,
+          "trial_amount": 41,
+          "pricing_amount": 41,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 11.4,
+          "trial_pricing_cost_ex_water_rub": 15.58,
+          "delta_cost_rub": 4.18,
+          "unit_cost_rub": 0.38
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "unit": "г",
+          "old_amount": 20.0,
+          "trial_amount": 20,
+          "pricing_amount": 20,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 4.765432111111111,
+          "trial_pricing_cost_ex_water_rub": 4.765432111111111,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 0.23827160555555554
+        },
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "unit": "г",
+          "old_amount": 130.0,
+          "trial_amount": 100,
+          "pricing_amount": 100,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 7.505222438681265,
+          "trial_pricing_cost_ex_water_rub": 5.77324802975482,
+          "delta_cost_rub": -1.7319744089264457,
+          "unit_cost_rub": 0.05773248029754819
+        },
+        {
+          "product_id": "16ff10d9-6516-4a65-a843-fc72c9639e45",
+          "name": "Кляр",
+          "unit": "г",
+          "old_amount": 20.0,
+          "trial_amount": null,
+          "pricing_amount": 20.0,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 0.5820620689655173,
+          "trial_pricing_cost_ex_water_rub": 0.5820620689655173,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 0.029103103448275863
+        },
+        {
+          "product_id": "f1bb5ee8-2f9a-48d2-af15-65c69419568e",
+          "name": "Сухари Голд",
+          "unit": "г",
+          "old_amount": 10.0,
+          "trial_amount": null,
+          "pricing_amount": 10.0,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 1.92,
+          "trial_pricing_cost_ex_water_rub": 1.92,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 0.192
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "unit": "шт",
+          "old_amount": 0.5,
+          "trial_amount": null,
+          "pricing_amount": 0.5,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 4.7,
+          "trial_pricing_cost_ex_water_rub": 4.7,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 9.4
+        },
+        {
+          "product_id": "c6f89aab-a5c7-4c4f-bec7-8c21ab2361de",
+          "name": "Семга х/к п/ф",
+          "unit": "г",
+          "old_amount": 30.0,
+          "trial_amount": 41,
+          "pricing_amount": 41,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 61.5246,
+          "trial_pricing_cost_ex_water_rub": 84.08362000000001,
+          "delta_cost_rub": 22.55902000000001,
+          "unit_cost_rub": 2.0508200000000003
+        }
+      ],
+      "evidence": [
+        {
+          "ingredient": "Рис для роллов пф",
+          "grams": 100.0,
+          "source_id": "v01",
+          "frame": 405,
+          "pts": 13.564989,
+          "note": "99g stable before small additional pinch;100g without hand pressure before removal. Scale empty0 before and after; subsequent additions on mat not proven absent."
+        },
+        {
+          "ingredient": "Моцарелла",
+          "grams": 41.0,
+          "source_id": "v01",
+          "frame": 2444,
+          "pts": 81.566667,
+          "note": "White strips:42g then adjusts to41g; transferred to mat. No tare vessel."
+        },
+        {
+          "ingredient": "Семга х/к п/ф",
+          "grams": 41.0,
+          "source_id": "v01",
+          "frame": 2909,
+          "pts": 97.076667,
+          "note": "Orange strips:29g then adds to41g. Transfers in portions, remaining29 then8 then0; all portions go toward mat."
+        },
+        {
+          "ingredient": "Огурец п/ф роллы",
+          "grams": 20.0,
+          "source_id": "v01",
+          "frame": 3373,
+          "pts": 112.551667,
+          "note": "Green strips20g without pressure; transfers15g, remaining5g then clears platform. Some pieces fall near work surface during handling."
+        },
+        {
+          "ingredient": "Сформованная заготовка",
+          "grams": 203.0,
+          "source_id": "v01",
+          "frame": 5112,
+          "pts": 170.554989,
+          "note": "Uncoated formed roll alone on directly zeroed platform; no fried weight."
+        }
+      ],
+      "notes": [
+        "Нори оставлено по исходной карте для условной калькуляции. Размер доли полного листа и его масса отдельно не измерены."
+      ],
+      "weight_note": "До панировки и жарки; готовая жареная масса не измерена."
+    },
+    {
+      "name": "Жареный с креветкой",
+      "roll_guid": "efc93f40-ac88-4480-b37d-0964c6a2f073",
+      "sources": [
+        "v03",
+        "v02"
+      ],
+      "observed_raw_formed_roll_g": 202,
+      "observed_finished_after_fry_g": null,
+      "old_cost_ex_water_rub": 82.56780106931629,
+      "trial_cost_conditional_ex_water_rub": 102.04337628783773,
+      "delta_cost_rub": 19.475575218521442,
+      "delta_cost_percent": 0.23587373002911338,
+      "observed_components_cost_ex_water_rub": 90.14131421887221,
+      "conditional_components": [
+        "Нори",
+        "Кляр",
+        "Сухари Голд"
+      ],
+      "catalog_price_rub": 260,
+      "old_fc_at_catalog_price_ex_water": 0.3175684656512165,
+      "trial_fc_at_catalog_price_conditional_ex_water": 0.39247452418399126,
+      "items": [
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "unit": "г",
+          "old_amount": 130.0,
+          "trial_amount": 102,
+          "pricing_amount": 102,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 7.505222438681265,
+          "trial_pricing_cost_ex_water_rub": 5.888712990349915,
+          "delta_cost_rub": -1.6165094483313505,
+          "unit_cost_rub": 0.05773248029754819
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "unit": "шт",
+          "old_amount": 1.0,
+          "trial_amount": null,
+          "pricing_amount": 1.0,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 9.4,
+          "trial_pricing_cost_ex_water_rub": 9.4,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 9.4
+        },
+        {
+          "product_id": "cfc06311-539c-4c41-9d99-21baf376c5de",
+          "name": "Креветка п/ф очищ отвар",
+          "unit": "г",
+          "old_amount": 30.0,
+          "trial_amount": 40,
+          "pricing_amount": 40,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 48.32760802748147,
+          "trial_pricing_cost_ex_water_rub": 64.43681070330862,
+          "delta_cost_rub": 16.109202675827156,
+          "unit_cost_rub": 1.6109202675827157
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "unit": "г",
+          "old_amount": 20.0,
+          "trial_amount": 26,
+          "pricing_amount": 26,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 4.765432111111111,
+          "trial_pricing_cost_ex_water_rub": 6.195061744444444,
+          "delta_cost_rub": 1.4296296333333327,
+          "unit_cost_rub": 0.23827160555555554,
+          "measurement_confidence": "medium_last_legible_before_occlusion"
+        },
+        {
+          "product_id": "55452094-cdd5-41e2-8437-1e7b74de8d56",
+          "name": "Моцарелла",
+          "unit": "г",
+          "old_amount": 20.0,
+          "trial_amount": 30,
+          "pricing_amount": 30,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 7.6000000000000005,
+          "trial_pricing_cost_ex_water_rub": 11.4,
+          "delta_cost_rub": 3.8,
+          "unit_cost_rub": 0.38
+        },
+        {
+          "product_id": "a5ee1779-53c0-401e-ba3f-7cecc6a8728c",
+          "name": "Соус Юкихиро(new)",
+          "unit": "г",
+          "old_amount": 10.0,
+          "trial_amount": 9,
+          "pricing_amount": 9,
+          "pricing_status": "measured_dispensed_video",
+          "old_cost_rub": 2.4674764230769233,
+          "trial_pricing_cost_ex_water_rub": 2.220728780769231,
+          "delta_cost_rub": -0.24674764230769242,
+          "unit_cost_rub": 0.24674764230769233
+        },
+        {
+          "product_id": "16ff10d9-6516-4a65-a843-fc72c9639e45",
+          "name": "Кляр",
+          "unit": "г",
+          "old_amount": 20.0,
+          "trial_amount": null,
+          "pricing_amount": 20.0,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 0.5820620689655173,
+          "trial_pricing_cost_ex_water_rub": 0.5820620689655173,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 0.029103103448275863
+        },
+        {
+          "product_id": "f1bb5ee8-2f9a-48d2-af15-65c69419568e",
+          "name": "Сухари Голд",
+          "unit": "г",
+          "old_amount": 10.0,
+          "trial_amount": null,
+          "pricing_amount": 10.0,
+          "pricing_status": "unmeasured_carried_from_iiko_scenario",
+          "old_cost_rub": 1.92,
+          "trial_pricing_cost_ex_water_rub": 1.92,
+          "delta_cost_rub": 0.0,
+          "unit_cost_rub": 0.192
+        }
+      ],
+      "evidence": [
+        {
+          "ingredient": "Рис для роллов пф",
+          "grams": 102,
+          "source_id": "v03",
+          "frame": 375,
+          "pts": 12.564989,
+          "note": "104г первоначально; скорректирован до102г перед снятием.",
+          "confidence": "high"
+        },
+        {
+          "ingredient": "Креветка п/ф очищ отвар",
+          "grams": 40,
+          "source_id": "v03",
+          "frame": 2400,
+          "pts": 80.054989,
+          "note": "35г первоначально; после добавки40г перед переносом. Берем всю порцию, не остаток.",
+          "confidence": "high"
+        },
+        {
+          "ingredient": "Моцарелла",
+          "grams": 30,
+          "source_id": "v03",
+          "frame": 3511,
+          "pts": 117.083333,
+          "note": "Отдельная порция на весах перед переносом.",
+          "confidence": "high"
+        },
+        {
+          "ingredient": "Огурец п/ф роллы",
+          "grams": 26,
+          "source_id": "v03",
+          "frame": 4171,
+          "pts": 139.081667,
+          "note": "22г первоначально, затем26г при свободной руке. Далее руки закрывают шкалу, ломают/собирают соломку; после них стабильного отдельного веса нет. Проверить финальный перенос.",
+          "confidence": "medium"
+        },
+        {
+          "ingredient": "Соус Юкихиро(new)",
+          "grams": 9,
+          "source_id": "v03",
+          "frame": 5536,
+          "pts": 184.576667,
+          "note": "Бутылка152г, обнуление с бутылкой. После нанесения и повторного устойчивого взвешивания -0.009кг.",
+          "confidence": "high"
+        },
+        {
+          "ingredient": "Сформованная заготовка",
+          "grams": 202,
+          "source_id": "v03",
+          "pts": 232.573333,
+          "note": "Масса до панировки/жарки для жареных роллов; отдельный кадр взвешивания, не сумма ингредиентов."
+        }
+      ],
+      "notes": [
+        "Огурец26 г — последнее читаемое показание перед перекрывшими дисплей руками; подтверждение слабее остальных компонентов. Изменение этой закладки на5 г меняет сырьевую сумму примерно на1,19 ₽.",
+        "Сумма прочитанных закладок не точно равна202 г взвешенной заготовки. Она не подгонялась под итоговую массу.",
+        "В конце основного видео в кадре две разные заготовки. Нельзя надёжно приписать наблюдаемую панировку и старт жарки именно взвешенному202-граммовому роллу.",
+        "Нори оставлено по исходной карте для условной калькуляции. Размер доли полного листа и его масса отдельно не измерены."
+      ],
+      "weight_note": "До панировки и жарки; готовая жареная масса не измерена."
+    }
+  ],
+  "source_inventory": "inventory.json",
+  "validation": {
+    "roll_count": 8,
+    "file_count": 13,
+    "all_recipe_raw_prepared_crosschecks_pass": true,
+    "max_leaf_residual": 4.814814814814815e-10,
+    "all_cost_sums_and_deltas_reconciled": true,
+    "unknown_quantities_not_zero": true,
+    "external_clock_verified": false,
+    "full_shift_capacity_estimated": false,
+    "production_mutations": false,
+    "independent_cost_audit": "agent-fried-a/cost-audit.json"
+  },
+  "observation_sources": [
+    "agent-cold/cold-trials-findings.json",
+    "agent-fried-a/result.json",
+    "agent-fried-b/facts-final.json"
+  ]
+}
