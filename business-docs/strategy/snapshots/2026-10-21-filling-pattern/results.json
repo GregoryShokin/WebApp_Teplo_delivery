@@ -255,5 +255,36 @@
   "source_sha256": {
     "business-docs/strategy/snapshots/2026-10-21-video-prototypes/results.json": "10ff8e951784f7081474faad1fe387d552efed5bdbefc8ee1dde55ba6a333c19",
     "business-docs/strategy/snapshots/2026-10-21-video-prototypes/observations.json": "3007a95c9e8e767a08249cd065abb0da74bb836dc9fe68b808c7b5904a5dec04"
-  }
+  },
+  "provisional_observed_groups": [
+    {
+      "group": "Меньшая внутренняя закладка с шапкой",
+      "rolls": [
+        "Лава с креветкой"
+      ],
+      "inside_dispensed_g": [
+        89,
+        89
+      ],
+      "outside_note": "Соус80г; одинаковый калибр основы с другими пробами не установлен."
+    },
+    {
+      "group": "Основной диапазон внутренних закладок",
+      "rolls": [
+        "Фиеста",
+        "Филадельфия темпура",
+        "Сакура",
+        "Якудза",
+        "Камчатский",
+        "Атакама",
+        "Жареный с креветкой"
+      ],
+      "inside_dispensed_g": [
+        102,
+        110
+      ],
+      "note": "По одному примеру каждого состава; различия102–110г не доказывают отдельные классы требуемого количества."
+    }
+  ],
+  "classification_limit": "These are observed recipe/prototype groups, not demonstrated ingredient classes requiring less/more mass for equal geometry. No controlled equal-size comparison or minimum-dose search has been performed. Fiesta110g inside plus38g outside is a counterexample to claiming any outer coating automatically permits less filling."
 }
