@@ -1,0 +1,14 @@
+{
+  "all_8_sums_all_cohorts_and_months": true,
+  "set_packaging_included_once": true,
+  "eight_unique": true,
+  "wholeline_recipe_delta_equals8_once_all16_subsets": true,
+  "maximum_recipe_delta_residual_rub": 1.1408701539039612e-08,
+  "eight_revenue_not_greater_than_wholeline": true,
+  "wholeline_unresolved_issues": 0,
+  "source_sha_frozen": "2826b152a4df7fabaf2cad2fdd464b1872f496c50b2d280396aacb6bbaa5f661",
+  "monthly_totals_sum_to_quarter": true,
+  "no_customer_order_or_auth_fields_in_public_json": true,
+  "html_static_structure_checked": true,
+  "html_visual_render_status": "not_run; file URL browser policy limitation; static structure and source numbers verified"
+}

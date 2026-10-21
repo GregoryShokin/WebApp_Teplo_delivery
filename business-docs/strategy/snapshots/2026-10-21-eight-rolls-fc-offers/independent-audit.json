@@ -1,0 +1,38 @@
+{
+  "as_of": "2026-10-21",
+  "audit_at_utc": "2026-10-21T11:48:13.955785+00:00",
+  "checks": {
+    "lines_sum_matches_orders_current": true,
+    "lines_sum_matches_orders_lighter": true,
+    "order_lines_each_match_current": true,
+    "no_negative_replay_qty": true,
+    "lighter_never_more_food_than_current": true,
+    "bonus_current_capped50_gross": true,
+    "service_and_delivery_cash_tagged": true,
+    "pickup_removed_in_lighter": true,
+    "current_min1700_fixed200_met_on_observed_orders": true,
+    "triplemix_excluded": true,
+    "pricebook_has_no_ambiguous_pizza_base_names": true
+  },
+  "stats": {
+    "orders": 5507,
+    "starter_matched": 4198,
+    "strict_eligible": 2102,
+    "gift_replacements_current": 1109.0,
+    "removed_ladder_qty": 1099.0,
+    "nonfood_delivery_cash": 59579.65,
+    "separate_cash_adjustment_sum": 30390.0
+  },
+  "notes": [
+    "Тройной микс exclusion bug found and fixed by replay-agent; observed22 orders incl2 bonus orders,403rub redeemed.",
+    "All negative discounts are currently labelledservice_fee; raw names contain30135rub actualСервисныйсбор and300rub fghcf. Both cash-only, but label should state adjustment rather than solelyservicefee.",
+    "17 zero-price items in1116 historical gift-ladder orders lack exact POS root-name correspondence; these orders flagged and excluded from strictsubset, full-market scenario retains proxy handling.",
+    "Current monetary promo families observed inQ3 have no time-window-restricted1216/7я usage, so missing hour validation has no effect on thissavedcohort. General function is not fullengine.",
+    "Only19 relevant current rulecards freshlyread; historical unread3cases flagged; broadcurrentreplay explicitly conditional.",
+    "Current pricebook manual visible name+size mapping, not technical analyticId join; pizza base GUID/size and changed brands remainunknown, not coerced.",
+    "Fixed observed bonusrubles and proportionalsensitivity are assumptions; availablebalancessubstitution and newbonusawards not measured.",
+    "Absolute-date choiceexceptChosen not handled generically; currentreadexceptChosen rulehasdate=null, so no observedcohortimpact."
+  ],
+  "script_sha256": "b1b432a0a4d0d946009421c9630af774cbeedbc22818b876f3554eb4f47942e0",
+  "all_specific_checks_pass": true
+}

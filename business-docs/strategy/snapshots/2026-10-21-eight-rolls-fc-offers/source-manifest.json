@@ -1,0 +1,117 @@
+{
+  "as_of": "2026-10-21",
+  "private_archive": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers",
+  "scope": "Chernikova Department.Code2, historical Q3 baskets repriced as scenario",
+  "read_only_sources": true,
+  "no_production_mutations": true,
+  "price_source": "https://teplofood.ru/; pickup Chernikova4V verified by UI",
+  "price_GUID_bridge": "manual exact normalized name and verified size; current storefront technical GUID not obtained",
+  "known_proxies": [
+    "Unknown current non-target basket prices retain observed old gross per unit; non-Starter orders retain observed net/gross ratio.",
+    "Current offer family choice retained per historical Starter order; old bonus spend RUB retained with current eligible caps.",
+    "Two unpublished set-only components use same-set average weights; mixed bundle branch revenue uses fixed observed per-order historical branch-food shares.",
+    "Unmeasured nori/batter/crumbs conditional from old cards; water and out-of-card fryer oil unpriced; wholeline missing0.05kg tuna flakes."
+  ],
+  "source_files": [
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/current-agent/visible-prices.json",
+      "sha256": "2be7778518743ed962b41015f76f73d252659d5ea5f1b217d39627de53ec0068",
+      "bytes": 55445
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/current-agent/details.json",
+      "sha256": "cc3e547bc0b539221beab148a555adf81580a51fa7b521bd665baa6aa99fac38",
+      "bytes": 24255
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/current-agent/promo-target-meals.json",
+      "sha256": "34cdcef5347e3a004f9aec714f9030c7262e03bde4993f6beb034072e8514c41",
+      "bytes": 2903
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/current-agent/source-manifest.json",
+      "sha256": "85af25a65d6530f05caeb541b42de110356cc75154e629b061adf1c7a7774901",
+      "bytes": 11686
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/current-agent/replay-independent-audit.json",
+      "sha256": "60e35d326aeb44d3134e884f3cebf4ba798f8b6619af15f53f4dba3311d65960",
+      "bytes": 2309
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/replay-agent/replay-manifest.json",
+      "sha256": "bc5ff9132ef0bcb3c493aefb2633dedb4e419ae96f21e011ee3024e4fefe0731",
+      "bytes": 9257
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/replay-agent/coverage-aggregate.json",
+      "sha256": "92b925e731263d3d86bf926aecfa683be4503a70fac5b1093d474c083dbbacb7",
+      "bytes": 24694
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/replay-agent/redemption-exclusion-registry.json",
+      "sha256": "bfab456ea61f9bcd70aec21356f2063059f3bfcf2c8b55ea594fcafc2341b795",
+      "bytes": 6323
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/replay-agent/commercial-lines-private.json",
+      "sha256": "2826b152a4df7fabaf2cad2fdd464b1872f496c50b2d280396aacb6bbaa5f661",
+      "bytes": 30996075
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/replay-agent/q3_current_price_replay.py",
+      "sha256": "596b799935f31f684433b7fa4f887971c3f61ac1c550507d64d9e9b952fef0d6",
+      "bytes": 20845
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/sales-agent/replay8-aggregates.json",
+      "sha256": "db6fbd4522f4f12cc98825e60caf8ce0506abc53a57c0049662f60b0d17a1f63",
+      "bytes": 501742
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/sales-agent/replay-wholeline-aggregates.json",
+      "sha256": "5b889712e3f542c174b8e710dedaa86993c872c2e848428f16d10f047f525296",
+      "bytes": 453703
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/sales-agent/current-sets21.json",
+      "sha256": "24d72eb38bab0851ef0308cd8fd610a2561605e25b71982fa11f674976ca728a",
+      "bytes": 269815
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/sales-agent/allocation-templates-current21.json",
+      "sha256": "4f48614be2b96d389a0baae8e600c26e799e97839816dcdddb028c720b13572d",
+      "bytes": 160081
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/sales-agent/wholeline-currentcost-coverage.json",
+      "sha256": "dd86aa0b82c1e2f08e66efc2e0d61dd74a2b82e425708a510858cf44672ff371",
+      "bytes": 106560
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/sales-agent/replay_scope.py",
+      "sha256": "54125d993f14734737bea5fb31d68f5172d053b71cc27bdcee90dfd65459676c",
+      "bytes": 4603
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/sales-agent/aggregate_replay8.py",
+      "sha256": "348fa9fa985c699ea72e296ffc220eb692561e536293c8c806628df337b3a693",
+      "bytes": 8373
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/sales-agent/aggregate_replay_wholeline.py",
+      "sha256": "7a5184234920db6423c389939cf974b277c1072068239af8f3e012000b775dda",
+      "bytes": 6100
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/root/raw/iiko-orders-july-september-private.json",
+      "sha256": "125b3c235594f744cc4f75a9ce10670f7f919b3e18f30021134a2a7e43ebd90f",
+      "bytes": 12776328
+    },
+    {
+      "archive_path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/root/raw/charts21.json",
+      "sha256": "70e8b18eee0734c4b43625577c27b9dddad1f21df2bb1161ec4e9178a92f6283",
+      "bytes": 5929496
+    }
+  ]
+}
