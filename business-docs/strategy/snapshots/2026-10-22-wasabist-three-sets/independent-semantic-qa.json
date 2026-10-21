@@ -1,0 +1,81 @@
+{
+  "audited_on": "2026-10-22",
+  "scope": "Read-only semantic QA of three WASABIST analog-set ingredient-cost models, not an independent purchasing-price or arithmetic audit",
+  "status": "PASS_WITH_STATED_LIMITS",
+  "critical_findings": [],
+  "repo_mutations": false,
+  "audited_files": {
+    "report.html": "8902a7cea059d0816326970e59ca6de8a638e75617cea42e6708e8f4caebe5cc",
+    "inputs.json": "b653a9ef14e79aa0a481ba17cf49d59bd87fd6f77e77740d3fcdedb02a7e9bac",
+    "results.json": "1500a4715342adb445e43c4c79c3552a27aa247a30b9d352f5bda6da885a9198",
+    "live-dom.json": "204592c863a2b6ccd4f09b549991d01648db7e627605f2e6827fc8df81bccb45"
+  },
+  "checks": [
+    {
+      "topic": "Live source coverage",
+      "status": "PASS",
+      "evidence": "live-dom contains three set cards and eight standalone cards. Warm crab standalone recipe/weight remains unknown; no fourth-roll weight reconstructed."
+    },
+    {
+      "topic": "Sauce hats",
+      "status": "PASS",
+      "hat_counts_current75": {
+        "four": 2,
+        "ocean": 2,
+        "kalifila": 1
+      },
+      "evidence": "T,K and M,H and B are valued with Yaki; Z has no sauce hat. M hat originates from photo interpretation, not its published ingredient text."
+    },
+    {
+      "topic": "Published composition versus model override",
+      "status": "PASS",
+      "evidence": "live-dom preserves competitor cheese-sauce wording and M ingredient line without a hat; report identifies Yaki as owner override and photo interpretation separately."
+    },
+    {
+      "topic": "75 g and physical portions",
+      "status": "PASS",
+      "evidence": "75 g is explicitly the entire modelled hat per roll with 70/80 sensitivity, not competitor measurement or calibrated kitchen dose. Fractional amounts are coefficient outputs, not proposed microportion changes."
+    },
+    {
+      "topic": "Current versus future bases",
+      "status": "PASS",
+      "evidence": "Current uses cheese385/kg and current prepared crab220.38/kg; future separately uses cheese500.5/kg and new80/20 crabmix409.41/kg from crab450/kg. These are model bases, not approved procurement. Existing recipe cards unchanged."
+    },
+    {
+      "topic": "Weight-ratio baseline",
+      "status": "PASS",
+      "evidence": "Source catalogue W and versioned chart references are provided. Rice remains130g or120g for crab maki; scaled-source-hat baseline is shown separately from75g scenario."
+    },
+    {
+      "topic": "Input mass versus finished output",
+      "status": "PASS",
+      "evidence": "All finished modelled set weights are null; report calls input sums excluding nori input sums, not ready weight. It explicitly states adaptations and fixed rice do not guarantee competitor output weight."
+    },
+    {
+      "topic": "Takuan unknown",
+      "status": "PASS",
+      "evidence": "Primary Kalifila figure remains551+unpricedtakuan. Current price and drainyield remain unknown. 360/kg dated2023-11-23 and yield0.9 occur only in the labelled illustration, not priced_food_subtotal.",
+      "current75_priced_subtotal_rub": 551.2611845227299,
+      "unpriced_ready_takuan_g": 12.50634379757848,
+      "historical_example_extra_rub": 5.002537519031392
+    },
+    {
+      "topic": "New-line constraints",
+      "status": "PASS",
+      "evidence": "Report and limits explicitly do not claim compliance with new110grice/100–110ginside/30%principal/50gcover rules. Light reference is whole alternate-card sensitivity; approved cards are not trimmed."
+    },
+    {
+      "topic": "Cost completeness",
+      "status": "PASS",
+      "evidence": "Figures are priced-product subtotals, not competitor cost/profit or full Teplo economics. Water/fryer oil/order extras and uncertain packaging are disclosed separately."
+    }
+  ],
+  "remaining_limits_not_errors": [
+    "The exact warm-crab roll recipe and its weight are not established; the Krabik reference is provisional.",
+    "The competitor ingredient grams, cooking losses and real kitchen portions are not measured.",
+    "A scaled standalone analog plus fixed rice may have a different finished size; the model explicitly does not prove identical portions.",
+    "Fryer-oil use, water, side kit, packaging fit and current takuan price/yield remain incomplete.",
+    "75gYaki and alternative full/light fish-cover references are scenarios, not evidence of actual WASABIST serving masses."
+  ],
+  "summary": "No materially misleading formulation found within the reviewed boundaries. Preserve the same caveats in the short user-facing answer; do not relabel the totals as WASABIST actual costs or complete Teplo costs."
+}

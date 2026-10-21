@@ -1,0 +1,80 @@
+{
+  "as_of": "2026-10-22",
+  "status": "PASS",
+  "method": "Independent reconstruction of source upper-level quantities, declared removals/replacements/additions, fixed-rice weight scaling, hat modes and two ingredient-price bases; did not execute calculate.py.",
+  "checks_executed": 2392,
+  "published_checks": 263,
+  "roll_scenarios_audited": 72,
+  "set_scenarios_audited": 24,
+  "errors": [],
+  "set_totals": [
+    {
+      "id": "four",
+      "scenario_subtotals": {
+        "current_scaled_source_hat": 306.73433541867985,
+        "current_70": 319.544458759824,
+        "current_75": 322.81555854470486,
+        "current_80": 326.0866583295857,
+        "future_scaled_source_hat": 329.6028379449924,
+        "future_70": 342.4129612861366,
+        "future_75": 345.6840610710174,
+        "future_80": 348.95516085589827
+      },
+      "light_current75": 322.81555854470486
+    },
+    {
+      "id": "ocean",
+      "scenario_subtotals": {
+        "current_scaled_source_hat": 484.233384855515,
+        "current_70": 493.03342752406206,
+        "current_75": 496.3045273089429,
+        "current_80": 499.57562709382375,
+        "future_scaled_source_hat": 504.77296767371996,
+        "future_70": 513.573010342267,
+        "future_75": 516.8441101271478,
+        "future_80": 520.1152099120287
+      },
+      "light_current75": 437.37581387156945
+    },
+    {
+      "id": "kalifila",
+      "scenario_subtotals": {
+        "current_scaled_source_hat": 543.2480375199682,
+        "current_70": 549.6256346302895,
+        "current_75": 551.2611845227299,
+        "current_80": 552.8967344151703,
+        "future_scaled_source_hat": 562.3531504775204,
+        "future_70": 568.7307475878416,
+        "future_75": 570.366297480282,
+        "future_80": 572.0018473727225
+      },
+      "light_current75": 431.3704268594452
+    }
+  ],
+  "domain_checks": {
+    "fixed_source_rice_g": "130 generally;Krabik120. No future110 override.",
+    "hat75": "exact75g total after weight scaling, not75*k. No yaki added to Z.",
+    "future_override_scope": "only cream0.5005/g andnewcrabmix0.4094109388/g; other current components unchanged.",
+    "takuan": "currentprice/yield unknown, linecostnull, excluded from explicitly priced subtotal. Historical360/y90 separate illustration only.",
+    "light_sensitivity": "whole alternate PhillyLight source recipe with its own235.96g denominator and full quantities, not a partial fish tweak.",
+    "analogs": "candidate/adaptation estimates, not measured competitor weights/recipe/foodcost. Grossinput sum is not finished W."
+  },
+  "audited_files": {
+    "inputs.json": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-wasabist-three-sets/inputs.json",
+      "sha256": "b653a9ef14e79aa0a481ba17cf49d59bd87fd6f77e77740d3fcdedb02a7e9bac"
+    },
+    "results.json": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-wasabist-three-sets/results.json",
+      "sha256": "1500a4715342adb445e43c4c79c3552a27aa247a30b9d352f5bda6da885a9198"
+    },
+    "teplo-analogs.json": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-wasabist-three-sets/teplo-analogs.json",
+      "sha256": "e28fb5e2acba25ffbde85cd5a06fe70bed5faa3fd9facb186fc3411f5cda6090"
+    },
+    "calculate.py": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-wasabist-three-sets/calculate.py",
+      "sha256": "dc54096c47d4b6c3aefa446372733ce9251497fd13b7191a0f085f9db17949b0"
+    }
+  }
+}

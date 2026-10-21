@@ -1,0 +1,2207 @@
+{
+  "as_of": "2026-10-22",
+  "snapshot_data_as_of": "2026-10-21",
+  "status": "read_only_local_analogs_and_current_component_costs_no_future_overrides",
+  "sources": {
+    "products": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/recipes/raw/products.json",
+      "sha256": "ec329226e4c07027fed74bb2c9b7eca9b6495cdc63fa21c668f9c761a9a30eba"
+    },
+    "pricebook": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/costing/pricebook.json",
+      "sha256": "2f264f01a0f0c050e12e8c3eeab6672ee328e8d0031aa23b898652e8a6210876"
+    },
+    "charts21": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/root/raw/charts21.json",
+      "sha256": "70e8b18eee0734c4b43625577c27b9dddad1f21df2bb1161ec4e9178a92f6283"
+    },
+    "ingredient_unit_costs": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/ingredient-unit-costs.json",
+      "sha256": "757e8ae62da3d1213d173458c8c0d945f4e43748250e903cc96dbc31ede15e59"
+    },
+    "fixed_rice_method": {
+      "path": "/Users/grigorii/.codex/skills/teplo-competitor-research/references/costing-method.md",
+      "sha256": "39f9b2054f7b370a33d7583010ba5f874876fd934cc4d6dca30aed227cb92e67"
+    }
+  },
+  "fixed_rice_rule": {
+    "quantity_model": "teplo_weight_ratio_fixed_rice_v1",
+    "formula": "k=W_competitor_published/W_teplo_catalogportion; all upper-level quantities except ready rice scaled byk; rice stays source amount. Nori unit quantity also scaled.",
+    "rice_product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+    "ordinary_source_rice_g": 130,
+    "exception_krabik_source_rice_g": 120,
+    "future110g_not_used": true,
+    "finished_model_weight_g": null,
+    "mass_gap_g": null,
+    "warning": "W may not equal ingredient input totals; never use sumgross as denominator or renormalize to targetweight."
+  },
+  "reference_cards": [
+    {
+      "product_id": "57ec7653-49b0-4d70-a375-60f56184a150",
+      "name": "Филадельфия классик",
+      "deleted": false,
+      "defaultIncludedInMenu": true,
+      "catalog_type": "DISH",
+      "catalog_main_unit": "шт if portion unit",
+      "W_teplo_portion_g": 275.86,
+      "W_basis": "catalog product.unitWeight, dated source snapshot; not calculated from ingredient input sum and not a new physical weighing",
+      "W_weight_scope": "catalog whole standard portion; exact storefront weight not freshly verified",
+      "chart_id": "fb6d08ff-7f87-4866-aa33-26fd69a9aa6a",
+      "chart_date_from": "2025-08-25",
+      "chart_date_to": null,
+      "assembled_amount": 1,
+      "output_comment_raw": "0,2862",
+      "fixed_rice_ready_g": 130.0,
+      "lines": [
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "source_unit": "кг",
+          "amount_in": 0.015,
+          "amount_middle": 0.015,
+          "amount_out": 0.015,
+          "amount_in_g_if_kg": 15.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+          "name": "Сыр творожный",
+          "source_unit": "кг",
+          "amount_in": 0.06,
+          "amount_middle": 0.06,
+          "amount_out": 0.06,
+          "amount_in_g_if_kg": 60.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "source_unit": "кг",
+          "amount_in": 0.13,
+          "amount_middle": 0.13,
+          "amount_out": 0.13,
+          "amount_in_g_if_kg": 130.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "2b9465ac-eab7-4b7c-aa14-548253b02024",
+          "name": "Семга с/м вакуум п/ф",
+          "source_unit": "кг",
+          "amount_in": 0.0799,
+          "amount_middle": 0.0799,
+          "amount_out": 0.0799,
+          "amount_in_g_if_kg": 79.9,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "source_unit": "шт",
+          "amount_in": 0.5,
+          "amount_middle": 0.5,
+          "amount_out": 0.5,
+          "amount_in_g_if_kg": null,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        }
+      ],
+      "priced_materials_subtotal_ex_missing_rub": 228.38570677842483,
+      "missing_costs": [
+        "Вода"
+      ],
+      "weight_warning": "Some outputComment/catalog fields differ; preserve both. Modeled finished W and mass gap remain unknown, do not repair by gross input sum."
+    },
+    {
+      "product_id": "ac00f3e4-8aea-452f-80c6-6b4925d36903",
+      "name": "Филадельфия лайт",
+      "deleted": false,
+      "defaultIncludedInMenu": true,
+      "catalog_type": "DISH",
+      "catalog_main_unit": "шт if portion unit",
+      "W_teplo_portion_g": 235.96,
+      "W_basis": "catalog product.unitWeight, dated source snapshot; not calculated from ingredient input sum and not a new physical weighing",
+      "W_weight_scope": "catalog whole standard portion; exact storefront weight not freshly verified",
+      "chart_id": "cedf5a66-bbf9-412a-b9b1-476a4ca6904a",
+      "chart_date_from": "2025-08-25",
+      "chart_date_to": null,
+      "assembled_amount": 1,
+      "output_comment_raw": "0,2463",
+      "fixed_rice_ready_g": 130.0,
+      "lines": [
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "source_unit": "кг",
+          "amount_in": 0.13,
+          "amount_middle": 0.13,
+          "amount_out": 0.13,
+          "amount_in_g_if_kg": 130.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "source_unit": "шт",
+          "amount_in": 0.5,
+          "amount_middle": 0.5,
+          "amount_out": 0.5,
+          "amount_in_g_if_kg": null,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "source_unit": "кг",
+          "amount_in": 0.015,
+          "amount_middle": 0.015,
+          "amount_out": 0.015,
+          "amount_in_g_if_kg": 15.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+          "name": "Сыр творожный",
+          "source_unit": "кг",
+          "amount_in": 0.06,
+          "amount_middle": 0.06,
+          "amount_out": 0.06,
+          "amount_in_g_if_kg": 60.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "2b9465ac-eab7-4b7c-aa14-548253b02024",
+          "name": "Семга с/м вакуум п/ф",
+          "source_unit": "кг",
+          "amount_in": 0.04,
+          "amount_middle": 0.04,
+          "amount_out": 0.04,
+          "amount_in_g_if_kg": 40.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        }
+      ],
+      "priced_materials_subtotal_ex_missing_rub": 133.75109139380947,
+      "missing_costs": [
+        "Вода"
+      ],
+      "weight_warning": "Some outputComment/catalog fields differ; preserve both. Modeled finished W and mass gap remain unknown, do not repair by gross input sum."
+    },
+    {
+      "product_id": "89b6e6ba-0ac7-4792-b217-8e207067d494",
+      "name": "Калифорния с крабом",
+      "deleted": false,
+      "defaultIncludedInMenu": true,
+      "catalog_type": "DISH",
+      "catalog_main_unit": "шт if portion unit",
+      "W_teplo_portion_g": 213.25,
+      "W_basis": "catalog product.unitWeight, dated source snapshot; not calculated from ingredient input sum and not a new physical weighing",
+      "W_weight_scope": "catalog whole standard portion; exact storefront weight not freshly verified",
+      "chart_id": "83669eff-3ee4-4f43-a842-ac011ed69c91",
+      "chart_date_from": "2025-09-16",
+      "chart_date_to": null,
+      "assembled_amount": 1,
+      "output_comment_raw": "0,2133",
+      "fixed_rice_ready_g": 130.0,
+      "lines": [
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "source_unit": "кг",
+          "amount_in": 0.13,
+          "amount_middle": 0.13,
+          "amount_out": 0.13,
+          "amount_in_g_if_kg": 130.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "source_unit": "шт",
+          "amount_in": 0.5,
+          "amount_middle": 0.5,
+          "amount_out": 0.5,
+          "amount_in_g_if_kg": null,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "source_unit": "кг",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0.02,
+          "amount_in_g_if_kg": 20.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "9d5cfeae-8717-4f4e-903d-6877561bb32c",
+          "name": "Снежный краб полуфабрикат",
+          "source_unit": "кг",
+          "amount_in": 0.04,
+          "amount_middle": 0.04,
+          "amount_out": 0.04,
+          "amount_in_g_if_kg": 40.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "901ac275-994e-45a4-8c90-71a3fed3ce43",
+          "name": "Масаго п/ф",
+          "source_unit": "кг",
+          "amount_in": 0.022,
+          "amount_middle": 0.022,
+          "amount_out": 0.022,
+          "amount_in_g_if_kg": 22.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        }
+      ],
+      "priced_materials_subtotal_ex_missing_rub": 54.339150386980165,
+      "missing_costs": [
+        "Вода"
+      ],
+      "weight_warning": "Some outputComment/catalog fields differ; preserve both. Modeled finished W and mass gap remain unknown, do not repair by gross input sum."
+    },
+    {
+      "product_id": "1ef80392-1c82-4a96-a0cf-320f62b767dd",
+      "name": "Калифорния с креветкой",
+      "deleted": false,
+      "defaultIncludedInMenu": true,
+      "catalog_type": "DISH",
+      "catalog_main_unit": "шт if portion unit",
+      "W_teplo_portion_g": 223.25,
+      "W_basis": "catalog product.unitWeight, dated source snapshot; not calculated from ingredient input sum and not a new physical weighing",
+      "W_weight_scope": "catalog whole standard portion; exact storefront weight not freshly verified",
+      "chart_id": "21eb1616-f564-47d2-8d7d-b98f44156eb3",
+      "chart_date_from": "2025-09-16",
+      "chart_date_to": null,
+      "assembled_amount": 1,
+      "output_comment_raw": "0,2233",
+      "fixed_rice_ready_g": 130.0,
+      "lines": [
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "source_unit": "кг",
+          "amount_in": 0.13,
+          "amount_middle": 0.13,
+          "amount_out": 0.13,
+          "amount_in_g_if_kg": 130.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "source_unit": "шт",
+          "amount_in": 0.5,
+          "amount_middle": 0.5,
+          "amount_out": 0.5,
+          "amount_in_g_if_kg": null,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "source_unit": "кг",
+          "amount_in": 0.015,
+          "amount_middle": 0.015,
+          "amount_out": 0.015,
+          "amount_in_g_if_kg": 15.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "fa5411fe-e0bc-4d84-b1a1-b90eb22b2da0",
+          "name": "Майонез",
+          "source_unit": "кг",
+          "amount_in": 0.01,
+          "amount_middle": 0.01,
+          "amount_out": 0.01,
+          "amount_in_g_if_kg": 10.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "cfc06311-539c-4c41-9d99-21baf376c5de",
+          "name": "Креветка п/ф очищ отвар",
+          "source_unit": "кг",
+          "amount_in": 0.03,
+          "amount_middle": 0.03,
+          "amount_out": 0.03,
+          "amount_in_g_if_kg": 30.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "901ac275-994e-45a4-8c90-71a3fed3ce43",
+          "name": "Масаго п/ф",
+          "source_unit": "кг",
+          "amount_in": 0.022,
+          "amount_middle": 0.022,
+          "amount_out": 0.022,
+          "amount_in_g_if_kg": 22.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "640040d5-61dd-4182-8b63-2bee23dedc9f",
+          "name": "Авокадо п.ф.",
+          "source_unit": "кг",
+          "amount_in": 0.015,
+          "amount_middle": 0.015,
+          "amount_out": 0.015,
+          "amount_in_g_if_kg": 15.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        }
+      ],
+      "priced_materials_subtotal_ex_missing_rub": 101.66999431135775,
+      "missing_costs": [
+        "Вода"
+      ],
+      "weight_warning": "Some outputComment/catalog fields differ; preserve both. Modeled finished W and mass gap remain unknown, do not repair by gross input sum."
+    },
+    {
+      "product_id": "f1d1137b-23a7-4521-bee6-c7b811a7d860",
+      "name": "Запеченная Калифорния",
+      "deleted": false,
+      "defaultIncludedInMenu": true,
+      "catalog_type": "DISH",
+      "catalog_main_unit": "шт if portion unit",
+      "W_teplo_portion_g": 273.25,
+      "W_basis": "catalog product.unitWeight, dated source snapshot; not calculated from ingredient input sum and not a new physical weighing",
+      "W_weight_scope": "catalog whole standard portion; exact storefront weight not freshly verified",
+      "chart_id": "e83786de-2c77-4b1f-94c4-249bb7eca67f",
+      "chart_date_from": "2025-09-16",
+      "chart_date_to": null,
+      "assembled_amount": 1,
+      "output_comment_raw": "0,2733",
+      "fixed_rice_ready_g": 130.0,
+      "lines": [
+        {
+          "product_id": "9d5cfeae-8717-4f4e-903d-6877561bb32c",
+          "name": "Снежный краб полуфабрикат",
+          "source_unit": "кг",
+          "amount_in": 0.04,
+          "amount_middle": 0.04,
+          "amount_out": 0.04,
+          "amount_in_g_if_kg": 40.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "source_unit": "кг",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0.02,
+          "amount_in_g_if_kg": 20.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "source_unit": "кг",
+          "amount_in": 0.13,
+          "amount_middle": 0.13,
+          "amount_out": 0.13,
+          "amount_in_g_if_kg": 130.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "source_unit": "шт",
+          "amount_in": 0.5,
+          "amount_middle": 0.5,
+          "amount_out": 0.5,
+          "amount_in_g_if_kg": null,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "e245e658-299d-4457-98fa-4b59ae9a3f95",
+          "name": "Сырный соус роллы",
+          "source_unit": "кг",
+          "amount_in": 0.06,
+          "amount_middle": 0.06,
+          "amount_out": 0.06,
+          "amount_in_g_if_kg": 60.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "901ac275-994e-45a4-8c90-71a3fed3ce43",
+          "name": "Масаго п/ф",
+          "source_unit": "кг",
+          "amount_in": 0.022,
+          "amount_middle": 0.022,
+          "amount_out": 0.022,
+          "amount_in_g_if_kg": 22.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        }
+      ],
+      "priced_materials_subtotal_ex_missing_rub": 75.31767670276963,
+      "missing_costs": [
+        "Вода"
+      ],
+      "weight_warning": "Some outputComment/catalog fields differ; preserve both. Modeled finished W and mass gap remain unknown, do not repair by gross input sum."
+    },
+    {
+      "product_id": "4e270850-4c16-4759-8657-5928331b350d",
+      "name": "Запеченная Филадельфия",
+      "deleted": false,
+      "defaultIncludedInMenu": true,
+      "catalog_type": "DISH",
+      "catalog_main_unit": "шт if portion unit",
+      "W_teplo_portion_g": 283.25,
+      "W_basis": "catalog product.unitWeight, dated source snapshot; not calculated from ingredient input sum and not a new physical weighing",
+      "W_weight_scope": "catalog whole standard portion; exact storefront weight not freshly verified",
+      "chart_id": "eadf9e4f-15c6-4461-b2c1-e82ffe2414e6",
+      "chart_date_from": "2025-09-16",
+      "chart_date_to": null,
+      "assembled_amount": 1,
+      "output_comment_raw": "0,2833",
+      "fixed_rice_ready_g": 130.0,
+      "lines": [
+        {
+          "product_id": "2b9465ac-eab7-4b7c-aa14-548253b02024",
+          "name": "Семга с/м вакуум п/ф",
+          "source_unit": "кг",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0.02,
+          "amount_in_g_if_kg": 20.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+          "name": "Сыр творожный",
+          "source_unit": "кг",
+          "amount_in": 0.03,
+          "amount_middle": 0.03,
+          "amount_out": 0.03,
+          "amount_in_g_if_kg": 30.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "source_unit": "кг",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0.02,
+          "amount_in_g_if_kg": 20.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "source_unit": "кг",
+          "amount_in": 0.13,
+          "amount_middle": 0.13,
+          "amount_out": 0.13,
+          "amount_in_g_if_kg": 130.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "source_unit": "шт",
+          "amount_in": 0.5,
+          "amount_middle": 0.5,
+          "amount_out": 0.5,
+          "amount_in_g_if_kg": null,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "e245e658-299d-4457-98fa-4b59ae9a3f95",
+          "name": "Сырный соус роллы",
+          "source_unit": "кг",
+          "amount_in": 0.06,
+          "amount_middle": 0.06,
+          "amount_out": 0.06,
+          "amount_in_g_if_kg": 60.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "901ac275-994e-45a4-8c90-71a3fed3ce43",
+          "name": "Масаго п/ф",
+          "source_unit": "кг",
+          "amount_in": 0.022,
+          "amount_middle": 0.022,
+          "amount_out": 0.022,
+          "amount_in_g_if_kg": 22.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        }
+      ],
+      "priced_materials_subtotal_ex_missing_rub": 125.48826979084097,
+      "missing_costs": [
+        "Вода"
+      ],
+      "weight_warning": "Some outputComment/catalog fields differ; preserve both. Modeled finished W and mass gap remain unknown, do not repair by gross input sum."
+    },
+    {
+      "product_id": "efc93f40-ac88-4480-b37d-0964c6a2f073",
+      "name": "Жареный с креветкой",
+      "deleted": false,
+      "defaultIncludedInMenu": true,
+      "catalog_type": "DISH",
+      "catalog_main_unit": "шт if portion unit",
+      "W_teplo_portion_g": 220.0,
+      "W_basis": "catalog product.unitWeight, dated source snapshot; not calculated from ingredient input sum and not a new physical weighing",
+      "W_weight_scope": "catalog whole standard portion; exact storefront weight not freshly verified",
+      "chart_id": "b9916c31-a944-4b31-a4e4-b7c74e5d6ea4",
+      "chart_date_from": "2025-08-25",
+      "chart_date_to": null,
+      "assembled_amount": 1,
+      "output_comment_raw": "0,2325",
+      "fixed_rice_ready_g": 130.0,
+      "lines": [
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "source_unit": "кг",
+          "amount_in": 0.13,
+          "amount_middle": 0.13,
+          "amount_out": 0.13,
+          "amount_in_g_if_kg": 130.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "source_unit": "шт",
+          "amount_in": 1,
+          "amount_middle": 1,
+          "amount_out": 1,
+          "amount_in_g_if_kg": null,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "cfc06311-539c-4c41-9d99-21baf376c5de",
+          "name": "Креветка п/ф очищ отвар",
+          "source_unit": "кг",
+          "amount_in": 0.03,
+          "amount_middle": 0.03,
+          "amount_out": 0.03,
+          "amount_in_g_if_kg": 30.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "source_unit": "кг",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0.02,
+          "amount_in_g_if_kg": 20.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "55452094-cdd5-41e2-8437-1e7b74de8d56",
+          "name": "Моцарелла",
+          "source_unit": "кг",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0.02,
+          "amount_in_g_if_kg": 20.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "a5ee1779-53c0-401e-ba3f-7cecc6a8728c",
+          "name": "Соус Юкихиро(new)",
+          "source_unit": "кг",
+          "amount_in": 0.01,
+          "amount_middle": 0.01,
+          "amount_out": 0.01,
+          "amount_in_g_if_kg": 10.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "16ff10d9-6516-4a65-a843-fc72c9639e45",
+          "name": "Кляр",
+          "source_unit": "кг",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0.01,
+          "amount_in_g_if_kg": 20.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "f1bb5ee8-2f9a-48d2-af15-65c69419568e",
+          "name": "Сухари Голд",
+          "source_unit": "кг",
+          "amount_in": 0.01,
+          "amount_middle": 0.01,
+          "amount_out": 0.01,
+          "amount_in_g_if_kg": 10.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        }
+      ],
+      "priced_materials_subtotal_ex_missing_rub": 82.56780106931626,
+      "missing_costs": [
+        "Вода"
+      ],
+      "weight_warning": "Some outputComment/catalog fields differ; preserve both. Modeled finished W and mass gap remain unknown, do not repair by gross input sum."
+    },
+    {
+      "product_id": "625a6ea2-af09-41de-aacd-4dbd41a9ec78",
+      "name": "Филадельфия темпура",
+      "deleted": false,
+      "defaultIncludedInMenu": true,
+      "catalog_type": "DISH",
+      "catalog_main_unit": "шт if portion unit",
+      "W_teplo_portion_g": 212.0,
+      "W_basis": "catalog product.unitWeight, dated source snapshot; not calculated from ingredient input sum and not a new physical weighing",
+      "W_weight_scope": "catalog whole standard portion; exact storefront weight not freshly verified",
+      "chart_id": "1c9c7db7-5f5c-41ee-b89c-650c5cab8a6f",
+      "chart_date_from": "2025-08-25",
+      "chart_date_to": null,
+      "assembled_amount": 1,
+      "output_comment_raw": "0,2325",
+      "fixed_rice_ready_g": 130.0,
+      "lines": [
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "source_unit": "шт",
+          "amount_in": 1,
+          "amount_middle": 1,
+          "amount_out": 1,
+          "amount_in_g_if_kg": null,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "source_unit": "кг",
+          "amount_in": 0.13,
+          "amount_middle": 0.13,
+          "amount_out": 0.13,
+          "amount_in_g_if_kg": 130.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "2b9465ac-eab7-4b7c-aa14-548253b02024",
+          "name": "Семга с/м вакуум п/ф",
+          "source_unit": "кг",
+          "amount_in": 0.03,
+          "amount_middle": 0.03,
+          "amount_out": 0.03,
+          "amount_in_g_if_kg": 30.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+          "name": "Сыр творожный",
+          "source_unit": "кг",
+          "amount_in": 0.03,
+          "amount_middle": 0.03,
+          "amount_out": 0.03,
+          "amount_in_g_if_kg": 30.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "source_unit": "кг",
+          "amount_in": 0.01,
+          "amount_middle": 0.01,
+          "amount_out": 0.01,
+          "amount_in_g_if_kg": 10.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "16ff10d9-6516-4a65-a843-fc72c9639e45",
+          "name": "Кляр",
+          "source_unit": "кг",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0.02,
+          "amount_in_g_if_kg": 20.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "f1bb5ee8-2f9a-48d2-af15-65c69419568e",
+          "name": "Сухари Голд",
+          "source_unit": "кг",
+          "amount_in": 0.01,
+          "amount_middle": 0.01,
+          "amount_out": 0.01,
+          "amount_in_g_if_kg": 10.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        }
+      ],
+      "priced_materials_subtotal_ex_missing_rub": 104.49384671704847,
+      "missing_costs": [
+        "Вода"
+      ],
+      "weight_warning": "Some outputComment/catalog fields differ; preserve both. Modeled finished W and mass gap remain unknown, do not repair by gross input sum."
+    },
+    {
+      "product_id": "1e4d827e-e228-41f1-af37-e27d4fe8709c",
+      "name": "Яки краб",
+      "deleted": false,
+      "defaultIncludedInMenu": true,
+      "catalog_type": "DISH",
+      "catalog_main_unit": "шт if portion unit",
+      "W_teplo_portion_g": 273.25,
+      "W_basis": "catalog product.unitWeight, dated source snapshot; not calculated from ingredient input sum and not a new physical weighing",
+      "W_weight_scope": "catalog whole standard portion; exact storefront weight not freshly verified",
+      "chart_id": "72801c8d-f5ce-4abd-babc-793d554f2fe8",
+      "chart_date_from": "2025-09-16",
+      "chart_date_to": null,
+      "assembled_amount": 1,
+      "output_comment_raw": "0,2733",
+      "fixed_rice_ready_g": 130.0,
+      "lines": [
+        {
+          "product_id": "9d5cfeae-8717-4f4e-903d-6877561bb32c",
+          "name": "Снежный краб полуфабрикат",
+          "source_unit": "кг",
+          "amount_in": 0.04,
+          "amount_middle": 0.04,
+          "amount_out": 0.04,
+          "amount_in_g_if_kg": 40.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "source_unit": "кг",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0.02,
+          "amount_in_g_if_kg": 20.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "source_unit": "кг",
+          "amount_in": 0.13,
+          "amount_middle": 0.13,
+          "amount_out": 0.13,
+          "amount_in_g_if_kg": 130.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "source_unit": "шт",
+          "amount_in": 0.5,
+          "amount_middle": 0.5,
+          "amount_out": 0.5,
+          "amount_in_g_if_kg": null,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "901ac275-994e-45a4-8c90-71a3fed3ce43",
+          "name": "Масаго п/ф",
+          "source_unit": "кг",
+          "amount_in": 0.022,
+          "amount_middle": 0.022,
+          "amount_out": 0.022,
+          "amount_in_g_if_kg": 22.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "4700248f-233a-4d5a-9f3e-3ceb888e844a",
+          "name": "Соус  Яки п/ф ",
+          "source_unit": "кг",
+          "amount_in": 0.06,
+          "amount_middle": 0.06,
+          "amount_out": 0.06,
+          "amount_in_g_if_kg": 60.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        }
+      ],
+      "priced_materials_subtotal_ex_missing_rub": 73.96574909626527,
+      "missing_costs": [
+        "Вода"
+      ],
+      "weight_warning": "Some outputComment/catalog fields differ; preserve both. Modeled finished W and mass gap remain unknown, do not repair by gross input sum."
+    },
+    {
+      "product_id": "646a1d2c-a966-49ce-a408-4346b9ba21ca",
+      "name": "Крабик",
+      "deleted": false,
+      "defaultIncludedInMenu": false,
+      "catalog_type": "DISH",
+      "catalog_main_unit": "шт if portion unit",
+      "W_teplo_portion_g": 222.5,
+      "W_basis": "catalog product.unitWeight, dated source snapshot; not calculated from ingredient input sum and not a new physical weighing",
+      "W_weight_scope": "catalog whole standard portion; exact storefront weight not freshly verified",
+      "chart_id": "e8bec57c-1593-4811-a60a-b88ebd591c4b",
+      "chart_date_from": "2025-12-01",
+      "chart_date_to": null,
+      "assembled_amount": 1,
+      "output_comment_raw": "0,2225",
+      "fixed_rice_ready_g": 120.0,
+      "lines": [
+        {
+          "product_id": "9d5cfeae-8717-4f4e-903d-6877561bb32c",
+          "name": "Снежный краб полуфабрикат",
+          "source_unit": "кг",
+          "amount_in": 0.03,
+          "amount_middle": 0.03,
+          "amount_out": 0.03,
+          "amount_in_g_if_kg": 30.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "source_unit": "кг",
+          "amount_in": 0.12,
+          "amount_middle": 0.12,
+          "amount_out": 0.12,
+          "amount_in_g_if_kg": 120.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "source_unit": "шт",
+          "amount_in": 1,
+          "amount_middle": 1,
+          "amount_out": 1,
+          "amount_in_g_if_kg": null,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "e245e658-299d-4457-98fa-4b59ae9a3f95",
+          "name": "Сырный соус роллы",
+          "source_unit": "кг",
+          "amount_in": 0.05,
+          "amount_middle": 0.05,
+          "amount_out": 0.05,
+          "amount_in_g_if_kg": 50.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "cb4ed412-ef0b-49c6-ad99-de69553b3238",
+          "name": "Унаги соус",
+          "source_unit": "кг",
+          "amount_in": 0.01,
+          "amount_middle": 0.01,
+          "amount_out": 0.01,
+          "amount_in_g_if_kg": 10.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "a9eb0f18-d512-4053-aeee-19c2034e42fb",
+          "name": "Кунжут белый",
+          "source_unit": "кг",
+          "amount_in": 0.01,
+          "amount_middle": 0.01,
+          "amount_out": 0.01,
+          "amount_in_g_if_kg": 10.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        }
+      ],
+      "priced_materials_subtotal_ex_missing_rub": 44.99818115973325,
+      "missing_costs": [
+        "Вода"
+      ],
+      "weight_warning": "Some outputComment/catalog fields differ; preserve both. Modeled finished W and mass gap remain unknown, do not repair by gross input sum."
+    },
+    {
+      "product_id": "1c521ddd-9577-451a-aa1e-235684e45283",
+      "name": "Бирлого",
+      "deleted": false,
+      "defaultIncludedInMenu": false,
+      "catalog_type": "PREPARED",
+      "catalog_main_unit": "шт if portion unit",
+      "W_teplo_portion_g": 266.0,
+      "W_basis": "catalog product.unitWeight, dated source snapshot; not calculated from ingredient input sum and not a new physical weighing",
+      "W_weight_scope": "catalog whole standard portion; exact storefront weight not freshly verified",
+      "chart_id": "2ee2296d-1511-4235-afb8-b56091837d61",
+      "chart_date_from": "2023-12-31",
+      "chart_date_to": null,
+      "assembled_amount": 1,
+      "output_comment_raw": "",
+      "fixed_rice_ready_g": 130.0,
+      "lines": [
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "source_unit": "кг",
+          "amount_in": 0.13,
+          "amount_middle": 0.13,
+          "amount_out": 0.13,
+          "amount_in_g_if_kg": 130.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "source_unit": "шт",
+          "amount_in": 0.5,
+          "amount_middle": 0.5,
+          "amount_out": 0.5,
+          "amount_in_g_if_kg": null,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+          "name": "Сыр творожный",
+          "source_unit": "кг",
+          "amount_in": 0.03,
+          "amount_middle": 0.03,
+          "amount_out": 0.03,
+          "amount_in_g_if_kg": 30.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "cfc06311-539c-4c41-9d99-21baf376c5de",
+          "name": "Креветка п/ф очищ отвар",
+          "source_unit": "кг",
+          "amount_in": 0.03,
+          "amount_middle": 0.03,
+          "amount_out": 0.03,
+          "amount_in_g_if_kg": 30.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "901ac275-994e-45a4-8c90-71a3fed3ce43",
+          "name": "Масаго п/ф",
+          "source_unit": "кг",
+          "amount_in": 0.015,
+          "amount_middle": 0.015,
+          "amount_out": 0.015,
+          "amount_in_g_if_kg": 15.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "4700248f-233a-4d5a-9f3e-3ceb888e844a",
+          "name": "Соус  Яки п/ф ",
+          "source_unit": "кг",
+          "amount_in": 0.06,
+          "amount_middle": 0.06,
+          "amount_out": 0.06,
+          "amount_in_g_if_kg": 60.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        }
+      ],
+      "priced_materials_subtotal_ex_missing_rub": 111.17751428183081,
+      "missing_costs": [
+        "Вода"
+      ],
+      "weight_warning": "Some outputComment/catalog fields differ; preserve both. Modeled finished W and mass gap remain unknown, do not repair by gross input sum."
+    },
+    {
+      "product_id": "bc91dc42-1246-44b7-a490-35cd268b6fdb",
+      "name": "Креветка манго",
+      "deleted": false,
+      "defaultIncludedInMenu": true,
+      "catalog_type": "DISH",
+      "catalog_main_unit": "шт if portion unit",
+      "W_teplo_portion_g": 221.0,
+      "W_basis": "catalog product.unitWeight, dated source snapshot; not calculated from ingredient input sum and not a new physical weighing",
+      "W_weight_scope": "catalog whole standard portion; exact storefront weight not freshly verified",
+      "chart_id": "96d29dc0-31e6-440e-9af1-e116e9f537a1",
+      "chart_date_from": "2025-08-25",
+      "chart_date_to": null,
+      "assembled_amount": 1,
+      "output_comment_raw": "0,2763",
+      "fixed_rice_ready_g": 130.0,
+      "lines": [
+        {
+          "product_id": "cfc06311-539c-4c41-9d99-21baf376c5de",
+          "name": "Креветка п/ф очищ отвар",
+          "source_unit": "кг",
+          "amount_in": 0.06,
+          "amount_middle": 0.06,
+          "amount_out": 0.06,
+          "amount_in_g_if_kg": 60.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "source_unit": "кг",
+          "amount_in": 0.13,
+          "amount_middle": 0.13,
+          "amount_out": 0.13,
+          "amount_in_g_if_kg": 130.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "source_unit": "шт",
+          "amount_in": 0.5,
+          "amount_middle": 0.5,
+          "amount_out": 0.5,
+          "amount_in_g_if_kg": null,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+          "name": "Сыр творожный",
+          "source_unit": "кг",
+          "amount_in": 0.06,
+          "amount_middle": 0.06,
+          "amount_out": 0.06,
+          "amount_in_g_if_kg": 60.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "source_unit": "кг",
+          "amount_in": 0.015,
+          "amount_middle": 0.015,
+          "amount_out": 0.015,
+          "amount_in_g_if_kg": 15.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "088d384f-8aad-42e0-9b63-b127b7255b05",
+          "name": "Соус манго чили",
+          "source_unit": "кг",
+          "amount_in": 0.01,
+          "amount_middle": 0.01,
+          "amount_out": 0.01,
+          "amount_in_g_if_kg": 10.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        }
+      ],
+      "priced_materials_subtotal_ex_missing_rub": 140.37831257697752,
+      "missing_costs": [
+        "Вода"
+      ],
+      "weight_warning": "Some outputComment/catalog fields differ; preserve both. Modeled finished W and mass gap remain unknown, do not repair by gross input sum."
+    },
+    {
+      "product_id": "414a2c6a-fea3-4b32-a49c-227a30ee7903",
+      "name": "Филадельфия с креветкой нов",
+      "deleted": false,
+      "defaultIncludedInMenu": false,
+      "catalog_type": "PREPARED",
+      "catalog_main_unit": "шт if portion unit",
+      "W_teplo_portion_g": 281.0,
+      "W_basis": "catalog product.unitWeight, dated source snapshot; not calculated from ingredient input sum and not a new physical weighing",
+      "W_weight_scope": "catalog whole standard portion; exact storefront weight not freshly verified",
+      "chart_id": "1d84556a-35a5-4f32-af10-0030963190ed",
+      "chart_date_from": "2023-06-05",
+      "chart_date_to": null,
+      "assembled_amount": 1,
+      "output_comment_raw": "0,2800",
+      "fixed_rice_ready_g": 130.0,
+      "lines": [
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "source_unit": "кг",
+          "amount_in": 0.13,
+          "amount_middle": 0.13,
+          "amount_out": 0.13,
+          "amount_in_g_if_kg": 130.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "source_unit": "шт",
+          "amount_in": 0.5,
+          "amount_middle": 0.5,
+          "amount_out": 0.5,
+          "amount_in_g_if_kg": null,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "d3a1f4a3-1198-45cb-9190-1263a3c76562",
+          "name": "Креветка блок 1,8 кг ",
+          "source_unit": "кг",
+          "amount_in": 0.1,
+          "amount_middle": 0.08,
+          "amount_out": 0.08,
+          "amount_in_g_if_kg": 100.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+          "name": "Сыр творожный",
+          "source_unit": "кг",
+          "amount_in": 0.05,
+          "amount_middle": 0.05,
+          "amount_out": 0.05,
+          "amount_in_g_if_kg": 50.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "640040d5-61dd-4182-8b63-2bee23dedc9f",
+          "name": "Авокадо п.ф.",
+          "source_unit": "кг",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0.02,
+          "amount_in_g_if_kg": 20.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        }
+      ],
+      "priced_materials_subtotal_ex_missing_rub": 139.66415346868126,
+      "missing_costs": [
+        "Вода"
+      ],
+      "weight_warning": "Some outputComment/catalog fields differ; preserve both. Modeled finished W and mass gap remain unknown, do not repair by gross input sum."
+    },
+    {
+      "product_id": "2d8dc533-0d16-4aac-83ae-28ea1b1fd20a",
+      "name": "Калифорния с лососем терияки",
+      "deleted": false,
+      "defaultIncludedInMenu": true,
+      "catalog_type": "DISH",
+      "catalog_main_unit": "шт if portion unit",
+      "W_teplo_portion_g": 223.25,
+      "W_basis": "catalog product.unitWeight, dated source snapshot; not calculated from ingredient input sum and not a new physical weighing",
+      "W_weight_scope": "catalog whole standard portion; exact storefront weight not freshly verified",
+      "chart_id": "7c30cfa5-f8cf-4375-83b3-362fe97eea7c",
+      "chart_date_from": "2025-09-16",
+      "chart_date_to": null,
+      "assembled_amount": 1,
+      "output_comment_raw": "0,2233",
+      "fixed_rice_ready_g": 130.0,
+      "lines": [
+        {
+          "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+          "name": "Рис для роллов пф",
+          "source_unit": "кг",
+          "amount_in": 0.13,
+          "amount_middle": 0.13,
+          "amount_out": 0.13,
+          "amount_in_g_if_kg": 130.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+          "name": "Нори",
+          "source_unit": "шт",
+          "amount_in": 0.5,
+          "amount_middle": 0.5,
+          "amount_out": 0.5,
+          "amount_in_g_if_kg": null,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+          "name": "Сыр творожный",
+          "source_unit": "кг",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0.02,
+          "amount_in_g_if_kg": 20.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "901ac275-994e-45a4-8c90-71a3fed3ce43",
+          "name": "Масаго п/ф",
+          "source_unit": "кг",
+          "amount_in": 0.022,
+          "amount_middle": 0.022,
+          "amount_out": 0.022,
+          "amount_in_g_if_kg": 22.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "3afb7b3f-7a70-4fda-bf4b-e8ce3d670c44",
+          "name": "Томаго",
+          "source_unit": "кг",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0.02,
+          "amount_in_g_if_kg": 20.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "7f7f7e0a-b131-422b-ab41-63f77812f90b",
+          "name": "Лосось терияки",
+          "source_unit": "кг",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0.02,
+          "amount_in_g_if_kg": 20.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        },
+        {
+          "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+          "name": "Огурец п/ф роллы",
+          "source_unit": "кг",
+          "amount_in": 0.01,
+          "amount_middle": 0.01,
+          "amount_out": 0.01,
+          "amount_in_g_if_kg": 10.0,
+          "basis": "source upper-level prepared/GOODS quantity; not finished roll mass"
+        }
+      ],
+      "priced_materials_subtotal_ex_missing_rub": 93.72933405924084,
+      "missing_costs": [
+        "Вода"
+      ],
+      "weight_warning": "Some outputComment/catalog fields differ; preserve both. Modeled finished W and mass gap remain unknown, do not repair by gross input sum."
+    }
+  ],
+  "current_components": [
+    {
+      "product_id": "088d384f-8aad-42e0-9b63-b127b7255b05",
+      "name": "Соус манго чили",
+      "type": "GOODS",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 484.38,
+      "priced_subtotal_ex_missing_per_baseunit": 484.38,
+      "cost_per_ready_or_purchased_g": 0.48438,
+      "cost_per_sheet": null,
+      "basis": "purchased GOODS",
+      "missing": [],
+      "lastpurchase": {
+        "unit_price_rub": 484.38,
+        "purchase_unit": "кг",
+        "price_date": "2026-07-24T09:00:00",
+        "status": "lastpurchase_confirmed"
+      },
+      "chart_id": null,
+      "chart_date_from": null,
+      "chart_output_baseunits": null,
+      "chart_lines": [],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+      "name": "Рис для роллов пф",
+      "type": "PREPARED",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": null,
+      "priced_subtotal_ex_missing_per_baseunit": 57.73248029754819,
+      "cost_per_ready_or_purchased_g": null,
+      "cost_per_sheet": null,
+      "basis": "named preparation; input/output yield already applied once",
+      "missing": [
+        "Вода"
+      ],
+      "lastpurchase": null,
+      "chart_id": "18e9ff7a-3874-417c-8b8e-645af189bb84",
+      "chart_date_from": "2026-06-30",
+      "chart_output_baseunits": 5.3195,
+      "chart_lines": [
+        {
+          "product_id": "a546bbbc-9930-48e2-b0a7-7d9aa669d7a8",
+          "name": "Рис Макото",
+          "amount_in": 2.5,
+          "amount_middle": 2.5,
+          "amount_out": 2.125
+        },
+        {
+          "product_id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+          "name": "Вода",
+          "amount_in": 2.35,
+          "amount_middle": 2.35,
+          "amount_out": 2.0445
+        },
+        {
+          "product_id": "a6f59eec-2ff3-4d91-b64c-3b735a3fb44d",
+          "name": "Мицукан",
+          "amount_in": 1.15,
+          "amount_middle": 1.15,
+          "amount_out": 1.15
+        }
+      ],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "16ff10d9-6516-4a65-a843-fc72c9639e45",
+      "name": "Кляр",
+      "type": "PREPARED",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": null,
+      "priced_subtotal_ex_missing_per_baseunit": 29.103103448275863,
+      "cost_per_ready_or_purchased_g": null,
+      "cost_per_sheet": null,
+      "basis": "named preparation; input/output yield already applied once",
+      "missing": [
+        "Вода"
+      ],
+      "lastpurchase": null,
+      "chart_id": "9284411a-57e1-43a9-bec1-81ba905d26e0",
+      "chart_date_from": "2025-09-10",
+      "chart_output_baseunits": 4.35,
+      "chart_lines": [
+        {
+          "product_id": "94252ade-4208-4f2d-a846-5fff13f8b681",
+          "name": "Яйца",
+          "amount_in": 2,
+          "amount_middle": 2,
+          "amount_out": 2
+        },
+        {
+          "product_id": "2760a59c-85ae-4b38-abfe-870bc8fe4ec5",
+          "name": "Сахар",
+          "amount_in": 0.17,
+          "amount_middle": 0.17,
+          "amount_out": 0.17
+        },
+        {
+          "product_id": "0eef42b7-61d9-4d57-a1de-b8c5016b248e",
+          "name": "мука донские дары ",
+          "amount_in": 1.7,
+          "amount_middle": 1.7,
+          "amount_out": 1.7
+        },
+        {
+          "product_id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+          "name": "Вода",
+          "amount_in": 2.3,
+          "amount_middle": 2.3,
+          "amount_out": 2.3
+        },
+        {
+          "product_id": "c8001807-881c-4f87-bdaf-a1a661d5827d",
+          "name": "Соевый соус ",
+          "amount_in": 0.07,
+          "amount_middle": 0.07,
+          "amount_out": 0.07
+        },
+        {
+          "product_id": "90fc6bd0-4ad1-4e9c-bfee-1eaa49d08242",
+          "name": "Краситель желтый",
+          "amount_in": 0.01,
+          "amount_middle": 0.01,
+          "amount_out": 0.01
+        }
+      ],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+      "name": "Огурец п/ф роллы",
+      "type": "PREPARED",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 238.2716055555555,
+      "priced_subtotal_ex_missing_per_baseunit": 238.2716055555555,
+      "cost_per_ready_or_purchased_g": 0.23827160555555552,
+      "cost_per_sheet": null,
+      "basis": "named preparation; input/output yield already applied once",
+      "missing": [],
+      "lastpurchase": null,
+      "chart_id": "604a3574-88e3-4c4e-81ad-6a8828f4f0b2",
+      "chart_date_from": "2025-04-15",
+      "chart_output_baseunits": 0.54,
+      "chart_lines": [
+        {
+          "product_id": "84a4776c-f0a3-4150-bc22-ac42d3edba49",
+          "name": "Огурцы",
+          "amount_in": 1,
+          "amount_middle": 0.54,
+          "amount_out": 0.54
+        }
+      ],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "25a260e6-cb32-486d-8147-1ed91a9ed7c5",
+      "name": "Креветка в кляре",
+      "type": "PREPARED",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": null,
+      "priced_subtotal_ex_missing_per_baseunit": 1138.8406206896552,
+      "cost_per_ready_or_purchased_g": null,
+      "cost_per_sheet": null,
+      "basis": "named preparation; input/output yield already applied once",
+      "missing": [
+        "Вода"
+      ],
+      "lastpurchase": null,
+      "chart_id": "573a0683-8c5b-4a92-a969-739fcfe66469",
+      "chart_date_from": "2025-09-10",
+      "chart_output_baseunits": 0.025,
+      "chart_lines": [
+        {
+          "product_id": "d3a1f4a3-1198-45cb-9190-1263a3c76562",
+          "name": "Креветка блок 1,8 кг ",
+          "amount_in": 0.0239,
+          "amount_middle": 0.0215,
+          "amount_out": 0.02
+        },
+        {
+          "product_id": "16ff10d9-6516-4a65-a843-fc72c9639e45",
+          "name": "Кляр",
+          "amount_in": 0.005,
+          "amount_middle": 0.005,
+          "amount_out": 0.005
+        },
+        {
+          "product_id": "0eef42b7-61d9-4d57-a1de-b8c5016b248e",
+          "name": "мука донские дары ",
+          "amount_in": 0.02,
+          "amount_middle": 0,
+          "amount_out": 0
+        },
+        {
+          "product_id": "f1bb5ee8-2f9a-48d2-af15-65c69419568e",
+          "name": "Сухари Голд",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0
+        }
+      ],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "2b9465ac-eab7-4b7c-aa14-548253b02024",
+      "name": "Семга с/м вакуум п/ф",
+      "type": "PREPARED",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 2371.7948717948716,
+      "priced_subtotal_ex_missing_per_baseunit": 2371.7948717948716,
+      "cost_per_ready_or_purchased_g": 2.371794871794872,
+      "cost_per_sheet": null,
+      "basis": "named preparation; input/output yield already applied once",
+      "missing": [],
+      "lastpurchase": null,
+      "chart_id": "2aeee468-62ee-4273-9d79-5faa0e974313",
+      "chart_date_from": "2026-07-07",
+      "chart_output_baseunits": 0.78,
+      "chart_lines": [
+        {
+          "product_id": "6ed804ae-8fc2-45ff-bb0b-30ca757fa336",
+          "name": "Семга с/м",
+          "amount_in": 1,
+          "amount_middle": 0.78,
+          "amount_out": 0.78
+        }
+      ],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "34980702-cc24-4875-b57a-f30e5148ef79",
+      "name": "Редька маринованная",
+      "type": "GOODS",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": null,
+      "priced_subtotal_ex_missing_per_baseunit": 0,
+      "cost_per_ready_or_purchased_g": null,
+      "cost_per_sheet": null,
+      "basis": "purchased GOODS",
+      "missing": [
+        "Редька маринованная"
+      ],
+      "lastpurchase": null,
+      "chart_id": null,
+      "chart_date_from": null,
+      "chart_output_baseunits": null,
+      "chart_lines": [],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "3afb7b3f-7a70-4fda-bf4b-e8ce3d670c44",
+      "name": "Томаго",
+      "type": "PREPARED",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 278.1612795262947,
+      "priced_subtotal_ex_missing_per_baseunit": 278.1612795262947,
+      "cost_per_ready_or_purchased_g": 0.2781612795262947,
+      "cost_per_sheet": null,
+      "basis": "named preparation; input/output yield already applied once",
+      "missing": [],
+      "lastpurchase": null,
+      "chart_id": "5c13147a-48c7-4466-af30-a92e945ac1c1",
+      "chart_date_from": "2024-12-31",
+      "chart_output_baseunits": 0.4982,
+      "chart_lines": [
+        {
+          "product_id": "2760a59c-85ae-4b38-abfe-870bc8fe4ec5",
+          "name": "Сахар",
+          "amount_in": 0.03,
+          "amount_middle": 0.03,
+          "amount_out": 0.0249
+        },
+        {
+          "product_id": "d04a0596-fe9b-427a-a632-458f3e4eb155",
+          "name": "Молоко",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0.0172
+        },
+        {
+          "product_id": "aaacbfba-dcdb-4a33-bbf0-f4b40c005395",
+          "name": "Хондаши",
+          "amount_in": 0.003,
+          "amount_middle": 0.003,
+          "amount_out": 0.0025
+        },
+        {
+          "product_id": "94252ade-4208-4f2d-a846-5fff13f8b681",
+          "name": "Яйца",
+          "amount_in": 11.8,
+          "amount_middle": 10.148,
+          "amount_out": 8.7273
+        },
+        {
+          "product_id": "c8001807-881c-4f87-bdaf-a1a661d5827d",
+          "name": "Соевый соус ",
+          "amount_in": 0.02,
+          "amount_middle": 0.02,
+          "amount_out": 0.0172
+        }
+      ],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+      "name": "Нори",
+      "type": "GOODS",
+      "main_unit_id": "cd19b5ea-1b32-a6e5-1df7-5d2784a0549a",
+      "main_unit": "шт",
+      "dated_current_cost_per_baseunit_ex_missing": 9.4,
+      "priced_subtotal_ex_missing_per_baseunit": 9.4,
+      "cost_per_ready_or_purchased_g": null,
+      "cost_per_sheet": 9.4,
+      "basis": "purchased GOODS",
+      "missing": [],
+      "lastpurchase": {
+        "unit_price_rub": 9.4,
+        "purchase_unit": "шт",
+        "price_date": "2026-10-15T15:00:00",
+        "status": "lastpurchase_confirmed"
+      },
+      "chart_id": null,
+      "chart_date_from": null,
+      "chart_output_baseunits": null,
+      "chart_lines": [],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "4700248f-233a-4d5a-9f3e-3ceb888e844a",
+      "name": "Соус  Яки п/ф ",
+      "type": "PREPARED",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 327.1099784880852,
+      "priced_subtotal_ex_missing_per_baseunit": 327.1099784880852,
+      "cost_per_ready_or_purchased_g": 0.32710997848808515,
+      "cost_per_sheet": null,
+      "basis": "named preparation; input/output yield already applied once",
+      "missing": [],
+      "lastpurchase": null,
+      "chart_id": "e36ca51b-865f-44d5-adce-6dd54272512f",
+      "chart_date_from": "2025-09-23",
+      "chart_output_baseunits": 1.0217,
+      "chart_lines": [
+        {
+          "product_id": "fa5411fe-e0bc-4d84-b1a1-b90eb22b2da0",
+          "name": "Майонез",
+          "amount_in": 0.9239,
+          "amount_middle": 0.8777,
+          "amount_out": 0.8777
+        },
+        {
+          "product_id": "901ac275-994e-45a4-8c90-71a3fed3ce43",
+          "name": "Масаго п/ф",
+          "amount_in": 0.05,
+          "amount_middle": 0.049,
+          "amount_out": 0.049
+        },
+        {
+          "product_id": "213ab6c4-dca5-4f6d-abfb-46515764f703",
+          "name": "Пармезан ингредиент",
+          "amount_in": 0.1,
+          "amount_middle": 0.095,
+          "amount_out": 0.095
+        }
+      ],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "55452094-cdd5-41e2-8437-1e7b74de8d56",
+      "name": "Моцарелла",
+      "type": "GOODS",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 380.0,
+      "priced_subtotal_ex_missing_per_baseunit": 380.0,
+      "cost_per_ready_or_purchased_g": 0.38,
+      "cost_per_sheet": null,
+      "basis": "purchased GOODS",
+      "missing": [],
+      "lastpurchase": {
+        "unit_price_rub": 380.0,
+        "purchase_unit": "кг",
+        "price_date": "2026-10-13T12:00:00",
+        "status": "lastpurchase_confirmed"
+      },
+      "chart_id": null,
+      "chart_date_from": null,
+      "chart_output_baseunits": null,
+      "chart_lines": [],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "640040d5-61dd-4182-8b63-2bee23dedc9f",
+      "name": "Авокадо п.ф.",
+      "type": "PREPARED",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 460.44655150000006,
+      "priced_subtotal_ex_missing_per_baseunit": 460.44655150000006,
+      "cost_per_ready_or_purchased_g": 0.4604465515000001,
+      "cost_per_sheet": null,
+      "basis": "named preparation; input/output yield already applied once",
+      "missing": [],
+      "lastpurchase": null,
+      "chart_id": "13c7a7c5-92af-48ae-b3b4-c261dbe8c8cf",
+      "chart_date_from": "2025-09-25",
+      "chart_output_baseunits": 1,
+      "chart_lines": [
+        {
+          "product_id": "ac1f0e82-b742-4b97-a16c-96594c41e1ea",
+          "name": "Авокадо",
+          "amount_in": 1.3,
+          "amount_middle": 0.845,
+          "amount_out": 0.845
+        }
+      ],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "787da6df-9d4c-4fb5-a8b9-546044c15481",
+      "name": "Снежный краб имитация",
+      "type": "GOODS",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 220.0,
+      "priced_subtotal_ex_missing_per_baseunit": 220.0,
+      "cost_per_ready_or_purchased_g": 0.22,
+      "cost_per_sheet": null,
+      "basis": "purchased GOODS",
+      "missing": [],
+      "lastpurchase": {
+        "unit_price_rub": 220.0,
+        "purchase_unit": "кг",
+        "price_date": "2026-10-17T12:00:00",
+        "status": "lastpurchase_confirmed"
+      },
+      "chart_id": null,
+      "chart_date_from": null,
+      "chart_output_baseunits": null,
+      "chart_lines": [],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "7f7f7e0a-b131-422b-ab41-63f77812f90b",
+      "name": "Лосось терияки",
+      "type": "PREPARED",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 1866.2489242558208,
+      "priced_subtotal_ex_missing_per_baseunit": 1866.2489242558208,
+      "cost_per_ready_or_purchased_g": 1.866248924255821,
+      "cost_per_sheet": null,
+      "basis": "named preparation; input/output yield already applied once",
+      "missing": [],
+      "lastpurchase": null,
+      "chart_id": "e32fd7e8-33af-4b9e-a7c7-28ae8ce95f0a",
+      "chart_date_from": "2024-10-30",
+      "chart_output_baseunits": 0.1305,
+      "chart_lines": [
+        {
+          "product_id": "2b9465ac-eab7-4b7c-aa14-548253b02024",
+          "name": "Семга с/м вакуум п/ф",
+          "amount_in": 0.1005,
+          "amount_middle": 0.1005,
+          "amount_out": 0.1005
+        },
+        {
+          "product_id": "7e817df8-56fd-4c2d-8d3d-941dc2620d13",
+          "name": "Терияки",
+          "amount_in": 0.03,
+          "amount_middle": 0.03,
+          "amount_out": 0.03
+        }
+      ],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "901ac275-994e-45a4-8c90-71a3fed3ce43",
+      "name": "Масаго п/ф",
+      "type": "PREPARED",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 1297.872340425532,
+      "priced_subtotal_ex_missing_per_baseunit": 1297.872340425532,
+      "cost_per_ready_or_purchased_g": 1.297872340425532,
+      "cost_per_sheet": null,
+      "basis": "named preparation; input/output yield already applied once",
+      "missing": [],
+      "lastpurchase": null,
+      "chart_id": "5bafd0f5-265d-434d-88c2-b3d9fa9fd039",
+      "chart_date_from": "2025-09-12",
+      "chart_output_baseunits": 0.47,
+      "chart_lines": [
+        {
+          "product_id": "b0dc3cc4-9382-40ee-93f3-6af15d56d8b7",
+          "name": "Масаго",
+          "amount_in": 0.5,
+          "amount_middle": 0.47,
+          "amount_out": 0.47
+        }
+      ],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+      "name": "Сыр творожный",
+      "type": "GOODS",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 385.0,
+      "priced_subtotal_ex_missing_per_baseunit": 385.0,
+      "cost_per_ready_or_purchased_g": 0.385,
+      "cost_per_sheet": null,
+      "basis": "purchased GOODS",
+      "missing": [],
+      "lastpurchase": {
+        "unit_price_rub": 385.0,
+        "purchase_unit": "кг",
+        "price_date": "2026-10-15T09:00:00",
+        "status": "lastpurchase_confirmed"
+      },
+      "chart_id": null,
+      "chart_date_from": null,
+      "chart_output_baseunits": null,
+      "chart_lines": [],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "9d5cfeae-8717-4f4e-903d-6877561bb32c",
+      "name": "Снежный краб полуфабрикат",
+      "type": "PREPARED",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 220.38260869565218,
+      "priced_subtotal_ex_missing_per_baseunit": 220.38260869565218,
+      "cost_per_ready_or_purchased_g": 0.22038260869565218,
+      "cost_per_sheet": null,
+      "basis": "named preparation; input/output yield already applied once",
+      "missing": [],
+      "lastpurchase": null,
+      "chart_id": "a1ad22bc-34f8-466e-8600-93e4dec91229",
+      "chart_date_from": "2026-07-06",
+      "chart_output_baseunits": 0.69,
+      "chart_lines": [
+        {
+          "product_id": "787da6df-9d4c-4fb5-a8b9-546044c15481",
+          "name": "Снежный краб имитация",
+          "amount_in": 0.5,
+          "amount_middle": 0.49,
+          "amount_out": 0.49
+        },
+        {
+          "product_id": "fa5411fe-e0bc-4d84-b1a1-b90eb22b2da0",
+          "name": "Майонез",
+          "amount_in": 0.2,
+          "amount_middle": 0.2,
+          "amount_out": 0.2
+        }
+      ],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "a5ee1779-53c0-401e-ba3f-7cecc6a8728c",
+      "name": "Соус Юкихиро(new)",
+      "type": "PREPARED",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 246.7476423076923,
+      "priced_subtotal_ex_missing_per_baseunit": 246.7476423076923,
+      "cost_per_ready_or_purchased_g": 0.2467476423076923,
+      "cost_per_sheet": null,
+      "basis": "named preparation; input/output yield already applied once",
+      "missing": [],
+      "lastpurchase": null,
+      "chart_id": "f6f8007d-5f93-40e2-856b-d9dd625244d0",
+      "chart_date_from": "2025-09-23",
+      "chart_output_baseunits": 1.04,
+      "chart_lines": [
+        {
+          "product_id": "95143934-e55c-4ad6-8ade-e24dbd6122d6",
+          "name": "Лук перо",
+          "amount_in": 0.1,
+          "amount_middle": 0.095,
+          "amount_out": 0.0713
+        },
+        {
+          "product_id": "c33018ee-a46d-4bfc-b224-3b62a1f69dd0",
+          "name": "Масло растительное",
+          "amount_in": 0.02,
+          "amount_middle": 0.0196,
+          "amount_out": 0.0196
+        },
+        {
+          "product_id": "aaacbfba-dcdb-4a33-bbf0-f4b40c005395",
+          "name": "Хондаши",
+          "amount_in": 0.01,
+          "amount_middle": 0.0098,
+          "amount_out": 0.0098
+        },
+        {
+          "product_id": "cb4ed412-ef0b-49c6-ad99-de69553b3238",
+          "name": "Унаги соус",
+          "amount_in": 0.07,
+          "amount_middle": 0.0686,
+          "amount_out": 0.0631
+        },
+        {
+          "product_id": "fa5411fe-e0bc-4d84-b1a1-b90eb22b2da0",
+          "name": "Майонез",
+          "amount_in": 0.9239,
+          "amount_middle": 0.8777,
+          "amount_out": 0.8777
+        }
+      ],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "a9eb0f18-d512-4053-aeee-19c2034e42fb",
+      "name": "Кунжут белый",
+      "type": "GOODS",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 285.0,
+      "priced_subtotal_ex_missing_per_baseunit": 285.0,
+      "cost_per_ready_or_purchased_g": 0.285,
+      "cost_per_sheet": null,
+      "basis": "purchased GOODS",
+      "missing": [],
+      "lastpurchase": {
+        "unit_price_rub": 285.0,
+        "purchase_unit": "кг",
+        "price_date": "2026-10-01T18:00:00",
+        "status": "lastpurchase_confirmed"
+      },
+      "chart_id": null,
+      "chart_date_from": null,
+      "chart_output_baseunits": null,
+      "chart_lines": [],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "cb4ed412-ef0b-49c6-ad99-de69553b3238",
+      "name": "Унаги соус",
+      "type": "GOODS",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 172.67,
+      "priced_subtotal_ex_missing_per_baseunit": 172.67,
+      "cost_per_ready_or_purchased_g": 0.17267,
+      "cost_per_sheet": null,
+      "basis": "purchased GOODS",
+      "missing": [],
+      "lastpurchase": {
+        "unit_price_rub": 172.67,
+        "purchase_unit": "кг",
+        "price_date": "2026-10-17T12:00:00",
+        "status": "lastpurchase_confirmed"
+      },
+      "chart_id": null,
+      "chart_date_from": null,
+      "chart_output_baseunits": null,
+      "chart_lines": [],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "cfc06311-539c-4c41-9d99-21baf376c5de",
+      "name": "Креветка п/ф очищ отвар",
+      "type": "PREPARED",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 1610.9202675827155,
+      "priced_subtotal_ex_missing_per_baseunit": 1610.9202675827155,
+      "cost_per_ready_or_purchased_g": 1.6109202675827154,
+      "cost_per_sheet": null,
+      "basis": "named preparation; input/output yield already applied once",
+      "missing": [],
+      "lastpurchase": null,
+      "chart_id": "85f19bab-9ac0-4229-a40a-f90eaa0ec143",
+      "chart_date_from": "2026-09-12",
+      "chart_output_baseunits": 1.1062,
+      "chart_lines": [
+        {
+          "product_id": "d3a1f4a3-1198-45cb-9190-1263a3c76562",
+          "name": "Креветка блок 1,8 кг ",
+          "amount_in": 1.8,
+          "amount_middle": 1.53,
+          "amount_out": 1.1062
+        }
+      ],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "d3a1f4a3-1198-45cb-9190-1263a3c76562",
+      "name": "Креветка блок 1,8 кг ",
+      "type": "GOODS",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 990.0,
+      "priced_subtotal_ex_missing_per_baseunit": 990.0,
+      "cost_per_ready_or_purchased_g": 0.99,
+      "cost_per_sheet": null,
+      "basis": "purchased GOODS",
+      "missing": [],
+      "lastpurchase": {
+        "unit_price_rub": 990.0,
+        "purchase_unit": "кг",
+        "price_date": "2026-10-15T09:00:00",
+        "status": "lastpurchase_confirmed"
+      },
+      "chart_id": null,
+      "chart_date_from": null,
+      "chart_output_baseunits": null,
+      "chart_lines": [],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "e245e658-299d-4457-98fa-4b59ae9a3f95",
+      "name": "Сырный соус роллы",
+      "type": "PREPARED",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 349.6421052631579,
+      "priced_subtotal_ex_missing_per_baseunit": 349.6421052631579,
+      "cost_per_ready_or_purchased_g": 0.34964210526315787,
+      "cost_per_sheet": null,
+      "basis": "named preparation; input/output yield already applied once",
+      "missing": [],
+      "lastpurchase": null,
+      "chart_id": "8181df9c-5399-46da-849b-2e6d27675e2c",
+      "chart_date_from": "2025-09-23",
+      "chart_output_baseunits": 0.095,
+      "chart_lines": [
+        {
+          "product_id": "55452094-cdd5-41e2-8437-1e7b74de8d56",
+          "name": "Моцарелла",
+          "amount_in": 0.04,
+          "amount_middle": 0.038,
+          "amount_out": 0.038
+        },
+        {
+          "product_id": "fa5411fe-e0bc-4d84-b1a1-b90eb22b2da0",
+          "name": "Майонез",
+          "amount_in": 0.05,
+          "amount_middle": 0.0475,
+          "amount_out": 0.0475
+        },
+        {
+          "product_id": "213ab6c4-dca5-4f6d-abfb-46515764f703",
+          "name": "Пармезан ингредиент",
+          "amount_in": 0.01,
+          "amount_middle": 0.0095,
+          "amount_out": 0.0095
+        }
+      ],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "f1bb5ee8-2f9a-48d2-af15-65c69419568e",
+      "name": "Сухари Голд",
+      "type": "GOODS",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 192.0,
+      "priced_subtotal_ex_missing_per_baseunit": 192.0,
+      "cost_per_ready_or_purchased_g": 0.192,
+      "cost_per_sheet": null,
+      "basis": "purchased GOODS",
+      "missing": [],
+      "lastpurchase": {
+        "unit_price_rub": 192.0,
+        "purchase_unit": "кг",
+        "price_date": "2026-10-15T12:00:00",
+        "status": "lastpurchase_confirmed"
+      },
+      "chart_id": null,
+      "chart_date_from": null,
+      "chart_output_baseunits": null,
+      "chart_lines": [],
+      "physical_yield_measured": false
+    },
+    {
+      "product_id": "fa5411fe-e0bc-4d84-b1a1-b90eb22b2da0",
+      "name": "Майонез",
+      "type": "GOODS",
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "main_unit": "кг",
+      "dated_current_cost_per_baseunit_ex_missing": 210.32,
+      "priced_subtotal_ex_missing_per_baseunit": 210.32,
+      "cost_per_ready_or_purchased_g": 0.21032,
+      "cost_per_sheet": null,
+      "basis": "purchased GOODS",
+      "missing": [],
+      "lastpurchase": {
+        "unit_price_rub": 210.32,
+        "purchase_unit": "кг",
+        "price_date": "2026-10-15T09:00:00",
+        "status": "lastpurchase_confirmed"
+      },
+      "chart_id": null,
+      "chart_date_from": null,
+      "chart_output_baseunits": null,
+      "chart_lines": [],
+      "physical_yield_measured": false
+    }
+  ],
+  "mapping_recommendations": [
+    {
+      "competitor": "Филадельфия классик",
+      "candidate_ids": [
+        "57ec7653-49b0-4d70-a375-60f56184a150"
+      ],
+      "status": "close baseline",
+      "changes_or_limits": [
+        "Use full source recipe as analogous baseline; actual competitor fish coverage/ingredient grams unknown."
+      ]
+    },
+    {
+      "competitor": "Калифорния классик",
+      "candidate_ids": [
+        "89b6e6ba-0ac7-4792-b217-8e207067d494"
+      ],
+      "status": "close baseline",
+      "changes_or_limits": [
+        "Current crab preparation already includes mayonnaise; do not add mayonnaise twice."
+      ]
+    },
+    {
+      "competitor": "Токио",
+      "candidate_ids": [
+        "4e270850-4c16-4759-8657-5928331b350d",
+        "2d8dc533-0d16-4aac-83ae-28ea1b1fd20a"
+      ],
+      "status": "adapted analog required",
+      "changes_or_limits": [
+        "Baked Philadelphia has salmon,creamcheese,cucumber,masago and60g outer cheese sauce; substitute yaki per owner scenario.",
+        "Competitor grilled salmon processing unknown; Teplo Losos teriyaki is100.5gprepared salmon+30gteriyaki/output130.5g, not proven grilled-fish equivalent.",
+        "No universal75g sauce. Source60g is an explicit benchmark quantity only, not competitor observed grams."
+      ]
+    },
+    {
+      "competitor": "Сузуки",
+      "candidate_ids": [
+        "bc91dc42-1246-44b7-a490-35cd268b6fdb",
+        "ac00f3e4-8aea-452f-80c6-6b4925d36903"
+      ],
+      "status": "no exact verified local card",
+      "changes_or_limits": [
+        "ShrimpMango shares shrimp,creamcheese,cucumber but adds mango sauce; remove explicitly, W of adapted portion not newly established.",
+        "PhiladelphiaLight substitution salmon->shrimp is another explicit adapted template, not a matching existing recipe.",
+        "Nori-out presentation differs; do not silently infer half/fullsheet from name."
+      ]
+    },
+    {
+      "competitor": "Теплая классика с крабом",
+      "candidate_ids": [
+        "646a1d2c-a966-49ce-a408-4346b9ba21ca",
+        "1e4d827e-e228-41f1-af37-e27d4fe8709c"
+      ],
+      "status": "Krabik is closest maki-format baseline",
+      "changes_or_limits": [
+        "Krabik rice120g,full nori,crab mixture30g,outer cheese sauce50g,unagi10g,sesame10g. Replace sauce by yaki explicitly.",
+        "YakiCrab has rice130g and60g yaki but also cucumber20g/masago22g; different roll construction.",
+        "Individual competitor weight unavailable; do not infer as set total minus other standalone weights."
+      ]
+    },
+    {
+      "competitor": "Мацахиро",
+      "candidate_ids": [
+        "625a6ea2-af09-41de-aacd-4dbd41a9ec78"
+      ],
+      "status": "close core filling adapted exterior",
+      "changes_or_limits": [
+        "PhiladelphiaTempura matches salmon,creamcheese,cucumber and fried exterior. Source has no sauce/unagi; explicit yaki/unagi additions need quantity benchmark.",
+        "Parent photo observation: set image shows a sauce hat despite menu text omitting sauce. This is scenario addition, not recovered recipe."
+      ]
+    },
+    {
+      "competitor": "Горячая креветочка",
+      "candidate_ids": [
+        "1c521ddd-9577-451a-aa1e-235684e45283",
+        "efc93f40-ac88-4480-b37d-0964c6a2f073"
+      ],
+      "status": "adapted analog",
+      "changes_or_limits": [
+        "Birlogo provides shrimp30g,cream30g,masago15g,yaki60g; lacks cucumber,unagi,sesame and shrimp-tempura processing.",
+        "FriedShrimp uses mozzarella20g/Yukihiro10g; replacing with creamcheese and adding masago/yaki is an explicit recipe adaptation.",
+        "ShrimpInBatter PF is available but not interchangeable1:1with plain boiled shrimp; use its own recipe yield/cost if selected."
+      ]
+    },
+    {
+      "competitor": "Запеченная Калифорния с креветкой",
+      "candidate_ids": [
+        "1ef80392-1c82-4a96-a0cf-320f62b767dd",
+        "1c521ddd-9577-451a-aa1e-235684e45283"
+      ],
+      "status": "adapted analog",
+      "changes_or_limits": [
+        "CaliforniaShrimp has avocado15g andmayonnaise10g absent from published competitor list; omit only as explicit adaptation. It has no sauce hat.",
+        "Birlogo provides60g yaki but differs by creamcheese and no cucumber. No exact existing baked-shrimpCalifornia card was found.",
+        "Live competitor weight relayed by parent230g;240g cached differs and is not silently merged."
+      ]
+    },
+    {
+      "competitor": "Запеченная Филадельфия",
+      "candidate_ids": [
+        "57ec7653-49b0-4d70-a375-60f56184a150",
+        "ac00f3e4-8aea-452f-80c6-6b4925d36903"
+      ],
+      "status": "seared fish-cover adaptation; no sauce hat",
+      "changes_or_limits": [
+        "Parent photo confirms seared fish cover,unagi,sesame,inside cheese+yellowtakuan. Do not choose sauce-topped Teplo bakedPhiladelphia by name.",
+        "Swap cucumber for takuan explicitly; quantity and resulting weight remain analytical assumptions.",
+        "Current radish price/drain yield unknown. Historical360/kg from2023-11-23 is optional dated raw-price sensitivity only, not current prepared price."
+      ]
+    }
+  ],
+  "owner_application_override": {
+    "all_sauce_hats_for_this_comparison": "yaki",
+    "mass_g": null,
+    "scope": "Only positions with actual/photo-confirmed hat; not all baked names. Do not automatically assign75g.",
+    "hats_by_set_relayed_from_parent": {
+      "four_for_three": [
+        "Токио",
+        "Теплая классика с крабом"
+      ],
+      "ocean": [
+        "Горячая креветочка",
+        "Мацахиро"
+      ],
+      "kalifila": [
+        "Запеченная Калифорния с креветкой"
+      ]
+    },
+    "provenance": "Current user clarification plus parent direct CUA photo observations; not independently re-viewed by this agent."
+  },
+  "price_override_exclusions": {
+    "cream_cheese": "Current385/kg from15Oct, not future500.5/kg.",
+    "crab": "Current raw220/kg from17Oct; current preparation0.5kgraw+0.2kgmayo/output0.69kg=220.3826087/kg. Do not apply450/kg or new80/20.",
+    "eel": "If encountered,use current legacy preparation; no joint future allocation."
+  },
+  "radish_optional_history": {
+    "product_id": "34980702-cc24-4875-b57a-f30e5148ef79",
+    "name": "Редька маринованная",
+    "current_price_rub_per_kg": null,
+    "current_ready_cost_rub_per_kg": null,
+    "drained_yield": null,
+    "historical_raw_price_rub_per_kg": 360,
+    "historical_price_date": "2023-11-23T09:00:00",
+    "audit_source": {
+      "path": "/private/tmp/teplo-radish-final-audit.json",
+      "sha256": "c77d8e12446a3275df125492c1a7734b583bc9da3a5640e39be230c9e28c22b1"
+    },
+    "warning": "Historical cost scenario only; cost forqreadygrams=360*q/(1000*y), yunknown. No automatic100%drainyield."
+  },
+  "limits": [
+    "These are Teplo source analogs and explicit adaptation recommendations, not competitor recipes or costs.",
+    "Source input/middle/out fields preserved; actual finished weight/ingredient masses not measured.",
+    "No live system/API access or new supplier prices; no production/menu/recipe/repository changes.",
+    "Priced material subtotals exclude unknown water and any missing GOODS; no unknown treated as free.",
+    "Oil consumption not present in many original fried cards and must not be silently invented or deemed0."
+  ]
+}

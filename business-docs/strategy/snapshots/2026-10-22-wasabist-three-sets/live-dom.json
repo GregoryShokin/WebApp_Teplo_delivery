@@ -1,0 +1,81 @@
+{
+  "observed_on": "2026-10-22",
+  "method": "current IAB rendered DOM",
+  "sets": [
+    {
+      "image": "https://volgodonsk.wasabist.ru/storage/images/noimage_black_500x333.jpg",
+      "name": "ЧЕТЫРЕ ПО ЦЕНЕ ТРЕХ",
+      "text": "ЧЕТЫРЕ ПО ЦЕНЕ ТРЕХ\nТокио, Сузуки,Калифорния классика, Теплая классика с крабом\n850 гр.\n1 189₽\nВ КОРЗИНУ"
+    },
+    {
+      "image": "https://volgodonsk.wasabist.ru/storage/images/noimage_black_500x333.jpg",
+      "name": "ОКЕАН",
+      "text": "ОКЕАН\nФила классик, Мацахиро, Горячая креветочка, Калифорния классик\n1 399₽\nВ КОРЗИНУ"
+    },
+    {
+      "image": "https://volgodonsk.wasabist.ru/storage/images/noimage_black_500x333.jpg",
+      "name": "КАЛИФИЛА",
+      "text": "КАЛИФИЛА\nФиладельфия классик, Калифорния классик, Запечённая Калифорния с креветкой, Запечённая Филадельфия\nпоказать\n1 439₽\nВ КОРЗИНУ"
+    }
+  ],
+  "set_photos": [
+    {
+      "name": "ЧЕТЫРЕ ПО ЦЕНЕ ТРЕХ",
+      "url": "https://api.wasabi23.ru/storage/items/cc/products/500x500/330/1757182039667_n-4-po-cene-3-x.jpg"
+    },
+    {
+      "name": "ОКЕАН",
+      "url": "https://api.wasabi23.ru/storage/items/cc/products/500x500/351/1769897870946_n-okean.jpg"
+    },
+    {
+      "name": "КАЛИФИЛА",
+      "url": "https://api.wasabi23.ru/storage/items/cc/products/500x500/271/1727381978562_n-kalifila-kalifila.jpg"
+    }
+  ],
+  "cold": [
+    {
+      "image": "https://api.wasabi23.ru/storage/items/cc/products/500x500/111/1680551589265_filadelfiia-klassik.jpg",
+      "name": "ФИЛАДЕЛЬФИЯ КЛАССИК",
+      "text": "ФИЛАДЕЛЬФИЯ КЛАССИК\nЛосось, сыр Cremette\nБелки: 13 гр. Жиры: 22 гр. Угл.: 37 гр.\n220 гр. 394 ккал.\n399₽\nВ КОРЗИНУ"
+    },
+    {
+      "image": "https://api.wasabi23.ru/storage/items/cc/products/500x500/84/1680108931501_kaliforniia-klassik.jpg",
+      "name": "КАЛИФОРНИЯ КЛАССИК",
+      "text": "КАЛИФОРНИЯ КЛАССИК\nСнежный краб, огурец, майонез, масаго красная\nБелки: 10 гр. Жиры: 2 гр. Угл.: 43 гр.\n220 гр. 237 ккал.\n399₽\nВ КОРЗИНУ"
+    },
+    {
+      "image": "https://api.wasabi23.ru/storage/items/cc/products/500x500/104/1680110515385_suzuki.jpg",
+      "name": "СУЗУКИ",
+      "text": "СУЗУКИ\nКреветка, сыр Cremette, огурец\nБелки: 13 гр. Жиры: 8 гр. Угл.: 43 гр.\n220 гр. 299 ккал.\n399₽\nВ КОРЗИНУ"
+    }
+  ],
+  "warm": [
+    {
+      "image": "https://api.wasabi23.ru/storage/items/cc/products/500x500/264/1727383701503_goriacaia-krevetka.jpg",
+      "name": "ГОРЯЧАЯ КРЕВЕТОЧКА",
+      "text": "ГОРЯЧАЯ КРЕВЕТОЧКА\nКреветка в темпуре, сыр Cremette, огурец, зеленая масаго, сырный соус, унаги соус, кунжут\nпоказать\nБелки: 14 гр. Жиры: 31 гр. Угл.: 44 гр.\n240 гр. 510 ккал.\n399₽\nВ КОРЗИНУ"
+    },
+    {
+      "image": "https://api.wasabi23.ru/storage/items/cc/products/500x500/131/1680122098933_zapecennaia-kaliforniia-s-krevetkoi.jpg",
+      "name": "ЗАПЕЧЕННАЯ КАЛИФОРНИЯ С КРЕВЕТКОЙ",
+      "text": "ЗАПЕЧЕННАЯ КАЛИФОРНИЯ С КРЕВЕТКОЙ\nКреветка, огурец, масаго оранжевая, соус сырный, соус унаги, кунжут\nБелки: 16 гр. Жиры: 18 гр. Угл.: 35 гр.\n230 гр. 369 ккал.\n399₽\nВ КОРЗИНУ"
+    },
+    {
+      "image": "https://api.wasabi23.ru/storage/items/cc/products/500x500/135/1680122255143_zapecennaia-filadelfiia.jpg",
+      "name": "ЗАПЕЧЕННАЯ ФИЛАДЕЛЬФИЯ",
+      "text": "ЗАПЕЧЕННАЯ ФИЛАДЕЛЬФИЯ\nЛосось, такуан, сыр Cremette, соус унаги, кунжут\nБелки: 12 гр. Жиры: 17 гр. Угл.: 39 гр.\n230 гр. 357 ккал.\n399₽\nВ КОРЗИНУ"
+    },
+    {
+      "image": "https://api.wasabi23.ru/storage/items/cc/products/500x500/166/1680125270636_tokio.jpg",
+      "name": "ТОКИО",
+      "text": "ТОКИО\nЛосось гриль, сыр Cremette, огурец, масаго оранжевая, соус сырный, соус унаги, кунжут\nпоказать\nБелки: 12 гр. Жиры: 29 гр. Угл.: 37 гр.\n240 гр. 451 ккал.\n399₽\nВ КОРЗИНУ"
+    }
+  ],
+  "tempura": [
+    {
+      "image": "https://api.wasabi23.ru/storage/items/cc/products/500x500/143/1680122778860_macaxiro.jpg",
+      "name": "МАЦАХИРО",
+      "text": "МАЦАХИРО\nЛосось, сыр Cremette, огурец, соус унаги\nБелки: 13 гр. Жиры: 19 гр. Угл.: 52 гр.\n250 гр. 431 ккал.\n399₽\nВ КОРЗИНУ"
+    }
+  ]
+}

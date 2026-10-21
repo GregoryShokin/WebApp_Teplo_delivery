@@ -1,0 +1,362 @@
+{
+  "as_of": "2026-10-22",
+  "pricebook_as_of": "2026-10-21",
+  "owner_override": "All actual/photo-confirmed sauce hats in these three set analogs valued as Teplo yaki. Not all baked rolls have a sauce hat.",
+  "model_guids": {
+    "rice": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+    "yaki": "4700248f-233a-4d5a-9f3e-3ceb888e844a",
+    "takuan": "34980702-cc24-4875-b57a-f30e5148ef79",
+    "cream": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+    "crab_mix": "9d5cfeae-8717-4f4e-903d-6877561bb32c"
+  },
+  "models": [
+    {
+      "id": "P",
+      "name": "Филадельфия классик",
+      "competitor_standalone_weight_g": 220,
+      "reference_card_product_id": "57ec7653-49b0-4d70-a375-60f56184a150",
+      "reference_card_name": "Филадельфия классик",
+      "source_weight_g": 275.86,
+      "quantity_model": "teplo_weight_ratio_fixed_rice_v1_with_explicit_composition_adaptations",
+      "reference_quantities": {
+        "961b99af-f9d6-4eb3-a90f-35a61f9b7508": 60.0,
+        "0cfbf0d5-7236-47bb-9ac2-047b770e55bb": 130.0,
+        "2b9465ac-eab7-4b7c-aa14-548253b02024": 79.9,
+        "402101dc-2501-4341-9c13-d020a38702ab": 0.5
+      },
+      "adaptation_log": {
+        "removed": [
+          "Огурец п/ф роллы"
+        ],
+        "replaced": {},
+        "added_or_replaced_quantities": {}
+      },
+      "notes": [
+        "Competitor lists salmon+cheese, so cucumber removed explicitly. Full standard Teplo fish-cover reference, not future50g cover."
+      ],
+      "light_sensitivity_source_name": "Филадельфия лайт"
+    },
+    {
+      "id": "C",
+      "name": "Калифорния классик",
+      "competitor_standalone_weight_g": 220,
+      "reference_card_product_id": "89b6e6ba-0ac7-4792-b217-8e207067d494",
+      "reference_card_name": "Калифорния с крабом",
+      "source_weight_g": 213.25,
+      "quantity_model": "teplo_weight_ratio_fixed_rice_v1_with_explicit_composition_adaptations",
+      "reference_quantities": {
+        "0cfbf0d5-7236-47bb-9ac2-047b770e55bb": 130.0,
+        "402101dc-2501-4341-9c13-d020a38702ab": 0.5,
+        "189d8c97-a386-4977-ab8f-d3a5282e356a": 20.0,
+        "9d5cfeae-8717-4f4e-903d-6877561bb32c": 40.0,
+        "901ac275-994e-45a4-8c90-71a3fed3ce43": 22.0
+      },
+      "adaptation_log": {
+        "removed": [],
+        "replaced": {},
+        "added_or_replaced_quantities": {}
+      },
+      "notes": [
+        "Current prepared crab already includes mayonnaise; no second mayo."
+      ],
+      "light_sensitivity_source_name": null
+    },
+    {
+      "id": "T",
+      "name": "Токио",
+      "competitor_standalone_weight_g": 240,
+      "reference_card_product_id": "4e270850-4c16-4759-8657-5928331b350d",
+      "reference_card_name": "Запеченная Филадельфия",
+      "source_weight_g": 283.25,
+      "quantity_model": "teplo_weight_ratio_fixed_rice_v1_with_explicit_composition_adaptations",
+      "reference_quantities": {
+        "2b9465ac-eab7-4b7c-aa14-548253b02024": 20.0,
+        "961b99af-f9d6-4eb3-a90f-35a61f9b7508": 30.0,
+        "189d8c97-a386-4977-ab8f-d3a5282e356a": 20.0,
+        "0cfbf0d5-7236-47bb-9ac2-047b770e55bb": 130.0,
+        "402101dc-2501-4341-9c13-d020a38702ab": 0.5,
+        "901ac275-994e-45a4-8c90-71a3fed3ce43": 22.0,
+        "4700248f-233a-4d5a-9f3e-3ceb888e844a": 60.0,
+        "cb4ed412-ef0b-49c6-ad99-de69553b3238": 10,
+        "a9eb0f18-d512-4053-aeee-19c2034e42fb": 10
+      },
+      "adaptation_log": {
+        "removed": [],
+        "replaced": {
+          "Сырный соус роллы": "Соус  Яки п/ф"
+        },
+        "added_or_replaced_quantities": {
+          "Унаги соус": 10,
+          "Кунжут белый": 10
+        }
+      },
+      "notes": [
+        "Source card fish20g is input prepared salmon; competitor grill processing/yield unknown, not a proven cooked equivalent. Unagi/sesame10g benchmark from Krabik, not measured photo dose."
+      ],
+      "light_sensitivity_source_name": null
+    },
+    {
+      "id": "S",
+      "name": "Сузуки",
+      "competitor_standalone_weight_g": 220,
+      "reference_card_product_id": "ac00f3e4-8aea-452f-80c6-6b4925d36903",
+      "reference_card_name": "Филадельфия лайт",
+      "source_weight_g": 235.96,
+      "quantity_model": "teplo_weight_ratio_fixed_rice_v1_with_explicit_composition_adaptations",
+      "reference_quantities": {
+        "0cfbf0d5-7236-47bb-9ac2-047b770e55bb": 130.0,
+        "402101dc-2501-4341-9c13-d020a38702ab": 0.5,
+        "189d8c97-a386-4977-ab8f-d3a5282e356a": 15.0,
+        "961b99af-f9d6-4eb3-a90f-35a61f9b7508": 60.0,
+        "cfc06311-539c-4c41-9d99-21baf376c5de": 40.0
+      },
+      "adaptation_log": {
+        "removed": [],
+        "replaced": {
+          "Семга с/м вакуум п/ф": "Креветка п/ф очищ отвар"
+        },
+        "added_or_replaced_quantities": {}
+      },
+      "notes": [
+        "Analog substitution of40g prepared salmon by40g prepared boiled shrimp. Nori-out presentation does not prove fullsheet; source halfsheet retained."
+      ],
+      "light_sensitivity_source_name": null
+    },
+    {
+      "id": "K",
+      "name": "Тёплая классика с крабом",
+      "competitor_standalone_weight_g": null,
+      "reference_card_product_id": "646a1d2c-a966-49ce-a408-4346b9ba21ca",
+      "reference_card_name": "Крабик",
+      "source_weight_g": 222.5,
+      "quantity_model": "teplo_weight_ratio_fixed_rice_v1_with_explicit_composition_adaptations",
+      "reference_quantities": {
+        "9d5cfeae-8717-4f4e-903d-6877561bb32c": 30.0,
+        "0cfbf0d5-7236-47bb-9ac2-047b770e55bb": 120.0,
+        "402101dc-2501-4341-9c13-d020a38702ab": 1,
+        "cb4ed412-ef0b-49c6-ad99-de69553b3238": 10.0,
+        "a9eb0f18-d512-4053-aeee-19c2034e42fb": 10.0,
+        "4700248f-233a-4d5a-9f3e-3ceb888e844a": 50.0
+      },
+      "adaptation_log": {
+        "removed": [],
+        "replaced": {
+          "Сырный соус роллы": "Соус  Яки п/ф"
+        },
+        "added_or_replaced_quantities": {}
+      },
+      "notes": [
+        "Only competitor name known. Whole Teplo Krabik portion temporarily used,k1; competitor individual weight not inferred as850-680. Unconfirmed recipe."
+      ],
+      "light_sensitivity_source_name": null
+    },
+    {
+      "id": "M",
+      "name": "Мацахиро",
+      "competitor_standalone_weight_g": 250,
+      "reference_card_product_id": "625a6ea2-af09-41de-aacd-4dbd41a9ec78",
+      "reference_card_name": "Филадельфия темпура",
+      "source_weight_g": 212.0,
+      "quantity_model": "teplo_weight_ratio_fixed_rice_v1_with_explicit_composition_adaptations",
+      "reference_quantities": {
+        "402101dc-2501-4341-9c13-d020a38702ab": 1,
+        "0cfbf0d5-7236-47bb-9ac2-047b770e55bb": 130.0,
+        "2b9465ac-eab7-4b7c-aa14-548253b02024": 30.0,
+        "961b99af-f9d6-4eb3-a90f-35a61f9b7508": 30.0,
+        "189d8c97-a386-4977-ab8f-d3a5282e356a": 10.0,
+        "16ff10d9-6516-4a65-a843-fc72c9639e45": 20.0,
+        "f1bb5ee8-2f9a-48d2-af15-65c69419568e": 10.0,
+        "4700248f-233a-4d5a-9f3e-3ceb888e844a": 50,
+        "cb4ed412-ef0b-49c6-ad99-de69553b3238": 10
+      },
+      "adaptation_log": {
+        "removed": [],
+        "replaced": {},
+        "added_or_replaced_quantities": {
+          "Соус  Яки п/ф": 50,
+          "Унаги соус": 10
+        }
+      },
+      "notes": [
+        "Hat visible in both set and individual photo, missing from published ingredient text; added explicitly.50g hat and10g drizzle benchmark from Krabik, then k; not actual competitor grams. Fryer oil unknown."
+      ],
+      "light_sensitivity_source_name": null
+    },
+    {
+      "id": "H",
+      "name": "Горячая креветочка",
+      "competitor_standalone_weight_g": 240,
+      "reference_card_product_id": "1c521ddd-9577-451a-aa1e-235684e45283",
+      "reference_card_name": "Бирлого",
+      "source_weight_g": 266.0,
+      "quantity_model": "teplo_weight_ratio_fixed_rice_v1_with_explicit_composition_adaptations",
+      "reference_quantities": {
+        "0cfbf0d5-7236-47bb-9ac2-047b770e55bb": 130.0,
+        "402101dc-2501-4341-9c13-d020a38702ab": 0.5,
+        "961b99af-f9d6-4eb3-a90f-35a61f9b7508": 30.0,
+        "901ac275-994e-45a4-8c90-71a3fed3ce43": 15.0,
+        "4700248f-233a-4d5a-9f3e-3ceb888e844a": 60.0,
+        "25a260e6-cb32-486d-8147-1ed91a9ed7c5": 37.5,
+        "189d8c97-a386-4977-ab8f-d3a5282e356a": 20,
+        "cb4ed412-ef0b-49c6-ad99-de69553b3238": 10,
+        "a9eb0f18-d512-4053-aeee-19c2034e42fb": 10
+      },
+      "adaptation_log": {
+        "removed": [
+          "Креветка п/ф очищ отвар"
+        ],
+        "replaced": {},
+        "added_or_replaced_quantities": {
+          "Креветка в кляре": 37.5,
+          "Огурец п/ф роллы": 20,
+          "Унаги соус": 10,
+          "Кунжут белый": 10
+        }
+      },
+      "notes": [
+        "37.5g battered-shrimp preparation follows its25goutput=20gshrimp+5gbatter chart, supplying30g chartshrimpoutput; not equal30gplainshrimp. Added cucumber20g benchmark from fried-shrimp card; drizzle/sesame10g from Krabik. Actual frying/yield unknown; fryer oil unpriced."
+      ],
+      "light_sensitivity_source_name": null
+    },
+    {
+      "id": "B",
+      "name": "Запечённая Калифорния с креветкой",
+      "competitor_standalone_weight_g": 230,
+      "reference_card_product_id": "1e4d827e-e228-41f1-af37-e27d4fe8709c",
+      "reference_card_name": "Яки краб",
+      "source_weight_g": 273.25,
+      "quantity_model": "teplo_weight_ratio_fixed_rice_v1_with_explicit_composition_adaptations",
+      "reference_quantities": {
+        "189d8c97-a386-4977-ab8f-d3a5282e356a": 20.0,
+        "0cfbf0d5-7236-47bb-9ac2-047b770e55bb": 130.0,
+        "402101dc-2501-4341-9c13-d020a38702ab": 0.5,
+        "901ac275-994e-45a4-8c90-71a3fed3ce43": 22.0,
+        "4700248f-233a-4d5a-9f3e-3ceb888e844a": 60.0,
+        "cfc06311-539c-4c41-9d99-21baf376c5de": 40.0,
+        "cb4ed412-ef0b-49c6-ad99-de69553b3238": 10,
+        "a9eb0f18-d512-4053-aeee-19c2034e42fb": 10
+      },
+      "adaptation_log": {
+        "removed": [],
+        "replaced": {
+          "Снежный краб полуфабрикат": "Креветка п/ф очищ отвар"
+        },
+        "added_or_replaced_quantities": {
+          "Унаги соус": 10,
+          "Кунжут белый": 10
+        }
+      },
+      "notes": [
+        "Replace40g prepared crab by40g prepared shrimp explicitly. Base has no inside cheese/mayo/avocado. Current live230g selected over cached240."
+      ],
+      "light_sensitivity_source_name": null
+    },
+    {
+      "id": "Z",
+      "name": "Запечённая Филадельфия",
+      "competitor_standalone_weight_g": 230,
+      "reference_card_product_id": "57ec7653-49b0-4d70-a375-60f56184a150",
+      "reference_card_name": "Филадельфия классик",
+      "source_weight_g": 275.86,
+      "quantity_model": "teplo_weight_ratio_fixed_rice_v1_with_explicit_composition_adaptations",
+      "reference_quantities": {
+        "961b99af-f9d6-4eb3-a90f-35a61f9b7508": 60.0,
+        "0cfbf0d5-7236-47bb-9ac2-047b770e55bb": 130.0,
+        "2b9465ac-eab7-4b7c-aa14-548253b02024": 79.9,
+        "402101dc-2501-4341-9c13-d020a38702ab": 0.5,
+        "34980702-cc24-4875-b57a-f30e5148ef79": 15.0,
+        "cb4ed412-ef0b-49c6-ad99-de69553b3238": 10,
+        "a9eb0f18-d512-4053-aeee-19c2034e42fb": 10
+      },
+      "adaptation_log": {
+        "removed": [],
+        "replaced": {
+          "Огурец п/ф роллы": "Редька маринованная"
+        },
+        "added_or_replaced_quantities": {
+          "Унаги соус": 10,
+          "Кунжут белый": 10
+        }
+      },
+      "notes": [
+        "Individual photo shows seared fish cover, not a saucehat. Swap15g cucumber by15greadytakuan as analytical benchmark; current takuan purchase price/drainyield unknown, not free."
+      ],
+      "light_sensitivity_source_name": "Филадельфия лайт"
+    }
+  ],
+  "sets": [
+    {
+      "id": "four",
+      "name": "Четыре по цене трёх",
+      "price_rub": 1189,
+      "published_set_weight_g": 850,
+      "pieces": 32,
+      "rolls": [
+        "T",
+        "S",
+        "C",
+        "K"
+      ]
+    },
+    {
+      "id": "ocean",
+      "name": "Океан",
+      "price_rub": 1399,
+      "published_set_weight_g": null,
+      "pieces": 32,
+      "rolls": [
+        "P",
+        "M",
+        "H",
+        "C"
+      ]
+    },
+    {
+      "id": "kalifila",
+      "name": "Калифила",
+      "price_rub": 1439,
+      "published_set_weight_g": null,
+      "pieces": 32,
+      "rolls": [
+        "P",
+        "C",
+        "B",
+        "Z"
+      ]
+    }
+  ],
+  "hat_modes": [
+    "scaled_source_hat",
+    70,
+    75,
+    80
+  ],
+  "future_price_overrides_per_ready_g": {
+    "961b99af-f9d6-4eb3-a90f-35a61f9b7508": 0.5005,
+    "9d5cfeae-8717-4f4e-903d-6877561bb32c": 0.4094109387755102
+  },
+  "future_override_basis": "Only future cream+30% and crab450kg/new80:20 mix. Other components remain dated current recipes/costs; not approved procurement.",
+  "box_proxy_rub_per_set": 11,
+  "radish_current_price": null,
+  "radish_historical_example": {
+    "purchased_price_rub_kg": 360,
+    "date": "2023-11-23",
+    "assumed_drained_yield": 0.9,
+    "warning": "Not current quote and not measured yield; illustration of unpriced term only, never included in confirmed subtotal."
+  },
+  "source_sha256": {
+    "teplo-analogs.json": "e28fb5e2acba25ffbde85cd5a06fe70bed5faa3fd9facb186fc3411f5cda6090",
+    "web-audit.json": "131d71b75766d921aada8462abf4419dd6c969959d96f648d4273122b3bd0fc6",
+    "live-dom.json": "204592c863a2b6ccd4f09b549991d01648db7e627605f2e6827fc8df81bccb45"
+  },
+  "limits": [
+    "Estimated costs of our ingredient analogs, not competitor recipe/cost/profit.",
+    "75g hat is our paper serving scenario with70/80 sensitivity, not observed competitor mass. Source-scaled benchmark remains separate.",
+    "Original cards/sets/menu unmodified. Adaptations are analytical, not approved production changes or claimed compliance with new100–110g/30%/50gcover rules.",
+    "Catalog source W is a dated portion reference, not sum of gross inputs; source outputComments disagree for some cards. Fixed rice and changes may not reproduce competitor finished mass.",
+    "Finished modeled mass/massgap unknown. Input component grams exclude nori mass and do not equal finished portion.",
+    "850g set total not split into invented component weights. Warm-crab k1 provisional ownportion, not matched size.",
+    "Takuan price/drainyield unknown, historical360 illustrative only. Water and fryer oil not priced; packaging/order sidekit/delivery/labour/taxes/equipment separate.",
+    "Scale-factor gram fractions are analytical coefficients, not proposed physical kitchen dosing or a reason to trim approved cards."
+  ]
+}

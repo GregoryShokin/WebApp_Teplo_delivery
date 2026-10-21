@@ -1,0 +1,14 @@
+{
+  "status": "PASS_WITH_STATED_LIMITS",
+  "calculator_checks": 263,
+  "independent_numeric_checks": 2392,
+  "independent_semantic_review": "PASS_WITH_STATED_LIMITS",
+  "live_website_verified": "current IAB rendered DOM;3 sets and8individualrolls",
+  "photo_review": "3 set originals plus individual seared Philadelphia and Macahiro; hats2/2/1",
+  "html_static_structure": "PASS:3images,22table rows, local references resolve",
+  "html_visual_preview": "Not performed: CUA disallowed file protocol; no workaround attempted.",
+  "current_takuan_cost": null,
+  "finished_model_weight": null,
+  "source_cards_or_production_changed": false,
+  "git_diff_check": "PASS"
+}

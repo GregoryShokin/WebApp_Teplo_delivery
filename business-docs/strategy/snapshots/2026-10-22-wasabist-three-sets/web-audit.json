@@ -1,0 +1,316 @@
+{
+  "audit_date": "2026-10-22",
+  "brand": "WASABIST",
+  "city": "Волгодонск",
+  "location_context_published": "б-р Великой победы 40",
+  "task_scope": "Published ingredients and whole-roll weights for nine unique rolls in three sets; read-only web audit, no economic modelling",
+  "provenance_limits": [
+    "Roll ingredient/weight observations are official-domain search-index copies, not live UI observations by this agent.",
+    "Direct web open/click of roll categories returned cache miss during the earlier narrow audit. Parent separately reports live CUA verification for three rolls; those parent observations are not claimed as this agent's evidence.",
+    "Published ingredient lists do not establish ingredient grams, rice/nori grams, processing yields, sauce-hat grams, or full recipe completeness.",
+    "A sauce absent from a published list is not proof that the real kitchen omits it.",
+    "The user's Yaki-only sauce-hat instruction is a separate Teplo-model override; published competitor cheese sauce remains cheese sauce in these raw observations.",
+    "Similar names are not proof of identical set and standalone recipes; no numeric recipe IDs were observed.",
+    "No fourth-roll weight inferred by subtracting other standalone weights from the set weight."
+  ],
+  "sets": [
+    {
+      "name": "Океан",
+      "price_rub": 1399,
+      "whole_set_weight_g": null,
+      "pieces": 32,
+      "roll_names_published": [
+        "Фила классик",
+        "Мацахиро",
+        "Горячая креветочка",
+        "Калифорния классик"
+      ],
+      "url": "https://volgodonsk.wasabist.ru/shop/nabory.html",
+      "source_kind": "official_search_index",
+      "web_source_refs": [
+        "turn50search0"
+      ],
+      "crawl_label": "5 months ago",
+      "note": "Фила классик is a shortened published set name; mapped candidate is Филадельфия классик, numeric-ID identity not verified here."
+    },
+    {
+      "name": "Калифила",
+      "price_rub": 1439,
+      "whole_set_weight_g": null,
+      "pieces": 32,
+      "roll_names_published": [
+        "Филадельфия классик",
+        "Калифорния классик",
+        "Запечённая Калифорния с креветкой",
+        "Запечённая Филадельфия"
+      ],
+      "url": "https://volgodonsk.wasabist.ru/shop/nabory.html",
+      "source_kind": "official_search_index",
+      "web_source_refs": [
+        "turn50search0"
+      ],
+      "crawl_label": "5 months ago"
+    },
+    {
+      "name": "Четыре по цене трех",
+      "price_rub": 1189,
+      "whole_set_weight_g": 850,
+      "pieces": 32,
+      "roll_names_published": [
+        "Токио",
+        "Сузуки",
+        "Калифорния классика",
+        "Теплая классика с крабом"
+      ],
+      "url": "https://volgodonsk.wasabist.ru/shop/nabory.html",
+      "source_kind": "official_search_index",
+      "web_source_refs": [
+        "turn50search0"
+      ],
+      "crawl_label": "5 months ago",
+      "note": "Калифорния классика is preserved as the raw set name; standalone card is Калифорния классик. No fourth-roll weight reconstructed."
+    }
+  ],
+  "rolls": [
+    {
+      "id": "philadelphia_classic",
+      "name": "Филадельфия классик",
+      "ingredients_published": [
+        "Лосось",
+        "сыр Cremette"
+      ],
+      "weight_g": 220,
+      "pieces": 8,
+      "ingredient_quantities_g": null,
+      "url": "https://volgodonsk.wasabist.ru/shop/rolly-xolodnye.html",
+      "source_kind": "official_search_index",
+      "crawl_label": "last month",
+      "read_date": "2026-10-22",
+      "live_verified_by_this_agent": false,
+      "web_source_refs": [
+        "turn52search0"
+      ]
+    },
+    {
+      "id": "california_classic",
+      "name": "Калифорния классик",
+      "ingredients_published": [
+        "Снежный краб",
+        "огурец",
+        "майонез",
+        "масаго красная"
+      ],
+      "weight_g": 220,
+      "pieces": 8,
+      "ingredient_quantities_g": null,
+      "url": "https://volgodonsk.wasabist.ru/shop/rolly-xolodnye.html",
+      "source_kind": "official_search_index",
+      "crawl_label": "last month",
+      "read_date": "2026-10-22",
+      "live_verified_by_this_agent": false,
+      "web_source_refs": [
+        "turn43search0",
+        "turn47search3",
+        "turn52search0"
+      ]
+    },
+    {
+      "id": "tokyo",
+      "name": "Токио",
+      "ingredients_published": [
+        "Лосось гриль",
+        "сыр Cremette",
+        "огурец",
+        "масаго оранжевая",
+        "соус сырный",
+        "соус унаги",
+        "кунжут"
+      ],
+      "weight_g": 240,
+      "pieces": 8,
+      "ingredient_quantities_g": null,
+      "url": "https://volgodonsk.wasabist.ru/shop/rolly-teplye.html",
+      "source_kind": "official_search_index",
+      "crawl_label": "last month",
+      "read_date": "2026-10-22",
+      "live_verified_by_this_agent": false,
+      "web_source_refs": [
+        "turn41search2",
+        "turn51search0",
+        "turn52search1"
+      ]
+    },
+    {
+      "id": "suzuki",
+      "name": "Сузуки",
+      "ingredients_published": [
+        "Креветка",
+        "сыр Cremette",
+        "огурец"
+      ],
+      "weight_g": 220,
+      "pieces": 8,
+      "ingredient_quantities_g": null,
+      "url": "https://volgodonsk.wasabist.ru/shop/rolly-xolodnye.html",
+      "source_kind": "official_search_index",
+      "crawl_label": "last month",
+      "read_date": "2026-10-22",
+      "live_verified_by_this_agent": false,
+      "web_source_refs": [
+        "turn41search3",
+        "turn43search0"
+      ]
+    },
+    {
+      "id": "matsahiro",
+      "name": "Мацахиро",
+      "ingredients_published": [
+        "Лосось",
+        "сыр Cremette",
+        "огурец",
+        "соус унаги"
+      ],
+      "weight_g": 250,
+      "pieces": 8,
+      "ingredient_quantities_g": null,
+      "url": "https://volgodonsk.wasabist.ru/shop/tempurnye-rolly.html",
+      "source_kind": "official_search_index",
+      "crawl_label": "last month",
+      "read_date": "2026-10-22",
+      "live_verified_by_this_agent": false,
+      "web_source_refs": [
+        "turn51search1"
+      ],
+      "preparation_category_published": "Темпурные роллы",
+      "batter_or_crumb_ingredients_published": null,
+      "note": "Tempura-category membership observed; batter/crumb composition and their weights are not supplied by the published ingredient line."
+    },
+    {
+      "id": "hot_shrimp",
+      "name": "Горячая креветочка",
+      "ingredients_published": [
+        "Креветка в темпуре",
+        "сыр Cremette",
+        "огурец",
+        "масаго зеленая",
+        "соус сырный",
+        "соус унаги",
+        "кунжут"
+      ],
+      "weight_g": 240,
+      "pieces": 8,
+      "ingredient_quantities_g": null,
+      "url": "https://volgodonsk.wasabist.ru/shop/rolly-teplye.html",
+      "source_kind": "official_search_index",
+      "crawl_label": "last month",
+      "read_date": "2026-10-22",
+      "live_verified_by_this_agent": false,
+      "web_source_refs": [
+        "turn47search0",
+        "turn51search0"
+      ],
+      "note": "The published ingredient explicitly says shrimp in tempura; no whole-roll deep-fry inference."
+    },
+    {
+      "id": "baked_california_shrimp",
+      "name": "Запеченная Калифорния с креветкой",
+      "ingredients_published": [
+        "Креветка",
+        "огурец",
+        "масаго оранжевая",
+        "соус сырный",
+        "соус унаги",
+        "кунжут"
+      ],
+      "weight_g": null,
+      "pieces": 8,
+      "ingredient_quantities_g": null,
+      "url": "https://volgodonsk.wasabist.ru/shop/rolly-teplye.html",
+      "source_kind": "official_search_index",
+      "crawl_label": "last month",
+      "read_date": "2026-10-22",
+      "live_verified_by_this_agent": false,
+      "web_source_refs": [
+        "turn50search2",
+        "turn51search0"
+      ],
+      "weight_status": "conflicting_official_search_observations",
+      "weight_observations": [
+        {
+          "weight_g": 230,
+          "url": "https://volgodonsk.wasabist.ru/shop/rolly-teplye.html",
+          "source_kind": "official_search_index",
+          "crawl_label": "last month",
+          "web_source_refs": [
+            "turn50search2",
+            "turn51search0"
+          ],
+          "ingredient_line_present": true
+        },
+        {
+          "weight_g": 240,
+          "url": "https://volgodonsk.wasabist.ru/",
+          "source_kind": "official_search_index",
+          "crawl_label": "last month",
+          "web_source_refs": [
+            "turn50search1"
+          ],
+          "ingredient_line_present": false
+        }
+      ],
+      "note": "Do not silently select 230 or 240 g as live-confirmed; live category card should resolve. Ingredients reported from the category observation, not inferred from title."
+    },
+    {
+      "id": "baked_philadelphia",
+      "name": "Запеченная Филадельфия",
+      "ingredients_published": [
+        "Лосось",
+        "такуан",
+        "сыр Cremette",
+        "соус унаги",
+        "кунжут"
+      ],
+      "weight_g": 230,
+      "pieces": 8,
+      "ingredient_quantities_g": null,
+      "url": "https://volgodonsk.wasabist.ru/shop/rolly-teplye.html",
+      "source_kind": "official_search_index",
+      "crawl_label": "last month",
+      "read_date": "2026-10-22",
+      "live_verified_by_this_agent": false,
+      "web_source_refs": [
+        "turn51search0"
+      ],
+      "sauce_hat_published": null,
+      "note": "The published ingredient line does not mention cheese sauce or Yaki. Do not add either as a competitor fact based on the name/category."
+    },
+    {
+      "id": "warm_classic_crab",
+      "name": "Теплая классика с крабом",
+      "ingredients_published": null,
+      "weight_g": null,
+      "pieces": null,
+      "ingredient_quantities_g": null,
+      "url": "https://volgodonsk.wasabist.ru/shop/nabory.html",
+      "source_kind": "official_set_name_only",
+      "crawl_label": "5 months ago for search copy; earlier web open labelled last month",
+      "read_date": "2026-10-22",
+      "live_verified_by_this_agent": false,
+      "web_source_refs": [
+        "turn50search0",
+        "turn41view0"
+      ],
+      "ingredient_status": "not_found_in_read_scope",
+      "weight_status": "not_found_in_read_scope",
+      "note": "Name confirmed in set. No separate published ingredient/weight card found in the searched Volgodonsk cold/warm/tempura categories and official-domain results. Do not substitute Mister Krabs or add cheese sauce using a similarly named roll in another set."
+    }
+  ],
+  "unresolved": [
+    "Live freshness of ingredient/weight cards and whether standalone portions match set portions.",
+    "Запеченная Калифорния с креветкой: 230 g category vs 240 g home search copy.",
+    "Теплая классика с крабом: ingredients, individual weight and exact preparation not confirmed.",
+    "Exact ingredient quantities for every competitor roll are unknown.",
+    "Published Запеченная Филадельфия line has no explicit sauce hat; our Yaki override must be labelled model input rather than publication."
+  ],
+  "no_repo_mutations": true
+}
