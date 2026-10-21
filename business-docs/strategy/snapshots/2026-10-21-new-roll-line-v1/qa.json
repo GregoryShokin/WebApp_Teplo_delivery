@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-21",
+  "status": "PASS",
+  "checks": {
+    "numerical_and_recipe_rules": 156,
+    "recipe_count": 18,
+    "groups": [
+      6,
+      6,
+      6
+    ],
+    "html_body_rows_per_table": [
+      6,
+      6,
+      6,
+      4
+    ],
+    "source_hashes_verified": 3,
+    "report_relative_links": "PASS",
+    "independent_arithmetic_review": "PASS",
+    "production_writes": false,
+    "independent_final_structure_and_stress_review": "PASS"
+  },
+  "limits": [
+    "No physical recipe trial",
+    "No HTML screenshot/render verification claimed",
+    "Unpriced water remains separately identified",
+    "35%nominal materialFC is conditional on proposed portions; excess sauce waste is separate stress",
+    "No production recipe/menu/promotion changes"
+  ],
+  "artifact_sha256": {
+    "build.py": "01b2db960eccff191d0d714a4b953bc0d183a59d71aba9a4feff7f1782d3423d",
+    "inputs.json": "5a098888513b149bea04ca49606f30f0c9e8d5c2a4601a684c9578f978f81e48",
+    "results.json": "20676e8a2ea6991b5f3296ff6bbf26a138c754d64c14734dd927628f9738f902",
+    "report.md": "b59a812deab28779713ea949d96ad1030a635762b395b28e55dfa0a0473179a5",
+    "report.html": "a111e7b74dde70e98e2727bbb9d85a567181fe15f6c3b1325ce65ff657a8120f"
+  }
+}

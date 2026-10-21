@@ -1,0 +1,819 @@
+{
+  "as_of": "2026-10-21",
+  "status": "independent_unit_cost_audit_readonly_sources_owner_overrides_labeled",
+  "components": {
+    "rice": {
+      "name": "Рис для роллов пф",
+      "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+      "chart_id": "18e9ff7a-3874-417c-8b8e-645af189bb84",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.0577324802975482,
+      "unpriced": [
+        {
+          "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+          "name": "Вода",
+          "amount_per_baseunit": 0.4417708431243538
+        }
+      ]
+    },
+    "nori": {
+      "name": "Нори",
+      "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+      "chart_id": null,
+      "quantity_basis": "one_iiko_purchase_sheet_unit",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_sheet": 9.4
+    },
+    "salmon_plain": {
+      "name": "Семга с/м вакуум п/ф",
+      "product_id": "2b9465ac-eab7-4b7c-aa14-548253b02024",
+      "chart_id": "2aeee468-62ee-4273-9d79-5faa0e974313",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 2.371794871794872
+    },
+    "salmon_smoked": {
+      "name": "Семга х/к п/ф",
+      "product_id": "c6f89aab-a5c7-4c4f-bec7-8c21ab2361de",
+      "chart_id": "2399dbb3-5627-40b8-be63-520ee2df79d2",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 2.05082
+    },
+    "shrimp": {
+      "name": "Креветка п/ф очищ отвар",
+      "product_id": "cfc06311-539c-4c41-9d99-21baf376c5de",
+      "chart_id": "85f19bab-9ac0-4229-a40a-f90eaa0ec143",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 1.6109202675827157
+    },
+    "mussels": {
+      "name": "Мидии п/ф",
+      "product_id": "a8a4127b-a076-4959-a9e0-8dd2037e4855",
+      "chart_id": "c084a813-c2c6-449b-8450-7429dac19b55",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.9996986301369863
+    },
+    "eel_legacy": {
+      "name": "Угорь пф — старая отдельная калькуляция",
+      "product_id": "1daed58b-b495-4d25-b597-4c4db4c263ed",
+      "chart_id": "130572a8-af53-444a-9aa1-f1cb02ef90e9",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 2.9264150943396228
+    },
+    "eel_joint": {
+      "name": "Филе угря — совместное распределение затрат",
+      "product_id": null,
+      "chart_id": null,
+      "quantity_basis": "joint allocation price per usable eel gram under owner paperfull-utilization; fillet mass yield still53%, remainder47%, not100%fillet",
+      "scenario": "owner_paper_override_with_explicit_reference",
+      "yield_already_applied": true,
+      "cost_per_g": 1.551,
+      "reference_purchased_product_id": "c37017cf-27f9-401d-a3a0-0f4b68f9527e",
+      "do_not_divide_by_0_53_again": true,
+      "must_couple_sauce_and_fillet_quantities": true
+    },
+    "cream_cheese": {
+      "name": "Творожный сыр +30%",
+      "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+      "chart_id": null,
+      "quantity_basis": "per_g_new_purchased_creamcheese; owner price scenario not supplier quote",
+      "scenario": "owner_paper_override_with_explicit_reference",
+      "yield_already_applied": false,
+      "cost_per_g": 0.5005
+    },
+    "crab_mix": {
+      "name": "Крабовая смесь80/20 по готовым массам",
+      "product_id": null,
+      "chart_id": null,
+      "quantity_basis": "80% READY preparedcrab +20% mayonnaise by ready mixing mass, with no second total-mixture loss imposed",
+      "scenario": "owner_paper_override_with_explicit_reference",
+      "yield_already_applied": true,
+      "cost_per_g": 0.4094109387755102,
+      "formula": "0.8*(450/0.98)+0.2*210.32",
+      "reference_old_product_id": "9d5cfeae-8717-4f4e-903d-6877561bb32c",
+      "do_not_apply_old_mixture_yield_again": true
+    },
+    "cucumber": {
+      "name": "Огурец п/ф роллы",
+      "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+      "chart_id": "604a3574-88e3-4c4e-81ad-6a8828f4f0b2",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.23827160555555554
+    },
+    "tamago": {
+      "name": "Томаго",
+      "product_id": "3afb7b3f-7a70-4fda-bf4b-e8ce3d670c44",
+      "chart_id": "5c13147a-48c7-4466-af30-a92e945ac1c1",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.27816127952629466
+    },
+    "mozzarella": {
+      "name": "Моцарелла",
+      "product_id": "55452094-cdd5-41e2-8437-1e7b74de8d56",
+      "chart_id": null,
+      "quantity_basis": "per_g_purchased",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_g": 0.38
+    },
+    "masago": {
+      "name": "Масаго п/ф",
+      "product_id": "901ac275-994e-45a4-8c90-71a3fed3ce43",
+      "chart_id": "5bafd0f5-265d-434d-88c2-b3d9fa9fd039",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 1.297872340425532
+    },
+    "spice": {
+      "name": "Соус спайси NEW",
+      "product_id": "b0eeef85-f93f-4686-8175-81b368854122",
+      "chart_id": "1d095852-fbb7-4c32-8160-a05fdfe07aad",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.32407647906657516
+    },
+    "yaki": {
+      "name": "Соус Яки п/ф",
+      "product_id": "4700248f-233a-4d5a-9f3e-3ceb888e844a",
+      "chart_id": "e36ca51b-865f-44d5-adce-6dd54272512f",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.32710997848808515
+    },
+    "cheese_sauce": {
+      "name": "Сырный соус роллы",
+      "product_id": "e245e658-299d-4457-98fa-4b59ae9a3f95",
+      "chart_id": "8181df9c-5399-46da-849b-2e6d27675e2c",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.3496421052631579
+    },
+    "black_eel": {
+      "name": "Чёрный угорь — совместный сценарий",
+      "product_id": "8fde37d8-952e-42b8-85ea-9e8e9f85732f",
+      "chart_id": "ffbba5de-1152-482c-a299-57b4759d13fc",
+      "quantity_basis": "current non-eel recipe; eel component from coupled remainder+smallfillet route, massallocation@1551/kg. Numeric reference equals old sauce but procurement must be joint, not separate100g purchases.",
+      "scenario": "owner_paper_override_with_explicit_reference",
+      "yield_already_applied": true,
+      "cost_per_g": 0.61396109375,
+      "must_couple_sauce_and_fillet_quantities": true
+    },
+    "tartar_plain": {
+      "name": "Тартар с лососем без копчения",
+      "product_id": null,
+      "chart_id": "b818426c-930d-409a-b64b-dbcc3d0dad8a",
+      "quantity_basis": "ready total tartar mix, with same current proportions/yield and plain PREPARED salmon substituted for smoked PREPARED salmon",
+      "scenario": "owner_paper_override_with_explicit_reference",
+      "yield_already_applied": true,
+      "cost_per_g": 1.891720063467473,
+      "reference_product_id": "00e27cd2-8eb4-4f10-a98c-629a45d944b7",
+      "do_not_apply_salmon_yield_again": true
+    },
+    "tartar_smoked": {
+      "name": "Тар-тар Лосось х/к",
+      "product_id": "00e27cd2-8eb4-4f10-a98c-629a45d944b7",
+      "chart_id": "b818426c-930d-409a-b64b-dbcc3d0dad8a",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 1.6467010773645174
+    },
+    "unagi": {
+      "name": "Унаги соус",
+      "product_id": "cb4ed412-ef0b-49c6-ad99-de69553b3238",
+      "chart_id": null,
+      "quantity_basis": "per_g_purchased",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_g": 0.17267
+    },
+    "teriyaki": {
+      "name": "Терияки",
+      "product_id": "7e817df8-56fd-4c2d-8d3d-941dc2620d13",
+      "chart_id": null,
+      "quantity_basis": "per_g_purchased",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_g": 0.17267
+    },
+    "batter": {
+      "name": "Кляр",
+      "product_id": "16ff10d9-6516-4a65-a843-fc72c9639e45",
+      "chart_id": "9284411a-57e1-43a9-bec1-81ba905d26e0",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.029103103448275863,
+      "unpriced": [
+        {
+          "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+          "name": "Вода",
+          "amount_per_baseunit": 0.5287356321839081
+        }
+      ]
+    },
+    "crumbs": {
+      "name": "Сухари Голд",
+      "product_id": "f1bb5ee8-2f9a-48d2-af15-65c69419568e",
+      "chart_id": null,
+      "quantity_basis": "per_g_purchased",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_g": 0.192
+    },
+    "oil": {
+      "name": "Масло растительное",
+      "product_id": "c33018ee-a46d-4bfc-b224-3b62a1f69dd0",
+      "chart_id": null,
+      "quantity_basis": "per_g_using_iiko_unitWeight0.925kg_per_litre_not_new_measurement",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_g": 0.14681081081081082,
+      "cost_per_ml": 0.1358,
+      "kg_per_litre_from_catalog": 0.925
+    }
+  },
+  "source_files": {
+    "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/recipes/raw/products.json": "ec329226e4c07027fed74bb2c9b7eca9b6495cdc63fa21c668f9c761a9a30eba",
+    "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/costing/pricebook.json": "2f264f01a0f0c050e12e8c3eeab6672ee328e8d0031aa23b898652e8a6210876",
+    "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/root/raw/charts21.json": "70e8b18eee0734c4b43625577c27b9dddad1f21df2bb1161ec4e9178a92f6283"
+  },
+  "warnings": [
+    "All rub_per_g for PREPARED components already include upstream yields; multiply ready grams directly, never apply preparation losses again.",
+    "Rice and batter exclude separately unpriced water, not treated as a proven free material.",
+    "Oil is purchased per litre; rub_per_g uses catalog unitWeight0.925kg/l. Fryer consumption must be a separately labeled scenario, not hidden in batter or crumbs.",
+    "Nori unit is per purchasedsheet, not grams; per-roll fraction still must be chosen explicitly.",
+    "Crab80/20 NET variant is main here:80%prepared crab after current98%yield plus20%mayo; do not reuse old0.69/0.70 mixture yield.",
+    "Eel joint cost1551/kg and legacy fillet2926.415/kg are ALTERNATIVE accounting scenarios, do not combine or grant free unbounded sauce. Owner paperfull-use is a scenario, not measured actual edible yield.",
+    "Black Eel fillet addition x still chosen elsewhere. Conservation per100g purchased:directfillet53-x,remainder47 andsauceeel47+x, black_sauce_total3.84*(47+x).",
+    "Mussel729.78/kg raw is latest dated accounting price; primary jump checkO13 remains unresolved, do not substitute prior338.42 silently.",
+    "35% applies to ordinary menu price BEFORE promotions; net paid FC must be evaluated separately."
+  ],
+  "reference_audit_components": {
+    "rice_ready": {
+      "source_product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+      "name": "Рис для роллов пф",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 57.73248029754819,
+      "price_status": "known_excluding_unpriced_water",
+      "unpriced": [
+        {
+          "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+          "name": "Вода",
+          "amount_per_baseunit": 0.4417708431243538
+        }
+      ],
+      "raw_leaf_product_ids": [
+        "15cd4416-d60a-4715-8ea6-7322d91ef043",
+        "2760a59c-85ae-4b38-abfe-870bc8fe4ec5",
+        "967b70a9-ea88-4ef6-ab8d-656980e78eb2",
+        "a3ae9ec9-9bfa-4a87-ad6a-f9c51451dc0c",
+        "a546bbbc-9930-48e2-b0a7-7d9aa669d7a8",
+        "ce899eb6-6265-4039-b62d-016b7bf66d5d"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 0.0577324802975482,
+      "rub_per_kg": 57.73248029754819,
+      "source_chart_id": "18e9ff7a-3874-417c-8b8e-645af189bb84",
+      "source_chart_date_from": "2026-06-30",
+      "card_output_baseunits": 5.3195,
+      "raw_vs_prepared_max_residual": 4.688780349855662e-10
+    },
+    "nori_sheet": {
+      "source_product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+      "name": "Нори",
+      "source_main_unit_id": "cd19b5ea-1b32-a6e5-1df7-5d2784a0549a",
+      "cost_per_iiko_base_unit_rub": 9.4,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "402101dc-2501-4341-9c13-d020a38702ab"
+      ],
+      "yield_applied_once": false,
+      "ready_basis": "one_iiko_purchase_sheet_unit",
+      "rub_per_sheet": 9.4,
+      "iiko_kg_per_sheet": 0.0025
+    },
+    "oil_purchased": {
+      "source_product_id": "c33018ee-a46d-4bfc-b224-3b62a1f69dd0",
+      "name": "Масло растительное",
+      "source_main_unit_id": "69859c74-db72-b006-cba5-326cf6f4fc6e",
+      "cost_per_iiko_base_unit_rub": 135.8,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "c33018ee-a46d-4bfc-b224-3b62a1f69dd0"
+      ],
+      "yield_applied_once": false,
+      "ready_basis": "per_g_using_iiko_unitWeight0.925kg_per_litre_not_new_measurement",
+      "rub_per_litre": 135.8,
+      "rub_per_ml": 0.1358,
+      "iiko_kg_per_litre": 0.925,
+      "rub_per_g": 0.14681081081081082
+    },
+    "mayonnaise": {
+      "source_product_id": "fa5411fe-e0bc-4d84-b1a1-b90eb22b2da0",
+      "name": "Майонез",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 210.32,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "fa5411fe-e0bc-4d84-b1a1-b90eb22b2da0"
+      ],
+      "yield_applied_once": false,
+      "ready_basis": "per_g_purchased",
+      "rub_per_g": 0.21032,
+      "rub_per_kg": 210.32
+    },
+    "batter_ready": {
+      "source_product_id": "16ff10d9-6516-4a65-a843-fc72c9639e45",
+      "name": "Кляр",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 29.103103448275863,
+      "price_status": "known_excluding_unpriced_water",
+      "unpriced": [
+        {
+          "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+          "name": "Вода",
+          "amount_per_baseunit": 0.5287356321839081
+        }
+      ],
+      "raw_leaf_product_ids": [
+        "0eef42b7-61d9-4d57-a1de-b8c5016b248e",
+        "2760a59c-85ae-4b38-abfe-870bc8fe4ec5",
+        "90fc6bd0-4ad1-4e9c-bfee-1eaa49d08242",
+        "94252ade-4208-4f2d-a846-5fff13f8b681",
+        "c8001807-881c-4f87-bdaf-a1a661d5827d",
+        "ce899eb6-6265-4039-b62d-016b7bf66d5d"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 0.029103103448275863,
+      "rub_per_kg": 29.103103448275863,
+      "source_chart_id": "9284411a-57e1-43a9-bec1-81ba905d26e0",
+      "source_chart_date_from": "2025-09-10",
+      "card_output_baseunits": 4.35,
+      "raw_vs_prepared_max_residual": 4.2528735632183906e-10
+    },
+    "crumbs": {
+      "source_product_id": "f1bb5ee8-2f9a-48d2-af15-65c69419568e",
+      "name": "Сухари Голд",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 192.0,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "f1bb5ee8-2f9a-48d2-af15-65c69419568e"
+      ],
+      "yield_applied_once": false,
+      "ready_basis": "per_g_purchased",
+      "rub_per_g": 0.192,
+      "rub_per_kg": 192.0
+    },
+    "cucumber_ready": {
+      "source_product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+      "name": "Огурец п/ф роллы",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 238.27160555555557,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "84a4776c-f0a3-4150-bc22-ac42d3edba49"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 0.23827160555555554,
+      "rub_per_kg": 238.27160555555557,
+      "source_chart_id": "604a3574-88e3-4c4e-81ad-6a8828f4f0b2",
+      "source_chart_date_from": "2025-04-15",
+      "card_output_baseunits": 0.54,
+      "raw_vs_prepared_max_residual": 1.4814814814814814e-10
+    },
+    "tamago_ready": {
+      "source_product_id": "3afb7b3f-7a70-4fda-bf4b-e8ce3d670c44",
+      "name": "Томаго",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 278.16127952629466,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "2760a59c-85ae-4b38-abfe-870bc8fe4ec5",
+        "94252ade-4208-4f2d-a846-5fff13f8b681",
+        "aaacbfba-dcdb-4a33-bbf0-f4b40c005395",
+        "c8001807-881c-4f87-bdaf-a1a661d5827d",
+        "d04a0596-fe9b-427a-a632-458f3e4eb155"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 0.27816127952629466,
+      "rub_per_kg": 278.16127952629466,
+      "source_chart_id": "5c13147a-48c7-4466-af30-a92e945ac1c1",
+      "source_chart_date_from": "2024-12-31",
+      "card_output_baseunits": 0.4982,
+      "raw_vs_prepared_max_residual": 4.094741067844239e-10
+    },
+    "cream_cheese_current": {
+      "source_product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+      "name": "Сыр творожный",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 385.0,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "961b99af-f9d6-4eb3-a90f-35a61f9b7508"
+      ],
+      "yield_applied_once": false,
+      "ready_basis": "per_g_purchased",
+      "rub_per_g": 0.385,
+      "rub_per_kg": 385.0
+    },
+    "mozzarella": {
+      "source_product_id": "55452094-cdd5-41e2-8437-1e7b74de8d56",
+      "name": "Моцарелла",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 380.0,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "55452094-cdd5-41e2-8437-1e7b74de8d56"
+      ],
+      "yield_applied_once": false,
+      "ready_basis": "per_g_purchased",
+      "rub_per_g": 0.38,
+      "rub_per_kg": 380.0
+    },
+    "masago_ready": {
+      "source_product_id": "901ac275-994e-45a4-8c90-71a3fed3ce43",
+      "name": "Масаго п/ф",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 1297.872340425532,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "b0dc3cc4-9382-40ee-93f3-6af15d56d8b7"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 1.297872340425532,
+      "rub_per_kg": 1297.872340425532,
+      "source_chart_id": "5bafd0f5-265d-434d-88c2-b3d9fa9fd039",
+      "source_chart_date_from": "2025-09-12",
+      "card_output_baseunits": 0.47,
+      "raw_vs_prepared_max_residual": 2.340425531914894e-10
+    },
+    "spice_NEW_ready": {
+      "source_product_id": "b0eeef85-f93f-4686-8175-81b368854122",
+      "name": "Соус спайси NEW",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 324.07647906657513,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "2488405a-e71e-4a84-971c-1bc752c89640",
+        "5285c185-fd3d-4856-b1b2-a7c9d4e59eea",
+        "6b622a8a-8016-4f39-a69b-19a583dcb066",
+        "b0dc3cc4-9382-40ee-93f3-6af15d56d8b7",
+        "ba34b1bc-33d4-400b-813a-b363418b3168",
+        "ced6c2f6-d132-402d-835b-5110b6abc659",
+        "fa5411fe-e0bc-4d84-b1a1-b90eb22b2da0"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 0.32407647906657516,
+      "rub_per_kg": 324.07647906657513,
+      "source_chart_id": "1d095852-fbb7-4c32-8160-a05fdfe07aad",
+      "source_chart_date_from": "2025-11-10",
+      "card_output_baseunits": 1.24,
+      "raw_vs_prepared_max_residual": 3.5483870967741934e-10
+    },
+    "yaki_ready": {
+      "source_product_id": "4700248f-233a-4d5a-9f3e-3ceb888e844a",
+      "name": "Соус  Яки п/ф ",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 327.1099784880852,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "213ab6c4-dca5-4f6d-abfb-46515764f703",
+        "b0dc3cc4-9382-40ee-93f3-6af15d56d8b7",
+        "fa5411fe-e0bc-4d84-b1a1-b90eb22b2da0"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 0.32710997848808515,
+      "rub_per_kg": 327.1099784880852,
+      "source_chart_id": "e36ca51b-865f-44d5-adce-6dd54272512f",
+      "source_chart_date_from": "2025-09-23",
+      "card_output_baseunits": 1.0217,
+      "raw_vs_prepared_max_residual": 3.9972802942113584e-10
+    },
+    "cheese_sauce_ready": {
+      "source_product_id": "e245e658-299d-4457-98fa-4b59ae9a3f95",
+      "name": "Сырный соус роллы",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 349.6421052631579,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "213ab6c4-dca5-4f6d-abfb-46515764f703",
+        "55452094-cdd5-41e2-8437-1e7b74de8d56",
+        "fa5411fe-e0bc-4d84-b1a1-b90eb22b2da0"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 0.3496421052631579,
+      "rub_per_kg": 349.6421052631579,
+      "source_chart_id": "8181df9c-5399-46da-849b-2e6d27675e2c",
+      "source_chart_date_from": "2025-09-23",
+      "card_output_baseunits": 0.095,
+      "raw_vs_prepared_max_residual": 4.736842105263158e-10
+    },
+    "unagi_drizzle": {
+      "source_product_id": "cb4ed412-ef0b-49c6-ad99-de69553b3238",
+      "name": "Унаги соус",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 172.67,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "cb4ed412-ef0b-49c6-ad99-de69553b3238"
+      ],
+      "yield_applied_once": false,
+      "ready_basis": "per_g_purchased",
+      "rub_per_g": 0.17267,
+      "rub_per_kg": 172.67
+    },
+    "teriyaki_drizzle": {
+      "source_product_id": "7e817df8-56fd-4c2d-8d3d-941dc2620d13",
+      "name": "Терияки",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 172.67,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "7e817df8-56fd-4c2d-8d3d-941dc2620d13"
+      ],
+      "yield_applied_once": false,
+      "ready_basis": "per_g_purchased",
+      "rub_per_g": 0.17267,
+      "rub_per_kg": 172.67
+    },
+    "salmon_plain_ready": {
+      "source_product_id": "2b9465ac-eab7-4b7c-aa14-548253b02024",
+      "name": "Семга с/м вакуум п/ф",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 2371.7948717948716,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "6ed804ae-8fc2-45ff-bb0b-30ca757fa336"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 2.371794871794872,
+      "rub_per_kg": 2371.7948717948716,
+      "source_chart_id": "2aeee468-62ee-4273-9d79-5faa0e974313",
+      "source_chart_date_from": "2026-07-07",
+      "card_output_baseunits": 0.78,
+      "raw_vs_prepared_max_residual": 5.128205128205128e-11
+    },
+    "salmon_smoked_ready": {
+      "source_product_id": "c6f89aab-a5c7-4c4f-bec7-8c21ab2361de",
+      "name": "Семга х/к п/ф",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 2050.82,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "7649c438-0072-4345-bc8d-3e12f01d15df"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 2.05082,
+      "rub_per_kg": 2050.82,
+      "source_chart_id": "2399dbb3-5627-40b8-be63-520ee2df79d2",
+      "source_chart_date_from": "2026-09-14",
+      "card_output_baseunits": 1,
+      "raw_vs_prepared_max_residual": 0.0
+    },
+    "tartar_smoked_ready": {
+      "source_product_id": "00e27cd2-8eb4-4f10-a98c-629a45d944b7",
+      "name": "Тар-тар Лосось",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 1646.7010773645175,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "7649c438-0072-4345-bc8d-3e12f01d15df",
+        "b0dc3cc4-9382-40ee-93f3-6af15d56d8b7",
+        "fa5411fe-e0bc-4d84-b1a1-b90eb22b2da0"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 1.6467010773645174,
+      "rub_per_kg": 1646.7010773645175,
+      "source_chart_id": "b818426c-930d-409a-b64b-dbcc3d0dad8a",
+      "source_chart_date_from": "2024-12-03",
+      "card_output_baseunits": 0.0393,
+      "raw_vs_prepared_max_residual": 4.1221374045801526e-10
+    },
+    "shrimp_ready": {
+      "source_product_id": "cfc06311-539c-4c41-9d99-21baf376c5de",
+      "name": "Креветка п/ф очищ отвар",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 1610.9202675827155,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "d3a1f4a3-1198-45cb-9190-1263a3c76562"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 1.6109202675827157,
+      "rub_per_kg": 1610.9202675827155,
+      "source_chart_id": "85f19bab-9ac0-4229-a40a-f90eaa0ec143",
+      "source_chart_date_from": "2026-09-12",
+      "card_output_baseunits": 1.1062,
+      "raw_vs_prepared_max_residual": 4.774905080455614e-10
+    },
+    "mussels_ready": {
+      "source_product_id": "a8a4127b-a076-4959-a9e0-8dd2037e4855",
+      "name": "Мидии п/ф",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 999.6986301369863,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "5e4eb2ad-b7ef-4fad-940a-d85f0a5c3a4a"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 0.9996986301369863,
+      "rub_per_kg": 999.6986301369863,
+      "source_chart_id": "c084a813-c2c6-449b-8450-7429dac19b55",
+      "source_chart_date_from": "2026-07-07",
+      "card_output_baseunits": 0.73,
+      "raw_vs_prepared_max_residual": 3.013698630136986e-10
+    },
+    "mussels_fried_ready_reference": {
+      "source_product_id": "157fb59d-e4bc-423f-805b-2b987cb73f72",
+      "name": "Мидии жареные п.ф.",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 1270.4677174252938,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "2488405a-e71e-4a84-971c-1bc752c89640",
+        "5e4eb2ad-b7ef-4fad-940a-d85f0a5c3a4a",
+        "c33018ee-a46d-4bfc-b224-3b62a1f69dd0",
+        "cb4ed412-ef0b-49c6-ad99-de69553b3238"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 1.2704677174252939,
+      "rub_per_kg": 1270.4677174252938,
+      "source_chart_id": "cb326464-2365-4319-b8fc-336c117e5f77",
+      "source_chart_date_from": "2026-07-09",
+      "card_output_baseunits": 0.2497,
+      "raw_vs_prepared_max_residual": 8.546694389431702e-10
+    },
+    "eel_fillet_legacy_reference": {
+      "source_product_id": "1daed58b-b495-4d25-b597-4c4db4c263ed",
+      "name": "Угорь пф",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 2926.4150943396226,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "c37017cf-27f9-401d-a3a0-0f4b68f9527e"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 2.9264150943396228,
+      "rub_per_kg": 2926.4150943396226,
+      "source_chart_id": "130572a8-af53-444a-9aa1-f1cb02ef90e9",
+      "source_chart_date_from": "2025-04-03",
+      "card_output_baseunits": 0.053,
+      "raw_vs_prepared_max_residual": 1.6981132075471697e-10
+    },
+    "black_eel_sauce_current_reference": {
+      "source_product_id": "8fde37d8-952e-42b8-85ea-9e8e9f85732f",
+      "name": "черный угорь п/ф",
+      "source_main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "cost_per_iiko_base_unit_rub": 613.96109375,
+      "price_status": "known",
+      "unpriced": [],
+      "raw_leaf_product_ids": [
+        "5285c185-fd3d-4856-b1b2-a7c9d4e59eea",
+        "7e817df8-56fd-4c2d-8d3d-941dc2620d13",
+        "95143934-e55c-4ad6-8ade-e24dbd6122d6",
+        "b0dc3cc4-9382-40ee-93f3-6af15d56d8b7",
+        "c37017cf-27f9-401d-a3a0-0f4b68f9527e",
+        "cb4ed412-ef0b-49c6-ad99-de69553b3238",
+        "f1bb5ee8-2f9a-48d2-af15-65c69419568e",
+        "fa5411fe-e0bc-4d84-b1a1-b90eb22b2da0"
+      ],
+      "yield_applied_once": true,
+      "ready_basis": "per_g_of_named_ready_component",
+      "rub_per_g": 0.61396109375,
+      "rub_per_kg": 613.96109375,
+      "source_chart_id": "ffbba5de-1152-482c-a299-57b4759d13fc",
+      "source_chart_date_from": "2026-04-01",
+      "card_output_baseunits": 0.384,
+      "raw_vs_prepared_max_residual": 3.333333333333333e-10
+    },
+    "cream_cheese_new": {
+      "source_product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+      "owner_override_multiplier": 1.3,
+      "rub_per_kg": 500.5,
+      "rub_per_g": 0.5005,
+      "ready_basis": "per_g_new_purchased_creamcheese; owner price scenario not supplier quote",
+      "yield_applied_once": false
+    },
+    "crab_purchase_new": {
+      "source_product_id": "787da6df-9d4c-4fb5-a8b9-546044c15481",
+      "owner_override_rub_per_kg": 450,
+      "rub_per_g": 0.45,
+      "ready_basis": "purchased crab before current98%preparation yield",
+      "yield_applied_once": false
+    },
+    "crab_prepared_new": {
+      "source_product_id": "9d5cfeae-8717-4f4e-903d-6877561bb32c",
+      "rub_per_kg": 459.18367346938777,
+      "rub_per_g": 0.45918367346938777,
+      "ready_basis": "prepared crab only before adding mayonnaise; current card crab0.5kg in->0.49kg out",
+      "source_current_mixture_chart_id": "a1ad22bc-34f8-466e-8600-93e4dec91229",
+      "yield_applied_once": true,
+      "do_not_use_old_mixture_cost_for_this_component": true
+    },
+    "crab_mix_80_20_NET_new": {
+      "rub_per_kg": 409.4109387755102,
+      "rub_per_g": 0.4094109387755102,
+      "ready_basis": "80% READY preparedcrab +20% mayonnaise by ready mixing mass, with no second total-mixture loss imposed",
+      "formula": "0.8*(450/0.98)+0.2*210.32",
+      "yield_applied_once": true,
+      "do_not_apply_old_mixture_yield_again": true,
+      "alternative_80_20_INPUT_no_losses_rub_per_kg": 402.064,
+      "alternative_80_20_INPUT_current_crab_yield_rub_per_kg": 408.6016260162602
+    },
+    "tartar_plain_ready": {
+      "source_chart_id": "b818426c-930d-409a-b64b-dbcc3d0dad8a",
+      "source_product_id": "00e27cd2-8eb4-4f10-a98c-629a45d944b7",
+      "salmon_substitution_source_product_id": "2b9465ac-eab7-4b7c-aa14-548253b02024",
+      "rub_per_kg": 1891.720063467473,
+      "rub_per_g": 1.891720063467473,
+      "ready_basis": "ready total tartar mix, with same current proportions/yield and plain PREPARED salmon substituted for smoked PREPARED salmon",
+      "formula": "old_smoked_tartar +0.03*(prepared_plain_salmon-prepared_smoked_salmon)/0.0393",
+      "card_inputs_g": {
+        "prepared_plain_salmon": 30,
+        "mayonnaise": 9,
+        "prepared_masago": 1
+      },
+      "output_g": 39.3,
+      "yield_applied_once": true,
+      "do_not_apply_salmon_yield_again": true
+    },
+    "eel_fillet_joint_mass_allocation": {
+      "source_product_id": "c37017cf-27f9-401d-a3a0-0f4b68f9527e",
+      "rub_per_kg": 1551.0,
+      "rub_per_g": 1.551,
+      "ready_basis": "joint allocation price per usable eel gram under owner paperfull-utilization; fillet mass yield still53%, remainder47%, not100%fillet",
+      "yield_applied_once": true,
+      "do_not_divide_by_0_53_again": true,
+      "must_couple_sauce_and_fillet_quantities": true
+    },
+    "black_eel_sauce_joint_mass_allocation": {
+      "source_product_id": "8fde37d8-952e-42b8-85ea-9e8e9f85732f",
+      "source_chart_id": "ffbba5de-1152-482c-a299-57b4759d13fc",
+      "rub_per_kg": 613.96109375,
+      "rub_per_g": 0.61396109375,
+      "non_eel_cost_rub_per_kg": 210.05484375,
+      "eel_g_per_g_sauce": 0.2604166666666667,
+      "ready_basis": "current non-eel recipe; eel component from coupled remainder+smallfillet route, massallocation@1551/kg. Numeric reference equals old sauce but procurement must be joint, not separate100g purchases.",
+      "yield_applied_once": true,
+      "must_couple_sauce_and_fillet_quantities": true
+    }
+  }
+}

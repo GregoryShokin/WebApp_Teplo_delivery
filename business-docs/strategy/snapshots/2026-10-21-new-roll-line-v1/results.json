@@ -1,0 +1,2697 @@
+{
+  "as_of": "2026-10-21",
+  "status": "first paper assortment, agent-proposed recipe/price; not accepted production cards",
+  "food_cost_basis": "recipe materials before discounts and bonus redemption; excludes unpriced water, sidekit, packaging, payroll, utilities, taxes, delivery, depreciation and financing",
+  "pricing_method": "ceil5(price_reserve_cost/0.35); price_reserve differs from joint_cost only for direct eel component; all quantities are ready-prepared quantities, frying inputs are allowance not finished yield. Both normal bases exclude forced surplus sauce writeoff; isolated-batch stress separately shown.",
+  "recipes": [
+    {
+      "id": "C01",
+      "group": "Холодные",
+      "name": "Лосось — крышка",
+      "kind": "lid",
+      "inner": {
+        "cream_cheese": 65,
+        "cucumber": 20,
+        "tamago": 20
+      },
+      "top": {
+        "salmon_plain": 50
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 65,
+          "unit": "г",
+          "cost_rub": 32.5325,
+          "price_reserve_cost_rub": 32.5325
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 5.563225590525893,
+          "price_reserve_cost_rub": 5.563225590525893
+        },
+        {
+          "component": "salmon_plain",
+          "stage": "top",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 118.58974358974359,
+          "price_reserve_cost_rub": 118.58974358974359
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 172.5014741241109,
+      "price_reserve_cost_rub": 172.5014741241109,
+      "menu_price_rub": 495,
+      "minimum_price_joint_rounded5_rub": 495,
+      "joint_fc_pct": 34.84878265133553,
+      "reserve_fc_pct": 34.84878265133553,
+      "margin_to35_rub": 0.7485258758891007,
+      "principal_shares_inner": {},
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "C02",
+      "group": "Холодные",
+      "name": "Креветка — крышка",
+      "kind": "lid",
+      "inner": {
+        "crab_mix": 65,
+        "cucumber": 20,
+        "tamago": 20
+      },
+      "top": {
+        "shrimp": 50,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 65,
+          "unit": "г",
+          "cost_rub": 26.611711020408165,
+          "price_reserve_cost_rub": 26.611711020408165
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 5.563225590525893,
+          "price_reserve_cost_rub": 5.563225590525893
+        },
+        {
+          "component": "shrimp",
+          "stage": "top",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 80.54601337913579,
+          "price_reserve_cost_rub": 80.54601337913579
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 129.40030493391126,
+      "price_reserve_cost_rub": 129.40030493391126,
+      "menu_price_rub": 370,
+      "minimum_price_joint_rounded5_rub": 370,
+      "joint_fc_pct": 34.97305538754358,
+      "reserve_fc_pct": 34.97305538754358,
+      "margin_to35_rub": 0.09969506608874212,
+      "principal_shares_inner": {},
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "C03",
+      "group": "Холодные",
+      "name": "Угорь — крышка",
+      "kind": "lid",
+      "inner": {
+        "cream_cheese": 65,
+        "cucumber": 20,
+        "tamago": 20
+      },
+      "top": {
+        "eel_joint": 50,
+        "unagi": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 65,
+          "unit": "г",
+          "cost_rub": 32.5325,
+          "price_reserve_cost_rub": 32.5325
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 5.563225590525893,
+          "price_reserve_cost_rub": 5.563225590525893
+        },
+        {
+          "component": "eel_joint",
+          "stage": "top",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 77.55,
+          "price_reserve_cost_rub": 146.32075471698113
+        },
+        {
+          "component": "unagi",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 132.3250805343673,
+      "price_reserve_cost_rub": 201.09583525134843,
+      "menu_price_rub": 575,
+      "minimum_price_joint_rounded5_rub": 380,
+      "joint_fc_pct": 23.01305748423779,
+      "reserve_fc_pct": 34.97318873936494,
+      "margin_to35_rub": 0.15416474865156715,
+      "principal_shares_inner": {},
+      "eel_g": 50,
+      "black_eel_sauce_g": 0,
+      "surplus_sauce_stress_cost_rub": 261.17124123204167,
+      "surplus_sauce_stress_price_rub": 750,
+      "surplus_sauce_stress_fc_at_proposed_price_pct": 45.421085431659414
+    },
+    {
+      "id": "C04",
+      "group": "Холодные",
+      "name": "Копчёный лосось и масаго",
+      "kind": "ordinary",
+      "inner": {
+        "salmon_smoked": 35,
+        "cream_cheese": 45,
+        "cucumber": 25
+      },
+      "top": {
+        "masago": 15
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "salmon_smoked",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 71.7787,
+          "price_reserve_cost_rub": 71.7787
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 45,
+          "unit": "г",
+          "cost_rub": 22.522499999999997,
+          "price_reserve_cost_rub": 22.522499999999997
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 5.956790138888889,
+          "price_reserve_cost_rub": 5.956790138888889
+        },
+        {
+          "component": "masago",
+          "stage": "top",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 19.46808510638298,
+          "price_reserve_cost_rub": 19.46808510638298
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 130.77664807800215,
+      "price_reserve_cost_rub": 130.77664807800215,
+      "menu_price_rub": 375,
+      "minimum_price_joint_rounded5_rub": 375,
+      "joint_fc_pct": 34.873772820800575,
+      "reserve_fc_pct": 34.873772820800575,
+      "margin_to35_rub": 0.47335192199784615,
+      "principal_shares_inner": {
+        "salmon_smoked": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "C05",
+      "group": "Холодные",
+      "name": "Тартар из лосося",
+      "kind": "tartar",
+      "inner": {
+        "cream_cheese": 50,
+        "tamago": 20,
+        "cucumber": 20
+      },
+      "top": {
+        "tartar_plain": 70,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 25.025,
+          "price_reserve_cost_rub": 25.025
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 5.563225590525893,
+          "price_reserve_cost_rub": 5.563225590525893
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "tartar_plain",
+          "stage": "top",
+          "amount": 70,
+          "unit": "г",
+          "cost_rub": 132.4204044427231,
+          "price_reserve_cost_rub": 132.4204044427231
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 90,
+      "joint_scenario_cost_rub": 179.68798497709042,
+      "price_reserve_cost_rub": 179.68798497709042,
+      "menu_price_rub": 515,
+      "minimum_price_joint_rounded5_rub": 515,
+      "joint_fc_pct": 34.890870869337945,
+      "reserve_fc_pct": 34.890870869337945,
+      "margin_to35_rub": 0.5620150229095771,
+      "principal_shares_inner": {},
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "C06",
+      "group": "Холодные",
+      "name": "Тартар из копчёного лосося",
+      "kind": "tartar",
+      "inner": {
+        "crab_mix": 50,
+        "tamago": 20,
+        "cucumber": 20
+      },
+      "top": {
+        "tartar_smoked": 70,
+        "unagi": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 20.47054693877551,
+          "price_reserve_cost_rub": 20.47054693877551
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 5.563225590525893,
+          "price_reserve_cost_rub": 5.563225590525893
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "tartar_smoked",
+          "stage": "top",
+          "amount": 70,
+          "unit": "г",
+          "cost_rub": 115.26907541551623,
+          "price_reserve_cost_rub": 115.26907541551623
+        },
+        {
+          "component": "unagi",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 90,
+      "joint_scenario_cost_rub": 157.98220288865903,
+      "price_reserve_cost_rub": 157.98220288865903,
+      "menu_price_rub": 455,
+      "minimum_price_joint_rounded5_rub": 455,
+      "joint_fc_pct": 34.72136327223275,
+      "reserve_fc_pct": 34.72136327223275,
+      "margin_to35_rub": 1.2677971113409683,
+      "principal_shares_inner": {},
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "B01",
+      "group": "Запечённые",
+      "name": "Лосось и креветка",
+      "kind": "ordinary",
+      "inner": {
+        "salmon_plain": 35,
+        "shrimp": 35,
+        "crab_mix": 20,
+        "cucumber": 15
+      },
+      "top": {
+        "yaki": 35,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "salmon_plain",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 83.01282051282051,
+          "price_reserve_cost_rub": 83.01282051282051
+        },
+        {
+          "component": "shrimp",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 56.38220936539505,
+          "price_reserve_cost_rub": 56.38220936539505
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 8.188218775510204,
+          "price_reserve_cost_rub": 8.188218775510204
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "yaki",
+          "stage": "top",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 11.44884924708298,
+          "price_reserve_cost_rub": 11.44884924708298
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 174.5200948168724,
+      "price_reserve_cost_rub": 174.5200948168724,
+      "menu_price_rub": 500,
+      "minimum_price_joint_rounded5_rub": 500,
+      "joint_fc_pct": 34.904018963374476,
+      "reserve_fc_pct": 34.904018963374476,
+      "margin_to35_rub": 0.4799051831276131,
+      "principal_shares_inner": {
+        "salmon_plain": 0.3333333333333333,
+        "shrimp": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "B02",
+      "group": "Запечённые",
+      "name": "Мидии под сырным соусом",
+      "kind": "ordinary",
+      "inner": {
+        "mussels": 35,
+        "crab_mix": 50,
+        "cucumber": 20
+      },
+      "top": {
+        "cheese_sauce": 35,
+        "unagi": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "mussels",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 34.98945205479452,
+          "price_reserve_cost_rub": 34.98945205479452
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 20.47054693877551,
+          "price_reserve_cost_rub": 20.47054693877551
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "cheese_sauce",
+          "stage": "top",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 12.237473684210528,
+          "price_reserve_cost_rub": 12.237473684210528
+        },
+        {
+          "component": "unagi",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 84.37682762162197,
+      "price_reserve_cost_rub": 84.37682762162197,
+      "menu_price_rub": 245,
+      "minimum_price_joint_rounded5_rub": 245,
+      "joint_fc_pct": 34.439521478213045,
+      "reserve_fc_pct": 34.439521478213045,
+      "margin_to35_rub": 1.3731723783780296,
+      "principal_shares_inner": {
+        "mussels": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "B03",
+      "group": "Запечённые",
+      "name": "Креветка яки",
+      "kind": "ordinary",
+      "inner": {
+        "shrimp": 35,
+        "cream_cheese": 50,
+        "cucumber": 20
+      },
+      "top": {
+        "yaki": 35,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "shrimp",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 56.38220936539505,
+          "price_reserve_cost_rub": 56.38220936539505
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 25.025,
+          "price_reserve_cost_rub": 25.025
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "yaki",
+          "stage": "top",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 11.44884924708298,
+          "price_reserve_cost_rub": 11.44884924708298
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 109.53541355631944,
+      "price_reserve_cost_rub": 109.53541355631944,
+      "menu_price_rub": 315,
+      "minimum_price_joint_rounded5_rub": 315,
+      "joint_fc_pct": 34.77314716073633,
+      "reserve_fc_pct": 34.77314716073633,
+      "margin_to35_rub": 0.7145864436805596,
+      "principal_shares_inner": {
+        "shrimp": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "B04",
+      "group": "Запечённые",
+      "name": "Лосось и мидии спайси",
+      "kind": "ordinary",
+      "inner": {
+        "salmon_plain": 35,
+        "mussels": 35,
+        "cream_cheese": 20,
+        "cucumber": 15
+      },
+      "top": {
+        "spice": 30,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "salmon_plain",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 83.01282051282051,
+          "price_reserve_cost_rub": 83.01282051282051
+        },
+        {
+          "component": "mussels",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 34.98945205479452,
+          "price_reserve_cost_rub": 34.98945205479452
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 10.009999999999998,
+          "price_reserve_cost_rub": 10.009999999999998
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "spice",
+          "stage": "top",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 9.722294371997254,
+          "price_reserve_cost_rub": 9.722294371997254
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 153.22256385567593,
+      "price_reserve_cost_rub": 153.22256385567593,
+      "menu_price_rub": 440,
+      "minimum_price_joint_rounded5_rub": 440,
+      "joint_fc_pct": 34.82330996719907,
+      "reserve_fc_pct": 34.82330996719907,
+      "margin_to35_rub": 0.7774361443240707,
+      "principal_shares_inner": {
+        "salmon_plain": 0.3333333333333333,
+        "mussels": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "B05",
+      "group": "Запечённые",
+      "name": "Угорь, моцарелла и «Чёрный угорь»",
+      "kind": "ordinary",
+      "inner": {
+        "eel_joint": 35,
+        "cream_cheese": 30,
+        "mozzarella": 25,
+        "cucumber": 15
+      },
+      "top": {
+        "black_eel": 35,
+        "unagi": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "eel_joint",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 54.285,
+          "price_reserve_cost_rub": 102.4245283018868
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 15.014999999999999,
+          "price_reserve_cost_rub": 15.014999999999999
+        },
+        {
+          "component": "mozzarella",
+          "stage": "inner",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 9.5,
+          "price_reserve_cost_rub": 9.5
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "black_eel",
+          "stage": "top",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 21.488638281249997,
+          "price_reserve_cost_rub": 21.488638281249997
+        },
+        {
+          "component": "unagi",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 115.77663519731362,
+      "price_reserve_cost_rub": 163.91616349920042,
+      "menu_price_rub": 470,
+      "minimum_price_joint_rounded5_rub": 335,
+      "joint_fc_pct": 24.633326637726302,
+      "reserve_fc_pct": 34.87577946791499,
+      "margin_to35_rub": 0.5838365007995776,
+      "principal_shares_inner": {
+        "eel_joint": 0.3333333333333333
+      },
+      "eel_g": 35,
+      "black_eel_sauce_g": 35,
+      "surplus_sauce_stress_cost_rub": 184.4803094044357,
+      "surplus_sauce_stress_price_rub": 530,
+      "surplus_sauce_stress_fc_at_proposed_price_pct": 39.25112966051823
+    },
+    {
+      "id": "B06",
+      "group": "Запечённые",
+      "name": "Креветка и мидии под сырным соусом",
+      "kind": "ordinary",
+      "inner": {
+        "shrimp": 35,
+        "mussels": 35,
+        "crab_mix": 20,
+        "cucumber": 15
+      },
+      "top": {
+        "cheese_sauce": 35,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "shrimp",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 56.38220936539505,
+          "price_reserve_cost_rub": 56.38220936539505
+        },
+        {
+          "component": "mussels",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 34.98945205479452,
+          "price_reserve_cost_rub": 34.98945205479452
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 8.188218775510204,
+          "price_reserve_cost_rub": 8.188218775510204
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "cheese_sauce",
+          "stage": "top",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 12.237473684210528,
+          "price_reserve_cost_rub": 12.237473684210528
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 127.28535079597394,
+      "price_reserve_cost_rub": 127.28535079597394,
+      "menu_price_rub": 365,
+      "minimum_price_joint_rounded5_rub": 365,
+      "joint_fc_pct": 34.87269884821204,
+      "reserve_fc_pct": 34.87269884821204,
+      "margin_to35_rub": 0.4646492040260455,
+      "principal_shares_inner": {
+        "shrimp": 0.3333333333333333,
+        "mussels": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "F01",
+      "group": "Жареные",
+      "name": "Лосось спайси",
+      "kind": "ordinary",
+      "inner": {
+        "salmon_plain": 35,
+        "cream_cheese": 50,
+        "cucumber": 20
+      },
+      "top": {
+        "spice": 20,
+        "unagi": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "salmon_plain",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 83.01282051282051,
+          "price_reserve_cost_rub": 83.01282051282051
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 25.025,
+          "price_reserve_cost_rub": 25.025
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "spice",
+          "stage": "top",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 6.481529581331503,
+          "price_reserve_cost_rub": 6.481529581331503
+        },
+        {
+          "component": "unagi",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        },
+        {
+          "component": "batter",
+          "stage": "frying",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 0.7275775862068966,
+          "price_reserve_cost_rub": 0.7275775862068966
+        },
+        {
+          "component": "crumbs",
+          "stage": "frying",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 2.88,
+          "price_reserve_cost_rub": 2.88
+        },
+        {
+          "component": "oil",
+          "stage": "frying",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.7340540540540541,
+          "price_reserve_cost_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 135.54033667825436,
+      "price_reserve_cost_rub": 135.54033667825436,
+      "menu_price_rub": 390,
+      "minimum_price_joint_rounded5_rub": 390,
+      "joint_fc_pct": 34.753932481603684,
+      "reserve_fc_pct": 34.753932481603684,
+      "margin_to35_rub": 0.9596633217456372,
+      "principal_shares_inner": {
+        "salmon_plain": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "F02",
+      "group": "Жареные",
+      "name": "Креветка и крабовая смесь",
+      "kind": "ordinary",
+      "inner": {
+        "shrimp": 35,
+        "crab_mix": 50,
+        "cucumber": 20
+      },
+      "top": {
+        "spice": 20,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "shrimp",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 56.38220936539505,
+          "price_reserve_cost_rub": 56.38220936539505
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 20.47054693877551,
+          "price_reserve_cost_rub": 20.47054693877551
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "spice",
+          "stage": "top",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 6.481529581331503,
+          "price_reserve_cost_rub": 6.481529581331503
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        },
+        {
+          "component": "batter",
+          "stage": "frying",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 0.7275775862068966,
+          "price_reserve_cost_rub": 0.7275775862068966
+        },
+        {
+          "component": "crumbs",
+          "stage": "frying",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 2.88,
+          "price_reserve_cost_rub": 2.88
+        },
+        {
+          "component": "oil",
+          "stage": "frying",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.7340540540540541,
+          "price_reserve_cost_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 104.35527246960443,
+      "price_reserve_cost_rub": 104.35527246960443,
+      "menu_price_rub": 300,
+      "minimum_price_joint_rounded5_rub": 300,
+      "joint_fc_pct": 34.78509082320148,
+      "reserve_fc_pct": 34.78509082320148,
+      "margin_to35_rub": 0.6447275303955706,
+      "principal_shares_inner": {
+        "shrimp": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "F03",
+      "group": "Жареные",
+      "name": "Копчёный лосось и моцарелла",
+      "kind": "ordinary",
+      "inner": {
+        "salmon_smoked": 35,
+        "cream_cheese": 30,
+        "mozzarella": 25,
+        "cucumber": 15
+      },
+      "top": {
+        "cheese_sauce": 20,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "salmon_smoked",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 71.7787,
+          "price_reserve_cost_rub": 71.7787
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 15.014999999999999,
+          "price_reserve_cost_rub": 15.014999999999999
+        },
+        {
+          "component": "mozzarella",
+          "stage": "inner",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 9.5,
+          "price_reserve_cost_rub": 9.5
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "cheese_sauce",
+          "stage": "top",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 6.992842105263159,
+          "price_reserve_cost_rub": 6.992842105263159
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        },
+        {
+          "component": "batter",
+          "stage": "frying",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 0.7275775862068966,
+          "price_reserve_cost_rub": 0.7275775862068966
+        },
+        {
+          "component": "crumbs",
+          "stage": "frying",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 2.88,
+          "price_reserve_cost_rub": 2.88
+        },
+        {
+          "component": "oil",
+          "stage": "frying",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.7340540540540541,
+          "price_reserve_cost_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 123.11617066158774,
+      "price_reserve_cost_rub": 123.11617066158774,
+      "menu_price_rub": 355,
+      "minimum_price_joint_rounded5_rub": 355,
+      "joint_fc_pct": 34.68061145396838,
+      "reserve_fc_pct": 34.68061145396838,
+      "margin_to35_rub": 1.1338293384122409,
+      "principal_shares_inner": {
+        "salmon_smoked": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "F04",
+      "group": "Жареные",
+      "name": "Угорь и креветка",
+      "kind": "ordinary",
+      "inner": {
+        "eel_joint": 35,
+        "shrimp": 35,
+        "crab_mix": 20,
+        "cucumber": 15
+      },
+      "top": {
+        "black_eel": 30,
+        "unagi": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "eel_joint",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 54.285,
+          "price_reserve_cost_rub": 102.4245283018868
+        },
+        {
+          "component": "shrimp",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 56.38220936539505,
+          "price_reserve_cost_rub": 56.38220936539505
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 8.188218775510204,
+          "price_reserve_cost_rub": 8.188218775510204
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "black_eel",
+          "stage": "top",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 18.4188328125,
+          "price_reserve_cost_rub": 18.4188328125
+        },
+        {
+          "component": "unagi",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        },
+        {
+          "component": "batter",
+          "stage": "frying",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 0.7275775862068966,
+          "price_reserve_cost_rub": 0.7275775862068966
+        },
+        {
+          "component": "crumbs",
+          "stage": "frying",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 2.88,
+          "price_reserve_cost_rub": 2.88
+        },
+        {
+          "component": "oil",
+          "stage": "frying",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.7340540540540541,
+          "price_reserve_cost_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 157.10388950972984,
+      "price_reserve_cost_rub": 205.24341781161664,
+      "menu_price_rub": 590,
+      "minimum_price_joint_rounded5_rub": 450,
+      "joint_fc_pct": 26.627777883005056,
+      "reserve_fc_pct": 34.78701996807062,
+      "margin_to35_rub": 1.256582188383362,
+      "principal_shares_inner": {
+        "eel_joint": 0.3333333333333333,
+        "shrimp": 0.3333333333333333
+      },
+      "eel_g": 35,
+      "black_eel_sauce_g": 30,
+      "surplus_sauce_stress_cost_rub": 228.8773691856019,
+      "surplus_sauce_stress_price_rub": 655,
+      "surplus_sauce_stress_fc_at_proposed_price_pct": 38.79277443823761
+    },
+    {
+      "id": "F05",
+      "group": "Жареные",
+      "name": "Мидии и тамаго",
+      "kind": "ordinary",
+      "inner": {
+        "mussels": 35,
+        "crab_mix": 30,
+        "tamago": 25,
+        "cucumber": 15
+      },
+      "top": {
+        "yaki": 20,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "mussels",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 34.98945205479452,
+          "price_reserve_cost_rub": 34.98945205479452
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 12.282328163265307,
+          "price_reserve_cost_rub": 12.282328163265307
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 6.954031988157366,
+          "price_reserve_cost_rub": 6.954031988157366
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "yaki",
+          "stage": "top",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 6.542199569761703,
+          "price_reserve_cost_rub": 6.542199569761703
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        },
+        {
+          "component": "batter",
+          "stage": "frying",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 0.7275775862068966,
+          "price_reserve_cost_rub": 0.7275775862068966
+        },
+        {
+          "component": "crumbs",
+          "stage": "frying",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 2.88,
+          "price_reserve_cost_rub": 2.88
+        },
+        {
+          "component": "oil",
+          "stage": "frying",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.7340540540540541,
+          "price_reserve_cost_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 80.59764033230348,
+      "price_reserve_cost_rub": 80.59764033230348,
+      "menu_price_rub": 235,
+      "minimum_price_joint_rounded5_rub": 235,
+      "joint_fc_pct": 34.296868226512125,
+      "reserve_fc_pct": 34.296868226512125,
+      "margin_to35_rub": 1.6523596676965155,
+      "principal_shares_inner": {
+        "mussels": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "F06",
+      "group": "Жареные",
+      "name": "Угорь и мидии",
+      "kind": "ordinary",
+      "inner": {
+        "eel_joint": 35,
+        "mussels": 35,
+        "cream_cheese": 20,
+        "cucumber": 15
+      },
+      "top": {
+        "black_eel": 35,
+        "unagi": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "eel_joint",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 54.285,
+          "price_reserve_cost_rub": 102.4245283018868
+        },
+        {
+          "component": "mussels",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 34.98945205479452,
+          "price_reserve_cost_rub": 34.98945205479452
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 10.009999999999998,
+          "price_reserve_cost_rub": 10.009999999999998
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "black_eel",
+          "stage": "top",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 21.488638281249997,
+          "price_reserve_cost_rub": 21.488638281249997
+        },
+        {
+          "component": "unagi",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        },
+        {
+          "component": "batter",
+          "stage": "frying",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 0.7275775862068966,
+          "price_reserve_cost_rub": 0.7275775862068966
+        },
+        {
+          "component": "crumbs",
+          "stage": "frying",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 2.88,
+          "price_reserve_cost_rub": 2.88
+        },
+        {
+          "component": "oil",
+          "stage": "frying",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.7340540540540541,
+          "price_reserve_cost_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 140.6027188923691,
+      "price_reserve_cost_rub": 188.7422471942559,
+      "menu_price_rub": 540,
+      "minimum_price_joint_rounded5_rub": 405,
+      "joint_fc_pct": 26.037540535623904,
+      "reserve_fc_pct": 34.95226799893628,
+      "margin_to35_rub": 0.2577528057441043,
+      "principal_shares_inner": {
+        "eel_joint": 0.3333333333333333,
+        "mussels": 0.3333333333333333
+      },
+      "eel_g": 35,
+      "black_eel_sauce_g": 35,
+      "surplus_sauce_stress_cost_rub": 209.30639309949117,
+      "surplus_sauce_stress_price_rub": 600,
+      "surplus_sauce_stress_fc_at_proposed_price_pct": 38.76044316657244
+    }
+  ],
+  "eel_joint_output": {
+    "status": "owner full-use condition, agent proposed 90%trim/10%fillet within eel part; not measured production result",
+    "raw_eel_g": 1000.0,
+    "original_fillet_g": 530.0,
+    "trim_g": 470.0,
+    "fillet_diverted_to_sauce_g": 52.22222222222222,
+    "direct_fillet_g": 477.77777777777777,
+    "eel_component_of_sauce_g": 522.2222222222222,
+    "ready_sauce_g": 2005.333333333333,
+    "sauce_per_direct_fillet": 4.1972093023255805,
+    "allocation": "one purchased eel cost allocated by mass among edible eel outputs before non-eel sauce additions; 1551RUB/kg to direct fillet and eelpart; sauces non-eel component costs then added",
+    "purchase_eel_cost_rub": 1551.0,
+    "allocated_direct_eel_cost_rub": 741.0333333333333,
+    "allocated_sauce_eel_cost_rub": 809.9666666666666,
+    "illustration_one_each_18_not_sales_forecast": {
+      "direct_fillet_used_g": 155,
+      "sauce_used_g": 100,
+      "sauce_generated_for_direct_fillet_g": 650.567441860465,
+      "sauce_left_without_additional_demand_g": 550.567441860465,
+      "fraction_sauce_consumed": 0.1537119652253489,
+      "extra_sauce_only_portions_at30g": 19,
+      "direct_eel_only_50g_generates_sauce_g": 209.86046511627902,
+      "surplus_sauce_cost_rub": 338.02698878779063,
+      "joint_allocated_eel_and_sauce_sold_cost_rub": 301.801109375,
+      "whole_eel_and_sauce_production_cost_rub": 639.8280981627906
+    },
+    "pricing_guard": "Proposed prices cover joint allocated COGS and alternative legacy fillet COGS; NOT a guarantee against manufacturing and discarding all excess sauce. Separate stress shown.",
+    "non_eel_sauce_cost_per_g": 0.21005484374999994,
+    "stress_alloutputs_cost_per_direct_fillet_g": 4.127923213953488
+  },
+  "checks": [
+    {
+      "check": "18 proposed recipes; 6 in each group",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C01: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C01: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C01: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C01: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C01: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C01: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C01: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C01: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C01: exactlyone lid50",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C02: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C02: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C02: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C02: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C02: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C02: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C02: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C02: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C02: exactlyone lid50",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C03: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C03: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C03: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C03: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C03: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C03: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C03: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C03: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C03: exactlyone lid50",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C04: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C04: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C04: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C04: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C04: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C04: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C04: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C04: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C05: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C05: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C05: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C05: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C05: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C05: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C05: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C05: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C05: tartar70 ready mixture, filler-only inner",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C06: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C06: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C06: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C06: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C06: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C06: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C06: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C06: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "C06: tartar70 ready mixture, filler-only inner",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B01: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B01: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B01: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B01: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B01: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B01: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B01: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B01: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B02: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B02: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B02: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B02: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B02: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B02: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B02: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B02: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B03: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B03: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B03: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B03: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B03: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B03: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B03: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B03: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B04: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B04: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B04: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B04: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B04: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B04: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B04: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B04: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B05: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B05: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B05: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B05: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B05: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B05: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B05: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B05: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B06: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B06: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B06: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B06: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B06: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B06: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B06: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "B06: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F01: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F01: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F01: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F01: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F01: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F01: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F01: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F01: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F01: priced frying allowance",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F02: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F02: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F02: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F02: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F02: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F02: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F02: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F02: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F02: priced frying allowance",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F03: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F03: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F03: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F03: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F03: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F03: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F03: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F03: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F03: priced frying allowance",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F04: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F04: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F04: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F04: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F04: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F04: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F04: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F04: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F04: priced frying allowance",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F05: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F05: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F05: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F05: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F05: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F05: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F05: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F05: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F05: priced frying allowance",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F06: allowed palette",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F06: rice110/nori0.5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F06: cheese and crab mutually exclusive inside",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F06: normal filling105 or tartar90",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F06: each inside principal >=30%",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F06: material FC<=35% both scenarios",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F06: price rounded UP to5",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F06: exact cost sum",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "F06: priced frying allowance",
+      "status": "PASS",
+      "detail": null
+    }
+  ],
+  "summary": {
+    "recipe_count": 18,
+    "joint_cost_min": 80.59764033230348,
+    "joint_cost_max": 179.68798497709042,
+    "price_min": 235,
+    "price_max": 590,
+    "fc_max_reserve_pct": 34.97318873936494,
+    "fc_max_joint_pct": 34.97305538754358,
+    "checks_passed": 156
+  }
+}
