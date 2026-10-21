@@ -1,0 +1,2250 @@
+{
+  "as_of": "2026-10-22",
+  "status": "paper_chicken_recipes_and_sets_not_accepted_production_menu",
+  "fc_basis": "recipe materials / menu set price before extra discounts; packaging separate; unpriced water and order costs not zero",
+  "working_raw_fc_target": 0.4,
+  "new_recipes": [
+    {
+      "id": "K1",
+      "group": "Холодные",
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "chicken_smoked": 40,
+        "cream_cheese": 40,
+        "cucumber": 20
+      },
+      "top": {
+        "teriyaki": 5
+      },
+      "frying": {},
+      "name": "Копчёная курица, сыр и огурец",
+      "materials_rub": 61.834490078976536,
+      "lines": [
+        {
+          "stage": "base",
+          "component": "rice",
+          "amount": 110,
+          "unit": "г",
+          "materials_rub": 6.350572832730301
+        },
+        {
+          "stage": "base",
+          "component": "nori",
+          "amount": 0.5,
+          "unit": "лист",
+          "materials_rub": 4.7
+        },
+        {
+          "stage": "inner",
+          "component": "chicken_smoked",
+          "amount": 40,
+          "unit": "г",
+          "materials_rub": 25.13513513513513
+        },
+        {
+          "stage": "inner",
+          "component": "cream_cheese",
+          "amount": 40,
+          "unit": "г",
+          "materials_rub": 20.019999999999996
+        },
+        {
+          "stage": "inner",
+          "component": "cucumber",
+          "amount": 20,
+          "unit": "г",
+          "materials_rub": 4.765432111111111
+        },
+        {
+          "stage": "top",
+          "component": "teriyaki",
+          "amount": 5,
+          "unit": "г",
+          "materials_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 100,
+      "project_menu_price_rub": 180,
+      "project_menu_fc": 0.34352494488320295,
+      "status": "new_paper_candidate_not_approved_recipe_or_measured_dose",
+      "physical_portion_status": "one_prepared_chicken_portion_target40g_proposal_not_measured; other_units_not_validated"
+    },
+    {
+      "id": "K2",
+      "group": "Холодные",
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "chicken_smoked": 40,
+        "crab_mix": 40,
+        "tamago": 20
+      },
+      "top": {
+        "teriyaki": 5
+      },
+      "frying": {},
+      "name": "Копчёная курица, краб и тамаго",
+      "materials_rub": 58.988721109411735,
+      "lines": [
+        {
+          "stage": "base",
+          "component": "rice",
+          "amount": 110,
+          "unit": "г",
+          "materials_rub": 6.350572832730301
+        },
+        {
+          "stage": "base",
+          "component": "nori",
+          "amount": 0.5,
+          "unit": "лист",
+          "materials_rub": 4.7
+        },
+        {
+          "stage": "inner",
+          "component": "chicken_smoked",
+          "amount": 40,
+          "unit": "г",
+          "materials_rub": 25.13513513513513
+        },
+        {
+          "stage": "inner",
+          "component": "crab_mix",
+          "amount": 40,
+          "unit": "г",
+          "materials_rub": 16.37643755102041
+        },
+        {
+          "stage": "inner",
+          "component": "tamago",
+          "amount": 20,
+          "unit": "г",
+          "materials_rub": 5.563225590525893
+        },
+        {
+          "stage": "top",
+          "component": "teriyaki",
+          "amount": 5,
+          "unit": "г",
+          "materials_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 100,
+      "project_menu_price_rub": 170,
+      "project_menu_fc": 0.3469924771141867,
+      "status": "new_paper_candidate_not_approved_recipe_or_measured_dose",
+      "physical_portion_status": "one_prepared_chicken_portion_target40g_proposal_not_measured; other_units_not_validated",
+      "actual_crab_g": 32.0
+    },
+    {
+      "id": "K3",
+      "group": "Запечённые",
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "chicken_smoked": 40,
+        "tamago": 30,
+        "cream_cheese": 20,
+        "cucumber": 10
+      },
+      "top": {
+        "yaki": 30,
+        "teriyaki": 5
+      },
+      "frying": {},
+      "name": "Копчёная курица яки",
+      "materials_rub": 67.59991176385238,
+      "lines": [
+        {
+          "stage": "base",
+          "component": "rice",
+          "amount": 110,
+          "unit": "г",
+          "materials_rub": 6.350572832730301
+        },
+        {
+          "stage": "base",
+          "component": "nori",
+          "amount": 0.5,
+          "unit": "лист",
+          "materials_rub": 4.7
+        },
+        {
+          "stage": "inner",
+          "component": "chicken_smoked",
+          "amount": 40,
+          "unit": "г",
+          "materials_rub": 25.13513513513513
+        },
+        {
+          "stage": "inner",
+          "component": "tamago",
+          "amount": 30,
+          "unit": "г",
+          "materials_rub": 8.34483838578884
+        },
+        {
+          "stage": "inner",
+          "component": "cream_cheese",
+          "amount": 20,
+          "unit": "г",
+          "materials_rub": 10.009999999999998
+        },
+        {
+          "stage": "inner",
+          "component": "cucumber",
+          "amount": 10,
+          "unit": "г",
+          "materials_rub": 2.3827160555555555
+        },
+        {
+          "stage": "top",
+          "component": "yaki",
+          "amount": 30,
+          "unit": "г",
+          "materials_rub": 9.813299354642554
+        },
+        {
+          "stage": "top",
+          "component": "teriyaki",
+          "amount": 5,
+          "unit": "г",
+          "materials_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 100,
+      "project_menu_price_rub": 195,
+      "project_menu_fc": 0.34666621417360194,
+      "status": "new_paper_candidate_not_approved_recipe_or_measured_dose",
+      "physical_portion_status": "one_prepared_chicken_portion_target40g_proposal_not_measured; other_units_not_validated"
+    },
+    {
+      "id": "K4",
+      "group": "Запечённые",
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "chicken_smoked": 40,
+        "mozzarella": 30,
+        "cream_cheese": 20,
+        "cucumber": 10
+      },
+      "top": {
+        "cheese_sauce": 30,
+        "teriyaki": 5
+      },
+      "frying": {},
+      "name": "Копчёная курица с моцареллой",
+      "materials_rub": 71.33103718131572,
+      "lines": [
+        {
+          "stage": "base",
+          "component": "rice",
+          "amount": 110,
+          "unit": "г",
+          "materials_rub": 6.350572832730301
+        },
+        {
+          "stage": "base",
+          "component": "nori",
+          "amount": 0.5,
+          "unit": "лист",
+          "materials_rub": 4.7
+        },
+        {
+          "stage": "inner",
+          "component": "chicken_smoked",
+          "amount": 40,
+          "unit": "г",
+          "materials_rub": 25.13513513513513
+        },
+        {
+          "stage": "inner",
+          "component": "mozzarella",
+          "amount": 30,
+          "unit": "г",
+          "materials_rub": 11.4
+        },
+        {
+          "stage": "inner",
+          "component": "cream_cheese",
+          "amount": 20,
+          "unit": "г",
+          "materials_rub": 10.009999999999998
+        },
+        {
+          "stage": "inner",
+          "component": "cucumber",
+          "amount": 10,
+          "unit": "г",
+          "materials_rub": 2.3827160555555555
+        },
+        {
+          "stage": "top",
+          "component": "cheese_sauce",
+          "amount": 30,
+          "unit": "г",
+          "materials_rub": 10.489263157894738
+        },
+        {
+          "stage": "top",
+          "component": "teriyaki",
+          "amount": 5,
+          "unit": "г",
+          "materials_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 100,
+      "project_menu_price_rub": 205,
+      "project_menu_fc": 0.34795627893324743,
+      "status": "new_paper_candidate_not_approved_recipe_or_measured_dose",
+      "physical_portion_status": "one_prepared_chicken_portion_target40g_proposal_not_measured; other_units_not_validated"
+    },
+    {
+      "id": "K5",
+      "group": "Жареные",
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "chicken_smoked": 40,
+        "crab_mix": 40,
+        "cucumber": 20
+      },
+      "top": {
+        "spice": 20,
+        "unagi": 5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "name": "Копчёная курица и краб темпура",
+      "materials_rub": 69.0140888515894,
+      "lines": [
+        {
+          "stage": "base",
+          "component": "rice",
+          "amount": 110,
+          "unit": "г",
+          "materials_rub": 6.350572832730301
+        },
+        {
+          "stage": "base",
+          "component": "nori",
+          "amount": 0.5,
+          "unit": "лист",
+          "materials_rub": 4.7
+        },
+        {
+          "stage": "inner",
+          "component": "chicken_smoked",
+          "amount": 40,
+          "unit": "г",
+          "materials_rub": 25.13513513513513
+        },
+        {
+          "stage": "inner",
+          "component": "crab_mix",
+          "amount": 40,
+          "unit": "г",
+          "materials_rub": 16.37643755102041
+        },
+        {
+          "stage": "inner",
+          "component": "cucumber",
+          "amount": 20,
+          "unit": "г",
+          "materials_rub": 4.765432111111111
+        },
+        {
+          "stage": "top",
+          "component": "spice",
+          "amount": 20,
+          "unit": "г",
+          "materials_rub": 6.481529581331503
+        },
+        {
+          "stage": "top",
+          "component": "unagi",
+          "amount": 5,
+          "unit": "г",
+          "materials_rub": 0.86335
+        },
+        {
+          "stage": "frying",
+          "component": "batter",
+          "amount": 25,
+          "unit": "г",
+          "materials_rub": 0.7275775862068966
+        },
+        {
+          "stage": "frying",
+          "component": "crumbs",
+          "amount": 15,
+          "unit": "г",
+          "materials_rub": 2.88
+        },
+        {
+          "stage": "frying",
+          "component": "oil",
+          "amount": 5,
+          "unit": "г",
+          "materials_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 100,
+      "project_menu_price_rub": 200,
+      "project_menu_fc": 0.34507044425794703,
+      "status": "new_paper_candidate_not_approved_recipe_or_measured_dose",
+      "physical_portion_status": "one_prepared_chicken_portion_target40g_proposal_not_measured; other_units_not_validated",
+      "actual_crab_g": 32.0
+    },
+    {
+      "id": "K6",
+      "group": "Жареные",
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "chicken_smoked": 40,
+        "tamago": 30,
+        "cucumber": 30
+      },
+      "top": {
+        "spice": 20,
+        "teriyaki": 5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "name": "Копчёная курица и тамаго темпура",
+      "materials_rub": 63.36520574191339,
+      "lines": [
+        {
+          "stage": "base",
+          "component": "rice",
+          "amount": 110,
+          "unit": "г",
+          "materials_rub": 6.350572832730301
+        },
+        {
+          "stage": "base",
+          "component": "nori",
+          "amount": 0.5,
+          "unit": "лист",
+          "materials_rub": 4.7
+        },
+        {
+          "stage": "inner",
+          "component": "chicken_smoked",
+          "amount": 40,
+          "unit": "г",
+          "materials_rub": 25.13513513513513
+        },
+        {
+          "stage": "inner",
+          "component": "tamago",
+          "amount": 30,
+          "unit": "г",
+          "materials_rub": 8.34483838578884
+        },
+        {
+          "stage": "inner",
+          "component": "cucumber",
+          "amount": 30,
+          "unit": "г",
+          "materials_rub": 7.148148166666666
+        },
+        {
+          "stage": "top",
+          "component": "spice",
+          "amount": 20,
+          "unit": "г",
+          "materials_rub": 6.481529581331503
+        },
+        {
+          "stage": "top",
+          "component": "teriyaki",
+          "amount": 5,
+          "unit": "г",
+          "materials_rub": 0.86335
+        },
+        {
+          "stage": "frying",
+          "component": "batter",
+          "amount": 25,
+          "unit": "г",
+          "materials_rub": 0.7275775862068966
+        },
+        {
+          "stage": "frying",
+          "component": "crumbs",
+          "amount": 15,
+          "unit": "г",
+          "materials_rub": 2.88
+        },
+        {
+          "stage": "frying",
+          "component": "oil",
+          "amount": 5,
+          "unit": "г",
+          "materials_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 100,
+      "project_menu_price_rub": 185,
+      "project_menu_fc": 0.3425146256319643,
+      "status": "new_paper_candidate_not_approved_recipe_or_measured_dose",
+      "physical_portion_status": "one_prepared_chicken_portion_target40g_proposal_not_measured; other_units_not_validated"
+    }
+  ],
+  "sets": [
+    {
+      "id": "4A",
+      "name": "Лосось и курица яки",
+      "price": 999,
+      "roll_count": 4,
+      "seed": [
+        "C01",
+        "C02",
+        "K3",
+        "F03"
+      ],
+      "final": [
+        "C01",
+        "D09",
+        "K3",
+        "D01"
+      ],
+      "previous_id": "4A",
+      "counts": {
+        "C01": 1,
+        "D09": 1,
+        "K3": 1,
+        "D01": 1
+      },
+      "seed_food_rub": 492.61786148346226,
+      "seed_fc": 0.4931109724559182,
+      "substitutions": [
+        {
+          "slot": 2,
+          "from": "C02",
+          "to": "D09",
+          "before_rub": 492.61786148346226,
+          "after_rub": 446.78181654677303,
+          "saving_rub": 45.83604493668925
+        },
+        {
+          "slot": 4,
+          "from": "F03",
+          "to": "D01",
+          "before_rub": 446.78181654677303,
+          "after_rub": 384.5516251187745,
+          "saving_rub": 62.230191427998555
+        }
+      ],
+      "food_cost_rub": 384.5516251187745,
+      "raw_fc": 0.3849365616804549,
+      "boxes_count": 2,
+      "boxes_cost_rub": 11.0,
+      "food_plus_boxes_rub": 395.5516251187745,
+      "food_plus_boxes_fc": 0.39594757269146597,
+      "raw_headroom_rub": 15.048374881225527,
+      "recipe_price_increase_tolerance": 0.03913226182980667,
+      "main_presence_roll_counts": {
+        "chicken": 1,
+        "salmon": 1,
+        "shrimp": 1,
+        "mussels": 1
+      },
+      "previous_composition": [
+        "C01",
+        "D06",
+        "D04",
+        "D05"
+      ],
+      "previous_food_rub": 386.03338230378756,
+      "food_change_vs_previous_rub": -1.4817571850130662,
+      "raw_fc_change_vs_previous_pp": -0.14832404254385048,
+      "synthetic_standalone_sum_rub": 1009,
+      "synthetic_customer_saving_rub": 10,
+      "synthetic_customer_saving_pct": 0.9910802775024763,
+      "raw_fc_if_paid15pct_less": 0.4528665431534764,
+      "raw_fc_if_paid20pct_less": 0.48117070210056867
+    },
+    {
+      "id": "4B",
+      "name": "Креветочная крышка и сырная курица",
+      "price": 999,
+      "roll_count": 4,
+      "seed": [
+        "C02",
+        "F03",
+        "K4",
+        "B01"
+      ],
+      "final": [
+        "C02",
+        "F03",
+        "K4",
+        "D01"
+      ],
+      "previous_id": "4B",
+      "counts": {
+        "C02": 1,
+        "F03": 1,
+        "K4": 1,
+        "D01": 1
+      },
+      "seed_food_rub": 498.3676075936871,
+      "seed_fc": 0.49886647406775486,
+      "substitutions": [
+        {
+          "slot": 4,
+          "from": "B01",
+          "to": "D01",
+          "before_rub": 498.3676075936871,
+          "after_rub": 384.7334920104039,
+          "saving_rub": 113.6341155832832
+        }
+      ],
+      "food_cost_rub": 384.7334920104039,
+      "raw_fc": 0.3851186106210249,
+      "boxes_count": 2,
+      "boxes_cost_rub": 11.0,
+      "food_plus_boxes_rub": 395.7334920104039,
+      "food_plus_boxes_fc": 0.3961296216320359,
+      "raw_headroom_rub": 14.86650798959613,
+      "recipe_price_increase_tolerance": 0.03864105490767655,
+      "main_presence_roll_counts": {
+        "chicken": 1,
+        "salmon": 1,
+        "shrimp": 1,
+        "mussels": 1
+      },
+      "previous_composition": [
+        "C02",
+        "F03",
+        "B02",
+        "D01"
+      ],
+      "previous_food_rub": 397.7792824507102,
+      "food_change_vs_previous_rub": -13.045790440306291,
+      "raw_fc_change_vs_previous_pp": -1.3058849289595886,
+      "synthetic_standalone_sum_rub": 1105,
+      "synthetic_customer_saving_rub": 106,
+      "synthetic_customer_saving_pct": 9.592760180995475,
+      "raw_fc_if_paid15pct_less": 0.4530807183776764,
+      "raw_fc_if_paid20pct_less": 0.4813982632762811
+    },
+    {
+      "id": "4C",
+      "name": "Тартар и курица темпура",
+      "price": 999,
+      "roll_count": 4,
+      "seed": [
+        "C05",
+        "C02",
+        "K6",
+        "F03"
+      ],
+      "final": [
+        "C05",
+        "D07",
+        "K6",
+        "D01"
+      ],
+      "previous_id": "4C",
+      "counts": {
+        "C05": 1,
+        "D07": 1,
+        "K6": 1,
+        "D01": 1
+      },
+      "seed_food_rub": 495.5696663145028,
+      "seed_fc": 0.49606573204654936,
+      "substitutions": [
+        {
+          "slot": 2,
+          "from": "C02",
+          "to": "D07",
+          "before_rub": 495.5696663145028,
+          "after_rub": 451.93418930731434,
+          "saving_rub": 43.635477007188484
+        },
+        {
+          "slot": 4,
+          "from": "F03",
+          "to": "D01",
+          "before_rub": 451.93418930731434,
+          "after_rub": 389.7039978793158,
+          "saving_rub": 62.230191427998555
+        }
+      ],
+      "food_cost_rub": 389.7039978793158,
+      "raw_fc": 0.3900940919712871,
+      "boxes_count": 2,
+      "boxes_cost_rub": 11.0,
+      "food_plus_boxes_rub": 400.7039978793158,
+      "food_plus_boxes_fc": 0.4011051029822981,
+      "raw_headroom_rub": 9.896002120684216,
+      "recipe_price_increase_tolerance": 0.025393637669965052,
+      "main_presence_roll_counts": {
+        "chicken": 1,
+        "salmon": 1,
+        "shrimp": 1,
+        "mussels": 1
+      },
+      "previous_composition": [
+        "C05",
+        "D07",
+        "D03",
+        "D05"
+      ],
+      "previous_food_rub": 395.34581907343374,
+      "food_change_vs_previous_rub": -5.641821194117938,
+      "raw_fc_change_vs_previous_pp": -0.5647468662780718,
+      "synthetic_standalone_sum_rub": 1009,
+      "synthetic_customer_saving_rub": 10,
+      "synthetic_customer_saving_pct": 0.9910802775024763,
+      "raw_fc_if_paid15pct_less": 0.4589342258485731,
+      "raw_fc_if_paid20pct_less": 0.4876176149641088
+    },
+    {
+      "id": "5L-A",
+      "name": "Две крышки и курица",
+      "price": 1299,
+      "roll_count": 5,
+      "seed": [
+        "C01",
+        "C02",
+        "C05",
+        "K3",
+        "F03"
+      ],
+      "final": [
+        "C01",
+        "C02",
+        "D05",
+        "K3",
+        "K1"
+      ],
+      "previous_id": "5L-A",
+      "counts": {
+        "C01": 1,
+        "C02": 1,
+        "D05": 1,
+        "K3": 1,
+        "K1": 1
+      },
+      "seed_food_rub": 672.3058464605527,
+      "seed_fc": 0.5175564637879544,
+      "substitutions": [
+        {
+          "slot": 5,
+          "from": "F03",
+          "to": "K1",
+          "before_rub": 672.3058464605527,
+          "after_rub": 611.0241658779415,
+          "saving_rub": 61.28168058261121
+        },
+        {
+          "slot": 3,
+          "from": "C05",
+          "to": "D05",
+          "before_rub": 611.0241658779415,
+          "after_rub": 498.2172819202158,
+          "saving_rub": 112.80688395772573
+        }
+      ],
+      "food_cost_rub": 498.2172819202158,
+      "raw_fc": 0.3835390930871561,
+      "boxes_count": 2,
+      "boxes_cost_rub": 11.0,
+      "food_plus_boxes_rub": 509.2172819202158,
+      "food_plus_boxes_fc": 0.39200714543511606,
+      "raw_headroom_rub": 21.38271807978424,
+      "recipe_price_increase_tolerance": 0.04291845918586268,
+      "main_presence_roll_counts": {
+        "chicken": 2,
+        "salmon": 1,
+        "shrimp": 1,
+        "mussels": 1
+      },
+      "previous_composition": [
+        "C01",
+        "C02",
+        "F05",
+        "D04",
+        "D05"
+      ],
+      "previous_food_rub": 516.8086992130412,
+      "food_change_vs_previous_rub": -18.59141729282544,
+      "raw_fc_change_vs_previous_pp": -1.4312099532583096,
+      "synthetic_standalone_sum_rub": 1339,
+      "synthetic_customer_saving_rub": 40,
+      "synthetic_customer_saving_pct": 2.987303958177745,
+      "raw_fc_if_paid15pct_less": 0.4512224624554778,
+      "raw_fc_if_paid20pct_less": 0.4794238663589451
+    },
+    {
+      "id": "5L-B",
+      "name": "Лосось, креветка и курица яки",
+      "price": 1299,
+      "roll_count": 5,
+      "seed": [
+        "C04",
+        "B06",
+        "F02",
+        "C05",
+        "K3"
+      ],
+      "final": [
+        "C04",
+        "B06",
+        "F02",
+        "D04",
+        "K3"
+      ],
+      "previous_id": "5L-B",
+      "counts": {
+        "C04": 1,
+        "B06": 1,
+        "F02": 1,
+        "D04": 1,
+        "K3": 1
+      },
+      "seed_food_rub": 609.7051680845233,
+      "seed_fc": 0.469365025469225,
+      "substitutions": [
+        {
+          "slot": 4,
+          "from": "C05",
+          "to": "D04",
+          "before_rub": 609.7051680845233,
+          "after_rub": 497.4453619107838,
+          "saving_rub": 112.25980617373953
+        }
+      ],
+      "food_cost_rub": 497.4453619107838,
+      "raw_fc": 0.3829448513554918,
+      "boxes_count": 2,
+      "boxes_cost_rub": 11.0,
+      "food_plus_boxes_rub": 508.4453619107838,
+      "food_plus_boxes_fc": 0.3914129037034517,
+      "raw_headroom_rub": 22.154638089216235,
+      "recipe_price_increase_tolerance": 0.04453682712834217,
+      "main_presence_roll_counts": {
+        "chicken": 1,
+        "salmon": 1,
+        "shrimp": 2,
+        "mussels": 2
+      },
+      "previous_composition": [
+        "C04",
+        "B03",
+        "F02",
+        "B02",
+        "F05"
+      ],
+      "previous_food_rub": 509.64180205785146,
+      "food_change_vs_previous_rub": -12.196440147067676,
+      "raw_fc_change_vs_previous_pp": -0.9389099420375425,
+      "synthetic_standalone_sum_rub": 1430,
+      "synthetic_customer_saving_rub": 131,
+      "synthetic_customer_saving_pct": 9.160839160839163,
+      "raw_fc_if_paid15pct_less": 0.4505233545358727,
+      "raw_fc_if_paid20pct_less": 0.4786810641943647
+    },
+    {
+      "id": "5H-B",
+      "name": "Тартар, креветка и две курицы",
+      "price": 1399,
+      "roll_count": 5,
+      "seed": [
+        "C05",
+        "F03",
+        "B06",
+        "C01",
+        "K2"
+      ],
+      "final": [
+        "C05",
+        "F03",
+        "B06",
+        "K1",
+        "K2"
+      ],
+      "previous_id": "5H-B",
+      "counts": {
+        "C05": 1,
+        "F03": 1,
+        "B06": 1,
+        "K1": 1,
+        "K2": 1
+      },
+      "seed_food_rub": 661.5797016681747,
+      "seed_fc": 0.47289471169991043,
+      "substitutions": [
+        {
+          "slot": 4,
+          "from": "C01",
+          "to": "K1",
+          "before_rub": 661.5797016681747,
+          "after_rub": 550.9127176230404,
+          "saving_rub": 110.66698404513437
+        }
+      ],
+      "food_cost_rub": 550.9127176230404,
+      "raw_fc": 0.3937903628470625,
+      "boxes_count": 2,
+      "boxes_cost_rub": 11.0,
+      "food_plus_boxes_rub": 561.9127176230404,
+      "food_plus_boxes_fc": 0.40165312196071506,
+      "raw_headroom_rub": 8.687282376959615,
+      "recipe_price_increase_tolerance": 0.01576889060474329,
+      "main_presence_roll_counts": {
+        "chicken": 2,
+        "salmon": 2,
+        "shrimp": 1,
+        "mussels": 1
+      },
+      "previous_composition": [
+        "C05",
+        "F03",
+        "B06",
+        "D01",
+        "D02"
+      ],
+      "previous_food_rub": 553.514955047345,
+      "food_change_vs_previous_rub": -2.602237424304576,
+      "raw_fc_change_vs_previous_pp": -0.18600696385307905,
+      "synthetic_standalone_sum_rub": 1469,
+      "synthetic_customer_saving_rub": 70,
+      "synthetic_customer_saving_pct": 4.7651463580667075,
+      "raw_fc_if_paid15pct_less": 0.46328277982007354,
+      "raw_fc_if_paid20pct_less": 0.4922379535588281
+    },
+    {
+      "id": "10A",
+      "name": "Лососевая крышка — ассорти",
+      "price": 1899,
+      "roll_count": 10,
+      "seed": [
+        "C01",
+        "C02",
+        "K2",
+        "C05",
+        "C06",
+        "B01",
+        "B03",
+        "B04",
+        "B06",
+        "F03"
+      ],
+      "final": [
+        "C01",
+        "D06",
+        "K2",
+        "K2",
+        "K6",
+        "K6",
+        "D01",
+        "D01",
+        "D02",
+        "D04"
+      ],
+      "previous_id": "10A",
+      "counts": {
+        "C01": 1,
+        "D06": 1,
+        "K2": 2,
+        "K6": 2,
+        "D01": 2,
+        "D02": 1,
+        "D04": 1
+      },
+      "seed_food_rub": 1386.2402817196128,
+      "seed_fc": 0.7299843505632505,
+      "substitutions": [
+        {
+          "slot": 7,
+          "from": "B03",
+          "to": "D01",
+          "before_rub": 1386.2402817196128,
+          "after_rub": 1337.5908473968825,
+          "saving_rub": 48.64943432273025
+        },
+        {
+          "slot": 2,
+          "from": "C02",
+          "to": "D06",
+          "before_rub": 1337.5908473968825,
+          "after_rub": 1287.4131708199322,
+          "saving_rub": 50.17767657695019
+        },
+        {
+          "slot": 10,
+          "from": "F03",
+          "to": "D04",
+          "before_rub": 1287.4131708199322,
+          "after_rub": 1231.7251789616955,
+          "saving_rub": 55.687991858236856
+        },
+        {
+          "slot": 9,
+          "from": "B06",
+          "to": "D02",
+          "before_rub": 1231.7251789616955,
+          "after_rub": 1166.9792975448254,
+          "saving_rub": 64.74588141687019
+        },
+        {
+          "slot": 8,
+          "from": "B04",
+          "to": "D01",
+          "before_rub": 1166.9792975448254,
+          "after_rub": 1074.6427129227386,
+          "saving_rub": 92.33658462208675
+        },
+        {
+          "slot": 5,
+          "from": "C06",
+          "to": "K6",
+          "before_rub": 1074.6427129227386,
+          "after_rub": 980.0257157759929,
+          "saving_rub": 94.61699714674563
+        },
+        {
+          "slot": 6,
+          "from": "B01",
+          "to": "K6",
+          "before_rub": 980.0257157759929,
+          "after_rub": 868.8708267010339,
+          "saving_rub": 111.15488907495899
+        },
+        {
+          "slot": 4,
+          "from": "C05",
+          "to": "K2",
+          "before_rub": 868.8708267010339,
+          "after_rub": 748.1715628333552,
+          "saving_rub": 120.6992638676787
+        }
+      ],
+      "food_cost_rub": 748.1715628333552,
+      "raw_fc": 0.3939818656310454,
+      "boxes_count": 4,
+      "boxes_cost_rub": 22.0,
+      "food_plus_boxes_rub": 770.1715628333552,
+      "food_plus_boxes_fc": 0.4055669103914456,
+      "raw_headroom_rub": 11.428437166644812,
+      "recipe_price_increase_tolerance": 0.015275155772246807,
+      "main_presence_roll_counts": {
+        "chicken": 4,
+        "salmon": 1,
+        "shrimp": 1,
+        "mussels": 4
+      },
+      "previous_composition": [
+        "C01",
+        "D06",
+        "D01",
+        "D01",
+        "D02",
+        "D02",
+        "D03",
+        "D03",
+        "D04",
+        "D05"
+      ],
+      "previous_food_rub": 758.9080898296851,
+      "food_change_vs_previous_rub": -10.736526996329872,
+      "raw_fc_change_vs_previous_pp": -0.5653779355623945,
+      "synthetic_standalone_sum_rub": 2064,
+      "synthetic_customer_saving_rub": 165,
+      "synthetic_customer_saving_pct": 7.994186046511631,
+      "raw_fc_if_paid15pct_less": 0.46350807721299464,
+      "raw_fc_if_paid20pct_less": 0.4924773320388067
+    },
+    {
+      "id": "10B",
+      "name": "Креветочная крышка — ассорти",
+      "price": 1899,
+      "roll_count": 10,
+      "seed": [
+        "C02",
+        "C01",
+        "K1",
+        "C05",
+        "C06",
+        "B01",
+        "B03",
+        "B04",
+        "B06",
+        "F03"
+      ],
+      "final": [
+        "C02",
+        "D06",
+        "K1",
+        "K2",
+        "K4",
+        "K5",
+        "D01",
+        "D02",
+        "D04",
+        "D05"
+      ],
+      "previous_id": "10B",
+      "counts": {
+        "C02": 1,
+        "D06": 1,
+        "K1": 1,
+        "K2": 1,
+        "K4": 1,
+        "K5": 1,
+        "D01": 1,
+        "D02": 1,
+        "D04": 1,
+        "D05": 1
+      },
+      "seed_food_rub": 1389.0860506891777,
+      "seed_fc": 0.7314829124218946,
+      "substitutions": [
+        {
+          "slot": 7,
+          "from": "B03",
+          "to": "D01",
+          "before_rub": 1389.0860506891777,
+          "after_rub": 1340.4366163664474,
+          "saving_rub": 48.64943432273025
+        },
+        {
+          "slot": 10,
+          "from": "F03",
+          "to": "D05",
+          "before_rub": 1340.4366163664474,
+          "after_rub": 1284.2015467242243,
+          "saving_rub": 56.23506964222305
+        },
+        {
+          "slot": 9,
+          "from": "B06",
+          "to": "D04",
+          "before_rub": 1284.2015467242243,
+          "after_rub": 1224.3443747316012,
+          "saving_rub": 59.85717199262305
+        },
+        {
+          "slot": 5,
+          "from": "C06",
+          "to": "K4",
+          "before_rub": 1224.3443747316012,
+          "after_rub": 1137.6932090242578,
+          "saving_rub": 86.65116570734331
+        },
+        {
+          "slot": 8,
+          "from": "B04",
+          "to": "D02",
+          "before_rub": 1137.6932090242578,
+          "after_rub": 1047.0101145476858,
+          "saving_rub": 90.6830944765722
+        },
+        {
+          "slot": 2,
+          "from": "C01",
+          "to": "D06",
+          "before_rub": 1047.0101145476858,
+          "after_rub": 953.7312687805359,
+          "saving_rub": 93.27884576714983
+        },
+        {
+          "slot": 6,
+          "from": "B01",
+          "to": "K5",
+          "before_rub": 953.7312687805359,
+          "after_rub": 848.2252628152529,
+          "saving_rub": 105.50600596528298
+        },
+        {
+          "slot": 4,
+          "from": "C05",
+          "to": "K2",
+          "before_rub": 848.2252628152529,
+          "after_rub": 727.5259989475742,
+          "saving_rub": 120.6992638676787
+        }
+      ],
+      "food_cost_rub": 727.5259989475742,
+      "raw_fc": 0.38311005737102377,
+      "boxes_count": 4,
+      "boxes_cost_rub": 22.0,
+      "food_plus_boxes_rub": 749.5259989475742,
+      "food_plus_boxes_fc": 0.394695102131424,
+      "raw_headroom_rub": 32.07400105242584,
+      "recipe_price_increase_tolerance": 0.04408639842263162,
+      "main_presence_roll_counts": {
+        "chicken": 4,
+        "salmon": 0,
+        "shrimp": 2,
+        "mussels": 4
+      },
+      "previous_composition": [
+        "C06",
+        "D06",
+        "D01",
+        "D01",
+        "D02",
+        "D02",
+        "D03",
+        "D03",
+        "D04",
+        "D05"
+      ],
+      "previous_food_rub": 744.3888185942333,
+      "food_change_vs_previous_rub": -16.86281964665909,
+      "raw_fc_change_vs_previous_pp": -0.8879841836050074,
+      "synthetic_standalone_sum_rub": 2100,
+      "synthetic_customer_saving_rub": 201,
+      "synthetic_customer_saving_pct": 9.571428571428575,
+      "raw_fc_if_paid15pct_less": 0.45071771455414567,
+      "raw_fc_if_paid20pct_less": 0.4788875717137797
+    },
+    {
+      "id": "10C",
+      "name": "Копчёный тартар — ассорти",
+      "price": 1899,
+      "roll_count": 10,
+      "seed": [
+        "C06",
+        "C01",
+        "K1",
+        "C04",
+        "C05",
+        "B01",
+        "B03",
+        "B04",
+        "B06",
+        "F03"
+      ],
+      "final": [
+        "C06",
+        "D06",
+        "K1",
+        "K2",
+        "K2",
+        "K3",
+        "K6",
+        "D01",
+        "D02",
+        "D05"
+      ],
+      "previous_id": "10C",
+      "counts": {
+        "C06": 1,
+        "D06": 1,
+        "K1": 1,
+        "K2": 2,
+        "K3": 1,
+        "K6": 1,
+        "D01": 1,
+        "D02": 1,
+        "D05": 1
+      },
+      "seed_food_rub": 1390.4623938332684,
+      "seed_fc": 0.73220768500962,
+      "substitutions": [
+        {
+          "slot": 7,
+          "from": "B03",
+          "to": "K6",
+          "before_rub": 1390.4623938332684,
+          "after_rub": 1344.2921860188624,
+          "saving_rub": 46.17020781440605
+        },
+        {
+          "slot": 10,
+          "from": "F03",
+          "to": "D05",
+          "before_rub": 1344.2921860188624,
+          "after_rub": 1288.0571163766394,
+          "saving_rub": 56.23506964222305
+        },
+        {
+          "slot": 9,
+          "from": "B06",
+          "to": "D02",
+          "before_rub": 1288.0571163766394,
+          "after_rub": 1223.311234959769,
+          "saving_rub": 64.74588141687019
+        },
+        {
+          "slot": 4,
+          "from": "C04",
+          "to": "K2",
+          "before_rub": 1223.311234959769,
+          "after_rub": 1151.5233079911789,
+          "saving_rub": 71.78792696859043
+        },
+        {
+          "slot": 8,
+          "from": "B04",
+          "to": "D01",
+          "before_rub": 1151.5233079911789,
+          "after_rub": 1059.186723369092,
+          "saving_rub": 92.33658462208675
+        },
+        {
+          "slot": 2,
+          "from": "C01",
+          "to": "D06",
+          "before_rub": 1059.186723369092,
+          "after_rub": 965.9078776019422,
+          "saving_rub": 93.27884576714983
+        },
+        {
+          "slot": 6,
+          "from": "B01",
+          "to": "K3",
+          "before_rub": 965.9078776019422,
+          "after_rub": 858.9876945489221,
+          "saving_rub": 106.92018305302001
+        },
+        {
+          "slot": 5,
+          "from": "C05",
+          "to": "K2",
+          "before_rub": 858.9876945489221,
+          "after_rub": 738.2884306812435,
+          "saving_rub": 120.6992638676787
+        }
+      ],
+      "food_cost_rub": 738.2884306812435,
+      "raw_fc": 0.38877747797853796,
+      "boxes_count": 4,
+      "boxes_cost_rub": 22.0,
+      "food_plus_boxes_rub": 760.2884306812435,
+      "food_plus_boxes_fc": 0.40036252273893813,
+      "raw_headroom_rub": 21.311569318756483,
+      "recipe_price_increase_tolerance": 0.028866183503771792,
+      "main_presence_roll_counts": {
+        "chicken": 5,
+        "salmon": 1,
+        "shrimp": 1,
+        "mussels": 3
+      },
+      "previous_composition": [
+        "D08",
+        "D06",
+        "D06",
+        "D07",
+        "D09",
+        "D01",
+        "D01",
+        "D02",
+        "D04",
+        "D05"
+      ],
+      "previous_food_rub": 749.8102547085577,
+      "food_change_vs_previous_rub": -11.52182402731421,
+      "raw_fc_change_vs_previous_pp": -0.606731123081317,
+      "synthetic_standalone_sum_rub": 2079,
+      "synthetic_customer_saving_rub": 180,
+      "synthetic_customer_saving_pct": 8.658008658008654,
+      "raw_fc_if_paid15pct_less": 0.45738526821004466,
+      "raw_fc_if_paid20pct_less": 0.4859718474731724
+    }
+  ],
+  "existing_cards_unchanged": true,
+  "checks": [
+    {
+      "check": "K1 no unresolved eel rice",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 no unresolved eel nori",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 no unresolved eel chicken_smoked",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 no unresolved eel cream_cheese",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 no unresolved eel cucumber",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 no unresolved eel teriyaki",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 rice110 and halfsheet",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 full100g inside",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 chicken40%",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 primary>=30",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 menuFC<=35 and price<=399",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 allowed palette",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 no unresolved eel rice",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 no unresolved eel nori",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 no unresolved eel chicken_smoked",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 no unresolved eel crab_mix",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 no unresolved eel tamago",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 no unresolved eel teriyaki",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 rice110 and halfsheet",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 full100g inside",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 chicken40%",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 primary>=30",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 no cheese with crab",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 actual crab primary>=30%",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 menuFC<=35 and price<=399",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 allowed palette",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 no unresolved eel rice",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 no unresolved eel nori",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 no unresolved eel chicken_smoked",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 no unresolved eel tamago",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 no unresolved eel cream_cheese",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 no unresolved eel cucumber",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 no unresolved eel yaki",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 no unresolved eel teriyaki",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 rice110 and halfsheet",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 full100g inside",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 chicken40%",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 primary>=30",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 menuFC<=35 and price<=399",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 allowed palette",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 no unresolved eel rice",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 no unresolved eel nori",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 no unresolved eel chicken_smoked",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 no unresolved eel mozzarella",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 no unresolved eel cream_cheese",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 no unresolved eel cucumber",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 no unresolved eel cheese_sauce",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 no unresolved eel teriyaki",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 rice110 and halfsheet",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 full100g inside",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 chicken40%",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 primary>=30",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 menuFC<=35 and price<=399",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 allowed palette",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 no unresolved eel rice",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 no unresolved eel nori",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 no unresolved eel chicken_smoked",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 no unresolved eel crab_mix",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 no unresolved eel cucumber",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 no unresolved eel spice",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 no unresolved eel unagi",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 no unresolved eel batter",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 no unresolved eel crumbs",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 no unresolved eel oil",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 rice110 and halfsheet",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 full100g inside",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 chicken40%",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 primary>=30",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 no cheese with crab",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 actual crab primary>=30%",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 menuFC<=35 and price<=399",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 allowed palette",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 no unresolved eel rice",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 no unresolved eel nori",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 no unresolved eel chicken_smoked",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 no unresolved eel tamago",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 no unresolved eel cucumber",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 no unresolved eel spice",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 no unresolved eel teriyaki",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 no unresolved eel batter",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 no unresolved eel crumbs",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 no unresolved eel oil",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 rice110 and halfsheet",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 full100g inside",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 chicken40%",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 primary>=30",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 menuFC<=35 and price<=399",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 allowed palette",
+      "status": "PASS"
+    },
+    {
+      "check": "4A exact portions",
+      "status": "PASS"
+    },
+    {
+      "check": "4A IDs max2",
+      "status": "PASS"
+    },
+    {
+      "check": "4A composition max2",
+      "status": "PASS"
+    },
+    {
+      "check": "4A new chicken present",
+      "status": "PASS"
+    },
+    {
+      "check": "4A seafood retained",
+      "status": "PASS"
+    },
+    {
+      "check": "4A costed ingredients no eel",
+      "status": "PASS"
+    },
+    {
+      "check": "4A replacements lower cost",
+      "status": "PASS"
+    },
+    {
+      "check": "4A replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "4A replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "4A final reached",
+      "status": "PASS"
+    },
+    {
+      "check": "4A raw working target",
+      "status": "PASS"
+    },
+    {
+      "check": "4A no set dearer than project singles",
+      "status": "PASS"
+    },
+    {
+      "check": "4B exact portions",
+      "status": "PASS"
+    },
+    {
+      "check": "4B IDs max2",
+      "status": "PASS"
+    },
+    {
+      "check": "4B composition max2",
+      "status": "PASS"
+    },
+    {
+      "check": "4B new chicken present",
+      "status": "PASS"
+    },
+    {
+      "check": "4B seafood retained",
+      "status": "PASS"
+    },
+    {
+      "check": "4B costed ingredients no eel",
+      "status": "PASS"
+    },
+    {
+      "check": "4B replacements lower cost",
+      "status": "PASS"
+    },
+    {
+      "check": "4B replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "4B final reached",
+      "status": "PASS"
+    },
+    {
+      "check": "4B raw working target",
+      "status": "PASS"
+    },
+    {
+      "check": "4B no set dearer than project singles",
+      "status": "PASS"
+    },
+    {
+      "check": "4C exact portions",
+      "status": "PASS"
+    },
+    {
+      "check": "4C IDs max2",
+      "status": "PASS"
+    },
+    {
+      "check": "4C composition max2",
+      "status": "PASS"
+    },
+    {
+      "check": "4C new chicken present",
+      "status": "PASS"
+    },
+    {
+      "check": "4C seafood retained",
+      "status": "PASS"
+    },
+    {
+      "check": "4C costed ingredients no eel",
+      "status": "PASS"
+    },
+    {
+      "check": "4C replacements lower cost",
+      "status": "PASS"
+    },
+    {
+      "check": "4C replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "4C replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "4C final reached",
+      "status": "PASS"
+    },
+    {
+      "check": "4C raw working target",
+      "status": "PASS"
+    },
+    {
+      "check": "4C no set dearer than project singles",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-A exact portions",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-A IDs max2",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-A composition max2",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-A new chicken present",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-A seafood retained",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-A costed ingredients no eel",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-A replacements lower cost",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-A replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-A replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-A final reached",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-A raw working target",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-A no set dearer than project singles",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-B exact portions",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-B IDs max2",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-B composition max2",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-B new chicken present",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-B seafood retained",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-B costed ingredients no eel",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-B replacements lower cost",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-B replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-B final reached",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-B raw working target",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-B no set dearer than project singles",
+      "status": "PASS"
+    },
+    {
+      "check": "5H-B exact portions",
+      "status": "PASS"
+    },
+    {
+      "check": "5H-B IDs max2",
+      "status": "PASS"
+    },
+    {
+      "check": "5H-B composition max2",
+      "status": "PASS"
+    },
+    {
+      "check": "5H-B new chicken present",
+      "status": "PASS"
+    },
+    {
+      "check": "5H-B seafood retained",
+      "status": "PASS"
+    },
+    {
+      "check": "5H-B costed ingredients no eel",
+      "status": "PASS"
+    },
+    {
+      "check": "5H-B replacements lower cost",
+      "status": "PASS"
+    },
+    {
+      "check": "5H-B replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "5H-B final reached",
+      "status": "PASS"
+    },
+    {
+      "check": "5H-B raw working target",
+      "status": "PASS"
+    },
+    {
+      "check": "5H-B no set dearer than project singles",
+      "status": "PASS"
+    },
+    {
+      "check": "10A exact portions",
+      "status": "PASS"
+    },
+    {
+      "check": "10A IDs max2",
+      "status": "PASS"
+    },
+    {
+      "check": "10A composition max2",
+      "status": "PASS"
+    },
+    {
+      "check": "10A new chicken present",
+      "status": "PASS"
+    },
+    {
+      "check": "10A seafood retained",
+      "status": "PASS"
+    },
+    {
+      "check": "10A costed ingredients no eel",
+      "status": "PASS"
+    },
+    {
+      "check": "10A replacements lower cost",
+      "status": "PASS"
+    },
+    {
+      "check": "10A replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10A replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10A replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10A replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10A replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10A replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10A replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10A replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10A final reached",
+      "status": "PASS"
+    },
+    {
+      "check": "10A raw working target",
+      "status": "PASS"
+    },
+    {
+      "check": "10A no set dearer than project singles",
+      "status": "PASS"
+    },
+    {
+      "check": "10B exact portions",
+      "status": "PASS"
+    },
+    {
+      "check": "10B IDs max2",
+      "status": "PASS"
+    },
+    {
+      "check": "10B composition max2",
+      "status": "PASS"
+    },
+    {
+      "check": "10B new chicken present",
+      "status": "PASS"
+    },
+    {
+      "check": "10B seafood retained",
+      "status": "PASS"
+    },
+    {
+      "check": "10B costed ingredients no eel",
+      "status": "PASS"
+    },
+    {
+      "check": "10B replacements lower cost",
+      "status": "PASS"
+    },
+    {
+      "check": "10B replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10B replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10B replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10B replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10B replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10B replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10B replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10B replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10B final reached",
+      "status": "PASS"
+    },
+    {
+      "check": "10B raw working target",
+      "status": "PASS"
+    },
+    {
+      "check": "10B no set dearer than project singles",
+      "status": "PASS"
+    },
+    {
+      "check": "10C exact portions",
+      "status": "PASS"
+    },
+    {
+      "check": "10C IDs max2",
+      "status": "PASS"
+    },
+    {
+      "check": "10C composition max2",
+      "status": "PASS"
+    },
+    {
+      "check": "10C new chicken present",
+      "status": "PASS"
+    },
+    {
+      "check": "10C seafood retained",
+      "status": "PASS"
+    },
+    {
+      "check": "10C costed ingredients no eel",
+      "status": "PASS"
+    },
+    {
+      "check": "10C replacements lower cost",
+      "status": "PASS"
+    },
+    {
+      "check": "10C replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10C replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10C replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10C replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10C replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10C replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10C replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10C replace only while seed exceeds budget",
+      "status": "PASS"
+    },
+    {
+      "check": "10C final reached",
+      "status": "PASS"
+    },
+    {
+      "check": "10C raw working target",
+      "status": "PASS"
+    },
+    {
+      "check": "10C no set dearer than project singles",
+      "status": "PASS"
+    },
+    {
+      "check": "existing cards left byte-equivalent as JSON records",
+      "status": "PASS"
+    }
+  ],
+  "source_sha256": {
+    "business-docs/strategy/snapshots/2026-10-21-new-roll-line-v1/inputs.json": "5a098888513b149bea04ca49606f30f0c9e8d5c2a4601a684c9578f978f81e48",
+    "business-docs/strategy/snapshots/2026-10-21-new-roll-line-v1/results.json": "20676e8a2ea6991b5f3296ff6bbf26a138c754d64c14734dd927628f9738f902",
+    "business-docs/strategy/snapshots/2026-10-21-sets-quality-first/inputs.json": "48a100ad22dd8d8324df5cb32e0be69d070e3c8c73dd94c3ca7e0c670769c71d",
+    "business-docs/strategy/snapshots/2026-10-21-sets-quality-first/results.json": "e0b5aef51460fe3d3fa0c6b51979c030bf51feb07be97488c1f4857b3439d848",
+    "business-docs/strategy/snapshots/2026-10-21-new-budget-roll-candidates/source-audit.json": "3ee814516766a26a77e52e045f5eba829ff10443b149696c8a200ae5959c497c"
+  },
+  "assumptions": [
+    "Frozen21Oct pricebook, calculations22Oct. No newly fetched price quotes.",
+    "40% raw material FC before extra benefits is carried working assumption, not owner universal ceiling.",
+    "New100g inner recipes use chicken40g target preparedportion, not existing calibrated dose; no1-3g gram shaving.",
+    "Frying25g batter15g crumbs5g oil provisional, not measured actual consumption.",
+    "All27 existing recipe records preserved. Project menu prices are proposals, not live prices.",
+    "Water, garnishes, bag and extra sauces beyond cards not priced; labour/order costs excluded from raw/boxFC.",
+    "Boxcount from old cards, capacity newrolls not proven.",
+    "No radish with stale2023 cost, no excluded squid/tuna/carrot/mushroom; unresolved eel not included in main sets.",
+    "Taste, visual consistency, delivery and manufacturing dose variability not validated. No physical trial started."
+  ]
+}

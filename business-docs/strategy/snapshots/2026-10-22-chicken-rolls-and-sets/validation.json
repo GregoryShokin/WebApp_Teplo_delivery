@@ -1,0 +1,26 @@
+{
+  "as_of": "2026-10-22",
+  "status": "PASS",
+  "arithmetic_checks_in_calculator": 212,
+  "independent_review": {
+    "arithmetic": "all6newrolls,9sets,boxing,FC,menuprices,wholecardreplacementsandpreviouscomparisonsrecomputed;no material issues",
+    "semantics": "old27recordsunchanged;physicaldoseunverified;mainandcrabrules;max2;workingraw40andboxseparation;no material issues"
+  },
+  "existing_recipe_records_preserved": 27,
+  "new_recipes_checked": 6,
+  "sets_checked": 9,
+  "sets_over40pct_after_boxes": [
+    "4C",
+    "5H-B",
+    "10A",
+    "10C"
+  ],
+  "fourA_fourC_synthetic_saving_rub": 10,
+  "source_sha256": {
+    "business-docs/strategy/snapshots/2026-10-21-new-roll-line-v1/inputs.json": "5a098888513b149bea04ca49606f30f0c9e8d5c2a4601a684c9578f978f81e48",
+    "business-docs/strategy/snapshots/2026-10-21-new-roll-line-v1/results.json": "20676e8a2ea6991b5f3296ff6bbf26a138c754d64c14734dd927628f9738f902",
+    "business-docs/strategy/snapshots/2026-10-21-sets-quality-first/inputs.json": "48a100ad22dd8d8324df5cb32e0be69d070e3c8c73dd94c3ca7e0c670769c71d",
+    "business-docs/strategy/snapshots/2026-10-21-sets-quality-first/results.json": "e0b5aef51460fe3d3fa0c6b51979c030bf51feb07be97488c1f4857b3439d848",
+    "business-docs/strategy/snapshots/2026-10-21-new-budget-roll-candidates/source-audit.json": "3ee814516766a26a77e52e045f5eba829ff10443b149696c8a200ae5959c497c"
+  }
+}

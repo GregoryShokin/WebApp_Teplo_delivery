@@ -1,0 +1,4294 @@
+{
+  "as_of": "2026-10-22",
+  "pricebook_as_of": "2026-10-21",
+  "status": "agent_paper_proposals_owner_authorized_calculation_not_production_change",
+  "working_raw_fc_target": 0.4,
+  "components": {
+    "rice": {
+      "name": "Рис для роллов пф",
+      "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+      "chart_id": "18e9ff7a-3874-417c-8b8e-645af189bb84",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.0577324802975482,
+      "unpriced": [
+        {
+          "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+          "name": "Вода",
+          "amount_per_baseunit": 0.4417708431243538
+        }
+      ]
+    },
+    "nori": {
+      "name": "Нори",
+      "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+      "chart_id": null,
+      "quantity_basis": "one_iiko_purchase_sheet_unit",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_sheet": 9.4
+    },
+    "salmon_plain": {
+      "name": "Семга с/м вакуум п/ф",
+      "product_id": "2b9465ac-eab7-4b7c-aa14-548253b02024",
+      "chart_id": "2aeee468-62ee-4273-9d79-5faa0e974313",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 2.371794871794872
+    },
+    "salmon_smoked": {
+      "name": "Семга х/к п/ф",
+      "product_id": "c6f89aab-a5c7-4c4f-bec7-8c21ab2361de",
+      "chart_id": "2399dbb3-5627-40b8-be63-520ee2df79d2",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 2.05082
+    },
+    "shrimp": {
+      "name": "Креветка п/ф очищ отвар",
+      "product_id": "cfc06311-539c-4c41-9d99-21baf376c5de",
+      "chart_id": "85f19bab-9ac0-4229-a40a-f90eaa0ec143",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 1.6109202675827157
+    },
+    "mussels": {
+      "name": "Мидии п/ф",
+      "product_id": "a8a4127b-a076-4959-a9e0-8dd2037e4855",
+      "chart_id": "c084a813-c2c6-449b-8450-7429dac19b55",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.9996986301369863
+    },
+    "eel_legacy": {
+      "name": "Угорь пф — старая отдельная калькуляция",
+      "product_id": "1daed58b-b495-4d25-b597-4c4db4c263ed",
+      "chart_id": "130572a8-af53-444a-9aa1-f1cb02ef90e9",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 2.9264150943396228
+    },
+    "eel_joint": {
+      "name": "Филе угря — совместное распределение затрат",
+      "product_id": null,
+      "chart_id": null,
+      "quantity_basis": "joint allocation price per usable eel gram under owner paperfull-utilization; fillet mass yield still53%, remainder47%, not100%fillet",
+      "scenario": "owner_paper_override_with_explicit_reference",
+      "yield_already_applied": true,
+      "cost_per_g": 1.551,
+      "reference_purchased_product_id": "c37017cf-27f9-401d-a3a0-0f4b68f9527e",
+      "do_not_divide_by_0_53_again": true,
+      "must_couple_sauce_and_fillet_quantities": true
+    },
+    "cream_cheese": {
+      "name": "Творожный сыр +30%",
+      "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+      "chart_id": null,
+      "quantity_basis": "per_g_new_purchased_creamcheese; owner price scenario not supplier quote",
+      "scenario": "owner_paper_override_with_explicit_reference",
+      "yield_already_applied": false,
+      "cost_per_g": 0.5005
+    },
+    "crab_mix": {
+      "name": "Крабовая смесь80/20 по готовым массам",
+      "product_id": null,
+      "chart_id": null,
+      "quantity_basis": "80% READY preparedcrab +20% mayonnaise by ready mixing mass, with no second total-mixture loss imposed",
+      "scenario": "owner_paper_override_with_explicit_reference",
+      "yield_already_applied": true,
+      "cost_per_g": 0.4094109387755102,
+      "formula": "0.8*(450/0.98)+0.2*210.32",
+      "reference_old_product_id": "9d5cfeae-8717-4f4e-903d-6877561bb32c",
+      "do_not_apply_old_mixture_yield_again": true
+    },
+    "cucumber": {
+      "name": "Огурец п/ф роллы",
+      "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+      "chart_id": "604a3574-88e3-4c4e-81ad-6a8828f4f0b2",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.23827160555555554
+    },
+    "tamago": {
+      "name": "Томаго",
+      "product_id": "3afb7b3f-7a70-4fda-bf4b-e8ce3d670c44",
+      "chart_id": "5c13147a-48c7-4466-af30-a92e945ac1c1",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.27816127952629466
+    },
+    "mozzarella": {
+      "name": "Моцарелла",
+      "product_id": "55452094-cdd5-41e2-8437-1e7b74de8d56",
+      "chart_id": null,
+      "quantity_basis": "per_g_purchased",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_g": 0.38
+    },
+    "masago": {
+      "name": "Масаго п/ф",
+      "product_id": "901ac275-994e-45a4-8c90-71a3fed3ce43",
+      "chart_id": "5bafd0f5-265d-434d-88c2-b3d9fa9fd039",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 1.297872340425532
+    },
+    "spice": {
+      "name": "Соус спайси NEW",
+      "product_id": "b0eeef85-f93f-4686-8175-81b368854122",
+      "chart_id": "1d095852-fbb7-4c32-8160-a05fdfe07aad",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.32407647906657516
+    },
+    "yaki": {
+      "name": "Соус Яки п/ф",
+      "product_id": "4700248f-233a-4d5a-9f3e-3ceb888e844a",
+      "chart_id": "e36ca51b-865f-44d5-adce-6dd54272512f",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.32710997848808515
+    },
+    "cheese_sauce": {
+      "name": "Сырный соус роллы",
+      "product_id": "e245e658-299d-4457-98fa-4b59ae9a3f95",
+      "chart_id": "8181df9c-5399-46da-849b-2e6d27675e2c",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.3496421052631579
+    },
+    "black_eel": {
+      "name": "Чёрный угорь — совместный сценарий",
+      "product_id": "8fde37d8-952e-42b8-85ea-9e8e9f85732f",
+      "chart_id": "ffbba5de-1152-482c-a299-57b4759d13fc",
+      "quantity_basis": "current non-eel recipe; eel component from coupled remainder+smallfillet route, massallocation@1551/kg. Numeric reference equals old sauce but procurement must be joint, not separate100g purchases.",
+      "scenario": "owner_paper_override_with_explicit_reference",
+      "yield_already_applied": true,
+      "cost_per_g": 0.61396109375,
+      "must_couple_sauce_and_fillet_quantities": true
+    },
+    "tartar_plain": {
+      "name": "Тартар с лососем без копчения",
+      "product_id": null,
+      "chart_id": "b818426c-930d-409a-b64b-dbcc3d0dad8a",
+      "quantity_basis": "ready total tartar mix, with same current proportions/yield and plain PREPARED salmon substituted for smoked PREPARED salmon",
+      "scenario": "owner_paper_override_with_explicit_reference",
+      "yield_already_applied": true,
+      "cost_per_g": 1.891720063467473,
+      "reference_product_id": "00e27cd2-8eb4-4f10-a98c-629a45d944b7",
+      "do_not_apply_salmon_yield_again": true
+    },
+    "tartar_smoked": {
+      "name": "Тар-тар Лосось х/к",
+      "product_id": "00e27cd2-8eb4-4f10-a98c-629a45d944b7",
+      "chart_id": "b818426c-930d-409a-b64b-dbcc3d0dad8a",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 1.6467010773645174
+    },
+    "unagi": {
+      "name": "Унаги соус",
+      "product_id": "cb4ed412-ef0b-49c6-ad99-de69553b3238",
+      "chart_id": null,
+      "quantity_basis": "per_g_purchased",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_g": 0.17267
+    },
+    "teriyaki": {
+      "name": "Терияки",
+      "product_id": "7e817df8-56fd-4c2d-8d3d-941dc2620d13",
+      "chart_id": null,
+      "quantity_basis": "per_g_purchased",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_g": 0.17267
+    },
+    "batter": {
+      "name": "Кляр",
+      "product_id": "16ff10d9-6516-4a65-a843-fc72c9639e45",
+      "chart_id": "9284411a-57e1-43a9-bec1-81ba905d26e0",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.029103103448275863,
+      "unpriced": [
+        {
+          "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+          "name": "Вода",
+          "amount_per_baseunit": 0.5287356321839081
+        }
+      ]
+    },
+    "crumbs": {
+      "name": "Сухари Голд",
+      "product_id": "f1bb5ee8-2f9a-48d2-af15-65c69419568e",
+      "chart_id": null,
+      "quantity_basis": "per_g_purchased",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_g": 0.192
+    },
+    "oil": {
+      "name": "Масло растительное",
+      "product_id": "c33018ee-a46d-4bfc-b224-3b62a1f69dd0",
+      "chart_id": null,
+      "quantity_basis": "per_g_using_iiko_unitWeight0.925kg_per_litre_not_new_measurement",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_g": 0.14681081081081082,
+      "cost_per_ml": 0.1358,
+      "kg_per_litre_from_catalog": 0.925
+    },
+    "chicken_smoked": {
+      "name": "Копчёная курица п/ф",
+      "cost_per_g": 0.6283783783783783,
+      "quantity_basis": "per_g_of_ready_preparation",
+      "yield_already_applied": true,
+      "product_id": "f20c377d-a9f8-422e-b382-55a106207ee6",
+      "chart_id": "86076820-de39-43cd-a63b-07681343d11f",
+      "purchase_rub_per_kg": 465,
+      "ready_yield": 0.74,
+      "price_date": "2026-10-15"
+    }
+  },
+  "existing_recipes": [
+    {
+      "id": "C01",
+      "group": "Холодные",
+      "name": "Лосось — крышка",
+      "kind": "lid",
+      "inner": {
+        "cream_cheese": 65,
+        "cucumber": 20,
+        "tamago": 20
+      },
+      "top": {
+        "salmon_plain": 50
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 65,
+          "unit": "г",
+          "cost_rub": 32.5325,
+          "price_reserve_cost_rub": 32.5325
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 5.563225590525893,
+          "price_reserve_cost_rub": 5.563225590525893
+        },
+        {
+          "component": "salmon_plain",
+          "stage": "top",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 118.58974358974359,
+          "price_reserve_cost_rub": 118.58974358974359
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 172.5014741241109,
+      "price_reserve_cost_rub": 172.5014741241109,
+      "menu_price_rub": 495,
+      "minimum_price_joint_rounded5_rub": 495,
+      "joint_fc_pct": 34.84878265133553,
+      "reserve_fc_pct": 34.84878265133553,
+      "margin_to35_rub": 0.7485258758891007,
+      "principal_shares_inner": {},
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "C02",
+      "group": "Холодные",
+      "name": "Креветка — крышка",
+      "kind": "lid",
+      "inner": {
+        "crab_mix": 65,
+        "cucumber": 20,
+        "tamago": 20
+      },
+      "top": {
+        "shrimp": 50,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 65,
+          "unit": "г",
+          "cost_rub": 26.611711020408165,
+          "price_reserve_cost_rub": 26.611711020408165
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 5.563225590525893,
+          "price_reserve_cost_rub": 5.563225590525893
+        },
+        {
+          "component": "shrimp",
+          "stage": "top",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 80.54601337913579,
+          "price_reserve_cost_rub": 80.54601337913579
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 129.40030493391126,
+      "price_reserve_cost_rub": 129.40030493391126,
+      "menu_price_rub": 370,
+      "minimum_price_joint_rounded5_rub": 370,
+      "joint_fc_pct": 34.97305538754358,
+      "reserve_fc_pct": 34.97305538754358,
+      "margin_to35_rub": 0.09969506608874212,
+      "principal_shares_inner": {},
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "C03",
+      "group": "Холодные",
+      "name": "Угорь — крышка",
+      "kind": "lid",
+      "inner": {
+        "cream_cheese": 65,
+        "cucumber": 20,
+        "tamago": 20
+      },
+      "top": {
+        "eel_joint": 50,
+        "unagi": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 65,
+          "unit": "г",
+          "cost_rub": 32.5325,
+          "price_reserve_cost_rub": 32.5325
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 5.563225590525893,
+          "price_reserve_cost_rub": 5.563225590525893
+        },
+        {
+          "component": "eel_joint",
+          "stage": "top",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 77.55,
+          "price_reserve_cost_rub": 146.32075471698113
+        },
+        {
+          "component": "unagi",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 132.3250805343673,
+      "price_reserve_cost_rub": 201.09583525134843,
+      "menu_price_rub": 575,
+      "minimum_price_joint_rounded5_rub": 380,
+      "joint_fc_pct": 23.01305748423779,
+      "reserve_fc_pct": 34.97318873936494,
+      "margin_to35_rub": 0.15416474865156715,
+      "principal_shares_inner": {},
+      "eel_g": 50,
+      "black_eel_sauce_g": 0,
+      "surplus_sauce_stress_cost_rub": 261.17124123204167,
+      "surplus_sauce_stress_price_rub": 750,
+      "surplus_sauce_stress_fc_at_proposed_price_pct": 45.421085431659414
+    },
+    {
+      "id": "C04",
+      "group": "Холодные",
+      "name": "Копчёный лосось и масаго",
+      "kind": "ordinary",
+      "inner": {
+        "salmon_smoked": 35,
+        "cream_cheese": 45,
+        "cucumber": 25
+      },
+      "top": {
+        "masago": 15
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "salmon_smoked",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 71.7787,
+          "price_reserve_cost_rub": 71.7787
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 45,
+          "unit": "г",
+          "cost_rub": 22.522499999999997,
+          "price_reserve_cost_rub": 22.522499999999997
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 5.956790138888889,
+          "price_reserve_cost_rub": 5.956790138888889
+        },
+        {
+          "component": "masago",
+          "stage": "top",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 19.46808510638298,
+          "price_reserve_cost_rub": 19.46808510638298
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 130.77664807800215,
+      "price_reserve_cost_rub": 130.77664807800215,
+      "menu_price_rub": 375,
+      "minimum_price_joint_rounded5_rub": 375,
+      "joint_fc_pct": 34.873772820800575,
+      "reserve_fc_pct": 34.873772820800575,
+      "margin_to35_rub": 0.47335192199784615,
+      "principal_shares_inner": {
+        "salmon_smoked": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "C05",
+      "group": "Холодные",
+      "name": "Тартар из лосося",
+      "kind": "tartar",
+      "inner": {
+        "cream_cheese": 50,
+        "tamago": 20,
+        "cucumber": 20
+      },
+      "top": {
+        "tartar_plain": 70,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 25.025,
+          "price_reserve_cost_rub": 25.025
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 5.563225590525893,
+          "price_reserve_cost_rub": 5.563225590525893
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "tartar_plain",
+          "stage": "top",
+          "amount": 70,
+          "unit": "г",
+          "cost_rub": 132.4204044427231,
+          "price_reserve_cost_rub": 132.4204044427231
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 90,
+      "joint_scenario_cost_rub": 179.68798497709042,
+      "price_reserve_cost_rub": 179.68798497709042,
+      "menu_price_rub": 515,
+      "minimum_price_joint_rounded5_rub": 515,
+      "joint_fc_pct": 34.890870869337945,
+      "reserve_fc_pct": 34.890870869337945,
+      "margin_to35_rub": 0.5620150229095771,
+      "principal_shares_inner": {},
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "C06",
+      "group": "Холодные",
+      "name": "Тартар из копчёного лосося",
+      "kind": "tartar",
+      "inner": {
+        "crab_mix": 50,
+        "tamago": 20,
+        "cucumber": 20
+      },
+      "top": {
+        "tartar_smoked": 70,
+        "unagi": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 20.47054693877551,
+          "price_reserve_cost_rub": 20.47054693877551
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 5.563225590525893,
+          "price_reserve_cost_rub": 5.563225590525893
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "tartar_smoked",
+          "stage": "top",
+          "amount": 70,
+          "unit": "г",
+          "cost_rub": 115.26907541551623,
+          "price_reserve_cost_rub": 115.26907541551623
+        },
+        {
+          "component": "unagi",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 90,
+      "joint_scenario_cost_rub": 157.98220288865903,
+      "price_reserve_cost_rub": 157.98220288865903,
+      "menu_price_rub": 455,
+      "minimum_price_joint_rounded5_rub": 455,
+      "joint_fc_pct": 34.72136327223275,
+      "reserve_fc_pct": 34.72136327223275,
+      "margin_to35_rub": 1.2677971113409683,
+      "principal_shares_inner": {},
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "B01",
+      "group": "Запечённые",
+      "name": "Лосось и креветка",
+      "kind": "ordinary",
+      "inner": {
+        "salmon_plain": 35,
+        "shrimp": 35,
+        "crab_mix": 20,
+        "cucumber": 15
+      },
+      "top": {
+        "yaki": 35,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "salmon_plain",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 83.01282051282051,
+          "price_reserve_cost_rub": 83.01282051282051
+        },
+        {
+          "component": "shrimp",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 56.38220936539505,
+          "price_reserve_cost_rub": 56.38220936539505
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 8.188218775510204,
+          "price_reserve_cost_rub": 8.188218775510204
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "yaki",
+          "stage": "top",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 11.44884924708298,
+          "price_reserve_cost_rub": 11.44884924708298
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 174.5200948168724,
+      "price_reserve_cost_rub": 174.5200948168724,
+      "menu_price_rub": 500,
+      "minimum_price_joint_rounded5_rub": 500,
+      "joint_fc_pct": 34.904018963374476,
+      "reserve_fc_pct": 34.904018963374476,
+      "margin_to35_rub": 0.4799051831276131,
+      "principal_shares_inner": {
+        "salmon_plain": 0.3333333333333333,
+        "shrimp": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "B02",
+      "group": "Запечённые",
+      "name": "Мидии под сырным соусом",
+      "kind": "ordinary",
+      "inner": {
+        "mussels": 35,
+        "crab_mix": 50,
+        "cucumber": 20
+      },
+      "top": {
+        "cheese_sauce": 35,
+        "unagi": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "mussels",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 34.98945205479452,
+          "price_reserve_cost_rub": 34.98945205479452
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 20.47054693877551,
+          "price_reserve_cost_rub": 20.47054693877551
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "cheese_sauce",
+          "stage": "top",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 12.237473684210528,
+          "price_reserve_cost_rub": 12.237473684210528
+        },
+        {
+          "component": "unagi",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 84.37682762162197,
+      "price_reserve_cost_rub": 84.37682762162197,
+      "menu_price_rub": 245,
+      "minimum_price_joint_rounded5_rub": 245,
+      "joint_fc_pct": 34.439521478213045,
+      "reserve_fc_pct": 34.439521478213045,
+      "margin_to35_rub": 1.3731723783780296,
+      "principal_shares_inner": {
+        "mussels": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "B03",
+      "group": "Запечённые",
+      "name": "Креветка яки",
+      "kind": "ordinary",
+      "inner": {
+        "shrimp": 35,
+        "cream_cheese": 50,
+        "cucumber": 20
+      },
+      "top": {
+        "yaki": 35,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "shrimp",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 56.38220936539505,
+          "price_reserve_cost_rub": 56.38220936539505
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 25.025,
+          "price_reserve_cost_rub": 25.025
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "yaki",
+          "stage": "top",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 11.44884924708298,
+          "price_reserve_cost_rub": 11.44884924708298
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 109.53541355631944,
+      "price_reserve_cost_rub": 109.53541355631944,
+      "menu_price_rub": 315,
+      "minimum_price_joint_rounded5_rub": 315,
+      "joint_fc_pct": 34.77314716073633,
+      "reserve_fc_pct": 34.77314716073633,
+      "margin_to35_rub": 0.7145864436805596,
+      "principal_shares_inner": {
+        "shrimp": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "B04",
+      "group": "Запечённые",
+      "name": "Лосось и мидии спайси",
+      "kind": "ordinary",
+      "inner": {
+        "salmon_plain": 35,
+        "mussels": 35,
+        "cream_cheese": 20,
+        "cucumber": 15
+      },
+      "top": {
+        "spice": 30,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "salmon_plain",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 83.01282051282051,
+          "price_reserve_cost_rub": 83.01282051282051
+        },
+        {
+          "component": "mussels",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 34.98945205479452,
+          "price_reserve_cost_rub": 34.98945205479452
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 10.009999999999998,
+          "price_reserve_cost_rub": 10.009999999999998
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "spice",
+          "stage": "top",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 9.722294371997254,
+          "price_reserve_cost_rub": 9.722294371997254
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 153.22256385567593,
+      "price_reserve_cost_rub": 153.22256385567593,
+      "menu_price_rub": 440,
+      "minimum_price_joint_rounded5_rub": 440,
+      "joint_fc_pct": 34.82330996719907,
+      "reserve_fc_pct": 34.82330996719907,
+      "margin_to35_rub": 0.7774361443240707,
+      "principal_shares_inner": {
+        "salmon_plain": 0.3333333333333333,
+        "mussels": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "B05",
+      "group": "Запечённые",
+      "name": "Угорь, моцарелла и «Чёрный угорь»",
+      "kind": "ordinary",
+      "inner": {
+        "eel_joint": 35,
+        "cream_cheese": 30,
+        "mozzarella": 25,
+        "cucumber": 15
+      },
+      "top": {
+        "black_eel": 35,
+        "unagi": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "eel_joint",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 54.285,
+          "price_reserve_cost_rub": 102.4245283018868
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 15.014999999999999,
+          "price_reserve_cost_rub": 15.014999999999999
+        },
+        {
+          "component": "mozzarella",
+          "stage": "inner",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 9.5,
+          "price_reserve_cost_rub": 9.5
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "black_eel",
+          "stage": "top",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 21.488638281249997,
+          "price_reserve_cost_rub": 21.488638281249997
+        },
+        {
+          "component": "unagi",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 115.77663519731362,
+      "price_reserve_cost_rub": 163.91616349920042,
+      "menu_price_rub": 470,
+      "minimum_price_joint_rounded5_rub": 335,
+      "joint_fc_pct": 24.633326637726302,
+      "reserve_fc_pct": 34.87577946791499,
+      "margin_to35_rub": 0.5838365007995776,
+      "principal_shares_inner": {
+        "eel_joint": 0.3333333333333333
+      },
+      "eel_g": 35,
+      "black_eel_sauce_g": 35,
+      "surplus_sauce_stress_cost_rub": 184.4803094044357,
+      "surplus_sauce_stress_price_rub": 530,
+      "surplus_sauce_stress_fc_at_proposed_price_pct": 39.25112966051823
+    },
+    {
+      "id": "B06",
+      "group": "Запечённые",
+      "name": "Креветка и мидии под сырным соусом",
+      "kind": "ordinary",
+      "inner": {
+        "shrimp": 35,
+        "mussels": 35,
+        "crab_mix": 20,
+        "cucumber": 15
+      },
+      "top": {
+        "cheese_sauce": 35,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {},
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "shrimp",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 56.38220936539505,
+          "price_reserve_cost_rub": 56.38220936539505
+        },
+        {
+          "component": "mussels",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 34.98945205479452,
+          "price_reserve_cost_rub": 34.98945205479452
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 8.188218775510204,
+          "price_reserve_cost_rub": 8.188218775510204
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "cheese_sauce",
+          "stage": "top",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 12.237473684210528,
+          "price_reserve_cost_rub": 12.237473684210528
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 127.28535079597394,
+      "price_reserve_cost_rub": 127.28535079597394,
+      "menu_price_rub": 365,
+      "minimum_price_joint_rounded5_rub": 365,
+      "joint_fc_pct": 34.87269884821204,
+      "reserve_fc_pct": 34.87269884821204,
+      "margin_to35_rub": 0.4646492040260455,
+      "principal_shares_inner": {
+        "shrimp": 0.3333333333333333,
+        "mussels": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "F01",
+      "group": "Жареные",
+      "name": "Лосось спайси",
+      "kind": "ordinary",
+      "inner": {
+        "salmon_plain": 35,
+        "cream_cheese": 50,
+        "cucumber": 20
+      },
+      "top": {
+        "spice": 20,
+        "unagi": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "salmon_plain",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 83.01282051282051,
+          "price_reserve_cost_rub": 83.01282051282051
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 25.025,
+          "price_reserve_cost_rub": 25.025
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "spice",
+          "stage": "top",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 6.481529581331503,
+          "price_reserve_cost_rub": 6.481529581331503
+        },
+        {
+          "component": "unagi",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        },
+        {
+          "component": "batter",
+          "stage": "frying",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 0.7275775862068966,
+          "price_reserve_cost_rub": 0.7275775862068966
+        },
+        {
+          "component": "crumbs",
+          "stage": "frying",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 2.88,
+          "price_reserve_cost_rub": 2.88
+        },
+        {
+          "component": "oil",
+          "stage": "frying",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.7340540540540541,
+          "price_reserve_cost_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 135.54033667825436,
+      "price_reserve_cost_rub": 135.54033667825436,
+      "menu_price_rub": 390,
+      "minimum_price_joint_rounded5_rub": 390,
+      "joint_fc_pct": 34.753932481603684,
+      "reserve_fc_pct": 34.753932481603684,
+      "margin_to35_rub": 0.9596633217456372,
+      "principal_shares_inner": {
+        "salmon_plain": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "F02",
+      "group": "Жареные",
+      "name": "Креветка и крабовая смесь",
+      "kind": "ordinary",
+      "inner": {
+        "shrimp": 35,
+        "crab_mix": 50,
+        "cucumber": 20
+      },
+      "top": {
+        "spice": 20,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "shrimp",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 56.38220936539505,
+          "price_reserve_cost_rub": 56.38220936539505
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 50,
+          "unit": "г",
+          "cost_rub": 20.47054693877551,
+          "price_reserve_cost_rub": 20.47054693877551
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 4.765432111111111,
+          "price_reserve_cost_rub": 4.765432111111111
+        },
+        {
+          "component": "spice",
+          "stage": "top",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 6.481529581331503,
+          "price_reserve_cost_rub": 6.481529581331503
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        },
+        {
+          "component": "batter",
+          "stage": "frying",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 0.7275775862068966,
+          "price_reserve_cost_rub": 0.7275775862068966
+        },
+        {
+          "component": "crumbs",
+          "stage": "frying",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 2.88,
+          "price_reserve_cost_rub": 2.88
+        },
+        {
+          "component": "oil",
+          "stage": "frying",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.7340540540540541,
+          "price_reserve_cost_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 104.35527246960443,
+      "price_reserve_cost_rub": 104.35527246960443,
+      "menu_price_rub": 300,
+      "minimum_price_joint_rounded5_rub": 300,
+      "joint_fc_pct": 34.78509082320148,
+      "reserve_fc_pct": 34.78509082320148,
+      "margin_to35_rub": 0.6447275303955706,
+      "principal_shares_inner": {
+        "shrimp": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "F03",
+      "group": "Жареные",
+      "name": "Копчёный лосось и моцарелла",
+      "kind": "ordinary",
+      "inner": {
+        "salmon_smoked": 35,
+        "cream_cheese": 30,
+        "mozzarella": 25,
+        "cucumber": 15
+      },
+      "top": {
+        "cheese_sauce": 20,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "salmon_smoked",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 71.7787,
+          "price_reserve_cost_rub": 71.7787
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 15.014999999999999,
+          "price_reserve_cost_rub": 15.014999999999999
+        },
+        {
+          "component": "mozzarella",
+          "stage": "inner",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 9.5,
+          "price_reserve_cost_rub": 9.5
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "cheese_sauce",
+          "stage": "top",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 6.992842105263159,
+          "price_reserve_cost_rub": 6.992842105263159
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        },
+        {
+          "component": "batter",
+          "stage": "frying",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 0.7275775862068966,
+          "price_reserve_cost_rub": 0.7275775862068966
+        },
+        {
+          "component": "crumbs",
+          "stage": "frying",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 2.88,
+          "price_reserve_cost_rub": 2.88
+        },
+        {
+          "component": "oil",
+          "stage": "frying",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.7340540540540541,
+          "price_reserve_cost_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 123.11617066158774,
+      "price_reserve_cost_rub": 123.11617066158774,
+      "menu_price_rub": 355,
+      "minimum_price_joint_rounded5_rub": 355,
+      "joint_fc_pct": 34.68061145396838,
+      "reserve_fc_pct": 34.68061145396838,
+      "margin_to35_rub": 1.1338293384122409,
+      "principal_shares_inner": {
+        "salmon_smoked": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "F04",
+      "group": "Жареные",
+      "name": "Угорь и креветка",
+      "kind": "ordinary",
+      "inner": {
+        "eel_joint": 35,
+        "shrimp": 35,
+        "crab_mix": 20,
+        "cucumber": 15
+      },
+      "top": {
+        "black_eel": 30,
+        "unagi": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "eel_joint",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 54.285,
+          "price_reserve_cost_rub": 102.4245283018868
+        },
+        {
+          "component": "shrimp",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 56.38220936539505,
+          "price_reserve_cost_rub": 56.38220936539505
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 8.188218775510204,
+          "price_reserve_cost_rub": 8.188218775510204
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "black_eel",
+          "stage": "top",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 18.4188328125,
+          "price_reserve_cost_rub": 18.4188328125
+        },
+        {
+          "component": "unagi",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        },
+        {
+          "component": "batter",
+          "stage": "frying",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 0.7275775862068966,
+          "price_reserve_cost_rub": 0.7275775862068966
+        },
+        {
+          "component": "crumbs",
+          "stage": "frying",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 2.88,
+          "price_reserve_cost_rub": 2.88
+        },
+        {
+          "component": "oil",
+          "stage": "frying",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.7340540540540541,
+          "price_reserve_cost_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 157.10388950972984,
+      "price_reserve_cost_rub": 205.24341781161664,
+      "menu_price_rub": 590,
+      "minimum_price_joint_rounded5_rub": 450,
+      "joint_fc_pct": 26.627777883005056,
+      "reserve_fc_pct": 34.78701996807062,
+      "margin_to35_rub": 1.256582188383362,
+      "principal_shares_inner": {
+        "eel_joint": 0.3333333333333333,
+        "shrimp": 0.3333333333333333
+      },
+      "eel_g": 35,
+      "black_eel_sauce_g": 30,
+      "surplus_sauce_stress_cost_rub": 228.8773691856019,
+      "surplus_sauce_stress_price_rub": 655,
+      "surplus_sauce_stress_fc_at_proposed_price_pct": 38.79277443823761
+    },
+    {
+      "id": "F05",
+      "group": "Жареные",
+      "name": "Мидии и тамаго",
+      "kind": "ordinary",
+      "inner": {
+        "mussels": 35,
+        "crab_mix": 30,
+        "tamago": 25,
+        "cucumber": 15
+      },
+      "top": {
+        "yaki": 20,
+        "teriyaki": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "mussels",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 34.98945205479452,
+          "price_reserve_cost_rub": 34.98945205479452
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 12.282328163265307,
+          "price_reserve_cost_rub": 12.282328163265307
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 6.954031988157366,
+          "price_reserve_cost_rub": 6.954031988157366
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "yaki",
+          "stage": "top",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 6.542199569761703,
+          "price_reserve_cost_rub": 6.542199569761703
+        },
+        {
+          "component": "teriyaki",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        },
+        {
+          "component": "batter",
+          "stage": "frying",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 0.7275775862068966,
+          "price_reserve_cost_rub": 0.7275775862068966
+        },
+        {
+          "component": "crumbs",
+          "stage": "frying",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 2.88,
+          "price_reserve_cost_rub": 2.88
+        },
+        {
+          "component": "oil",
+          "stage": "frying",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.7340540540540541,
+          "price_reserve_cost_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 80.59764033230348,
+      "price_reserve_cost_rub": 80.59764033230348,
+      "menu_price_rub": 235,
+      "minimum_price_joint_rounded5_rub": 235,
+      "joint_fc_pct": 34.296868226512125,
+      "reserve_fc_pct": 34.296868226512125,
+      "margin_to35_rub": 1.6523596676965155,
+      "principal_shares_inner": {
+        "mussels": 0.3333333333333333
+      },
+      "eel_g": 0,
+      "black_eel_sauce_g": 0
+    },
+    {
+      "id": "F06",
+      "group": "Жареные",
+      "name": "Угорь и мидии",
+      "kind": "ordinary",
+      "inner": {
+        "eel_joint": 35,
+        "mussels": 35,
+        "cream_cheese": 20,
+        "cucumber": 15
+      },
+      "top": {
+        "black_eel": 35,
+        "unagi": 5
+      },
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301,
+          "price_reserve_cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7,
+          "price_reserve_cost_rub": 4.7
+        },
+        {
+          "component": "eel_joint",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 54.285,
+          "price_reserve_cost_rub": 102.4245283018868
+        },
+        {
+          "component": "mussels",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 34.98945205479452,
+          "price_reserve_cost_rub": 34.98945205479452
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 10.009999999999998,
+          "price_reserve_cost_rub": 10.009999999999998
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333,
+          "price_reserve_cost_rub": 3.574074083333333
+        },
+        {
+          "component": "black_eel",
+          "stage": "top",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 21.488638281249997,
+          "price_reserve_cost_rub": 21.488638281249997
+        },
+        {
+          "component": "unagi",
+          "stage": "top",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.86335,
+          "price_reserve_cost_rub": 0.86335
+        },
+        {
+          "component": "batter",
+          "stage": "frying",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 0.7275775862068966,
+          "price_reserve_cost_rub": 0.7275775862068966
+        },
+        {
+          "component": "crumbs",
+          "stage": "frying",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 2.88,
+          "price_reserve_cost_rub": 2.88
+        },
+        {
+          "component": "oil",
+          "stage": "frying",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.7340540540540541,
+          "price_reserve_cost_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 105,
+      "joint_scenario_cost_rub": 140.6027188923691,
+      "price_reserve_cost_rub": 188.7422471942559,
+      "menu_price_rub": 540,
+      "minimum_price_joint_rounded5_rub": 405,
+      "joint_fc_pct": 26.037540535623904,
+      "reserve_fc_pct": 34.95226799893628,
+      "margin_to35_rub": 0.2577528057441043,
+      "principal_shares_inner": {
+        "eel_joint": 0.3333333333333333,
+        "mussels": 0.3333333333333333
+      },
+      "eel_g": 35,
+      "black_eel_sauce_g": 35,
+      "surplus_sauce_stress_cost_rub": 209.30639309949117,
+      "surplus_sauce_stress_price_rub": 600,
+      "surplus_sauce_stress_fc_at_proposed_price_pct": 38.76044316657244
+    },
+    {
+      "id": "D01",
+      "name": "Мидии, краб и огурец",
+      "group": "Холодные",
+      "inner": {
+        "mussels": 30,
+        "crab_mix": 15,
+        "tamago": 15,
+        "cucumber": 40
+      },
+      "top": {},
+      "frying": {},
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "status": "agent_new_paper_recipe_not_existing_recipe_shrink",
+      "joint_scenario_cost_rub": 60.88597923358919,
+      "price_reserve_cost_rub": 60.88597923358919,
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7
+        },
+        {
+          "component": "mussels",
+          "stage": "inner",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 29.99095890410959
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 6.141164081632653
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 4.17241919289442
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 40,
+          "unit": "г",
+          "cost_rub": 9.530864222222222
+        }
+      ],
+      "inner_total_g": 100,
+      "menu_price_rub": 175
+    },
+    {
+      "id": "D02",
+      "name": "Мидии и тамаго",
+      "group": "Холодные",
+      "inner": {
+        "mussels": 30,
+        "crab_mix": 20,
+        "tamago": 35,
+        "cucumber": 15
+      },
+      "top": {},
+      "frying": {},
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "status": "agent_new_paper_recipe_not_existing_recipe_shrink",
+      "joint_scenario_cost_rub": 62.53946937910374,
+      "price_reserve_cost_rub": 62.53946937910374,
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7
+        },
+        {
+          "component": "mussels",
+          "stage": "inner",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 29.99095890410959
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 8.188218775510204
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 9.735644783420312
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333
+        }
+      ],
+      "inner_total_g": 100,
+      "menu_price_rub": 180
+    },
+    {
+      "id": "D03",
+      "name": "Мидии, моцарелла и тамаго",
+      "group": "Холодные",
+      "inner": {
+        "mussels": 30,
+        "crab_mix": 15,
+        "mozzarella": 15,
+        "tamago": 15,
+        "cucumber": 25
+      },
+      "top": {},
+      "frying": {},
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "status": "agent_new_paper_recipe_not_existing_recipe_shrink",
+      "joint_scenario_cost_rub": 63.011905150255856,
+      "price_reserve_cost_rub": 63.011905150255856,
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7
+        },
+        {
+          "component": "mussels",
+          "stage": "inner",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 29.99095890410959
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 6.141164081632653
+        },
+        {
+          "component": "mozzarella",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 5.7
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 4.17241919289442
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 5.956790138888889
+        }
+      ],
+      "inner_total_g": 100,
+      "menu_price_rub": 185
+    },
+    {
+      "id": "D04",
+      "name": "Мидии яки",
+      "group": "Запечённые",
+      "inner": {
+        "mussels": 30,
+        "crab_mix": 15,
+        "tamago": 15,
+        "cucumber": 40
+      },
+      "top": {
+        "yaki": 20
+      },
+      "frying": {},
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "status": "agent_new_paper_recipe_not_existing_recipe_shrink",
+      "joint_scenario_cost_rub": 67.42817880335089,
+      "price_reserve_cost_rub": 67.42817880335089,
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7
+        },
+        {
+          "component": "mussels",
+          "stage": "inner",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 29.99095890410959
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 6.141164081632653
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 4.17241919289442
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 40,
+          "unit": "г",
+          "cost_rub": 9.530864222222222
+        },
+        {
+          "component": "yaki",
+          "stage": "top",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 6.542199569761703
+        }
+      ],
+      "inner_total_g": 100,
+      "menu_price_rub": 195
+    },
+    {
+      "id": "D05",
+      "name": "Мидии темпура",
+      "group": "Жареные",
+      "inner": {
+        "mussels": 30,
+        "crab_mix": 20,
+        "tamago": 35,
+        "cucumber": 15
+      },
+      "top": {},
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "status": "agent_new_paper_recipe_not_existing_recipe_shrink",
+      "joint_scenario_cost_rub": 66.88110101936469,
+      "price_reserve_cost_rub": 66.88110101936469,
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7
+        },
+        {
+          "component": "mussels",
+          "stage": "inner",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 29.99095890410959
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 8.188218775510204
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 35,
+          "unit": "г",
+          "cost_rub": 9.735644783420312
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 3.574074083333333
+        },
+        {
+          "component": "batter",
+          "stage": "frying",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 0.7275775862068966
+        },
+        {
+          "component": "crumbs",
+          "stage": "frying",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 2.88
+        },
+        {
+          "component": "oil",
+          "stage": "frying",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 100,
+      "menu_price_rub": 195
+    },
+    {
+      "id": "D06",
+      "name": "Креветка, краб и огурец",
+      "group": "Холодные",
+      "inner": {
+        "shrimp": 30,
+        "crab_mix": 15,
+        "tamago": 15,
+        "cucumber": 40
+      },
+      "top": {},
+      "frying": {},
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "status": "agent_new_paper_recipe_not_existing_recipe_shrink",
+      "joint_scenario_cost_rub": 79.22262835696107,
+      "price_reserve_cost_rub": 79.22262835696107,
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7
+        },
+        {
+          "component": "shrimp",
+          "stage": "inner",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 48.32760802748147
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 6.141164081632653
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 4.17241919289442
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 40,
+          "unit": "г",
+          "cost_rub": 9.530864222222222
+        }
+      ],
+      "inner_total_g": 100,
+      "menu_price_rub": 230
+    },
+    {
+      "id": "D07",
+      "name": "Креветка яки — новая",
+      "group": "Запечённые",
+      "inner": {
+        "shrimp": 30,
+        "crab_mix": 15,
+        "tamago": 15,
+        "cucumber": 40
+      },
+      "top": {
+        "yaki": 20
+      },
+      "frying": {},
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "status": "agent_new_paper_recipe_not_existing_recipe_shrink",
+      "joint_scenario_cost_rub": 85.76482792672277,
+      "price_reserve_cost_rub": 85.76482792672277,
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7
+        },
+        {
+          "component": "shrimp",
+          "stage": "inner",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 48.32760802748147
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 6.141164081632653
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 4.17241919289442
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 40,
+          "unit": "г",
+          "cost_rub": 9.530864222222222
+        },
+        {
+          "component": "yaki",
+          "stage": "top",
+          "amount": 20,
+          "unit": "г",
+          "cost_rub": 6.542199569761703
+        }
+      ],
+      "inner_total_g": 100,
+      "menu_price_rub": 250
+    },
+    {
+      "id": "D08",
+      "name": "Лосось, сыр и огурец — новый",
+      "group": "Холодные",
+      "inner": {
+        "salmon_plain": 30,
+        "cream_cheese": 15,
+        "tamago": 15,
+        "cucumber": 40
+      },
+      "top": {},
+      "frying": {},
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "status": "agent_new_paper_recipe_not_existing_recipe_shrink",
+      "joint_scenario_cost_rub": 103.41520240169311,
+      "price_reserve_cost_rub": 103.41520240169311,
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7
+        },
+        {
+          "component": "salmon_plain",
+          "stage": "inner",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 71.15384615384616
+        },
+        {
+          "component": "cream_cheese",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 7.507499999999999
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 4.17241919289442
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 40,
+          "unit": "г",
+          "cost_rub": 9.530864222222222
+        }
+      ],
+      "inner_total_g": 100,
+      "menu_price_rub": 300
+    },
+    {
+      "id": "D09",
+      "name": "Креветка темпура — новая",
+      "group": "Жареные",
+      "inner": {
+        "shrimp": 30,
+        "crab_mix": 15,
+        "tamago": 15,
+        "cucumber": 40
+      },
+      "top": {},
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "status": "agent_new_paper_recipe_not_existing_recipe_shrink",
+      "joint_scenario_cost_rub": 83.56425999722201,
+      "price_reserve_cost_rub": 83.56425999722201,
+      "lines": [
+        {
+          "component": "rice",
+          "stage": "base",
+          "amount": 110,
+          "unit": "г",
+          "cost_rub": 6.350572832730301
+        },
+        {
+          "component": "nori",
+          "stage": "base",
+          "amount": 0.5,
+          "unit": "лист",
+          "cost_rub": 4.7
+        },
+        {
+          "component": "shrimp",
+          "stage": "inner",
+          "amount": 30,
+          "unit": "г",
+          "cost_rub": 48.32760802748147
+        },
+        {
+          "component": "crab_mix",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 6.141164081632653
+        },
+        {
+          "component": "tamago",
+          "stage": "inner",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 4.17241919289442
+        },
+        {
+          "component": "cucumber",
+          "stage": "inner",
+          "amount": 40,
+          "unit": "г",
+          "cost_rub": 9.530864222222222
+        },
+        {
+          "component": "batter",
+          "stage": "frying",
+          "amount": 25,
+          "unit": "г",
+          "cost_rub": 0.7275775862068966
+        },
+        {
+          "component": "crumbs",
+          "stage": "frying",
+          "amount": 15,
+          "unit": "г",
+          "cost_rub": 2.88
+        },
+        {
+          "component": "oil",
+          "stage": "frying",
+          "amount": 5,
+          "unit": "г",
+          "cost_rub": 0.7340540540540541
+        }
+      ],
+      "inner_total_g": 100,
+      "menu_price_rub": 240
+    }
+  ],
+  "new_recipes": [
+    {
+      "id": "K1",
+      "group": "Холодные",
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "chicken_smoked": 40,
+        "cream_cheese": 40,
+        "cucumber": 20
+      },
+      "top": {
+        "teriyaki": 5
+      },
+      "frying": {},
+      "name": "Копчёная курица, сыр и огурец"
+    },
+    {
+      "id": "K2",
+      "group": "Холодные",
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "chicken_smoked": 40,
+        "crab_mix": 40,
+        "tamago": 20
+      },
+      "top": {
+        "teriyaki": 5
+      },
+      "frying": {},
+      "name": "Копчёная курица, краб и тамаго"
+    },
+    {
+      "id": "K3",
+      "group": "Запечённые",
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "chicken_smoked": 40,
+        "tamago": 30,
+        "cream_cheese": 20,
+        "cucumber": 10
+      },
+      "top": {
+        "yaki": 30,
+        "teriyaki": 5
+      },
+      "frying": {},
+      "name": "Копчёная курица яки"
+    },
+    {
+      "id": "K4",
+      "group": "Запечённые",
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "chicken_smoked": 40,
+        "mozzarella": 30,
+        "cream_cheese": 20,
+        "cucumber": 10
+      },
+      "top": {
+        "cheese_sauce": 30,
+        "teriyaki": 5
+      },
+      "frying": {},
+      "name": "Копчёная курица с моцареллой"
+    },
+    {
+      "id": "K5",
+      "group": "Жареные",
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "chicken_smoked": 40,
+        "crab_mix": 40,
+        "cucumber": 20
+      },
+      "top": {
+        "spice": 20,
+        "unagi": 5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "name": "Копчёная курица и краб темпура"
+    },
+    {
+      "id": "K6",
+      "group": "Жареные",
+      "kind": "ordinary",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner": {
+        "chicken_smoked": 40,
+        "tamago": 30,
+        "cucumber": 30
+      },
+      "top": {
+        "spice": 20,
+        "teriyaki": 5
+      },
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "name": "Копчёная курица и тамаго темпура"
+    }
+  ],
+  "sets": [
+    {
+      "id": "4A",
+      "name": "Лосось и курица яки",
+      "price": 999,
+      "roll_count": 4,
+      "seed": [
+        "C01",
+        "C02",
+        "K3",
+        "F03"
+      ],
+      "final": [
+        "C01",
+        "D09",
+        "K3",
+        "D01"
+      ],
+      "previous_id": "4A"
+    },
+    {
+      "id": "4B",
+      "name": "Креветочная крышка и сырная курица",
+      "price": 999,
+      "roll_count": 4,
+      "seed": [
+        "C02",
+        "F03",
+        "K4",
+        "B01"
+      ],
+      "final": [
+        "C02",
+        "F03",
+        "K4",
+        "D01"
+      ],
+      "previous_id": "4B"
+    },
+    {
+      "id": "4C",
+      "name": "Тартар и курица темпура",
+      "price": 999,
+      "roll_count": 4,
+      "seed": [
+        "C05",
+        "C02",
+        "K6",
+        "F03"
+      ],
+      "final": [
+        "C05",
+        "D07",
+        "K6",
+        "D01"
+      ],
+      "previous_id": "4C"
+    },
+    {
+      "id": "5L-A",
+      "name": "Две крышки и курица",
+      "price": 1299,
+      "roll_count": 5,
+      "seed": [
+        "C01",
+        "C02",
+        "C05",
+        "K3",
+        "F03"
+      ],
+      "final": [
+        "C01",
+        "C02",
+        "D05",
+        "K3",
+        "K1"
+      ],
+      "previous_id": "5L-A"
+    },
+    {
+      "id": "5L-B",
+      "name": "Лосось, креветка и курица яки",
+      "price": 1299,
+      "roll_count": 5,
+      "seed": [
+        "C04",
+        "B06",
+        "F02",
+        "C05",
+        "K3"
+      ],
+      "final": [
+        "C04",
+        "B06",
+        "F02",
+        "D04",
+        "K3"
+      ],
+      "previous_id": "5L-B"
+    },
+    {
+      "id": "5H-B",
+      "name": "Тартар, креветка и две курицы",
+      "price": 1399,
+      "roll_count": 5,
+      "seed": [
+        "C05",
+        "F03",
+        "B06",
+        "C01",
+        "K2"
+      ],
+      "final": [
+        "C05",
+        "F03",
+        "B06",
+        "K1",
+        "K2"
+      ],
+      "previous_id": "5H-B"
+    },
+    {
+      "id": "10A",
+      "name": "Лососевая крышка — ассорти",
+      "price": 1899,
+      "roll_count": 10,
+      "seed": [
+        "C01",
+        "C02",
+        "K2",
+        "C05",
+        "C06",
+        "B01",
+        "B03",
+        "B04",
+        "B06",
+        "F03"
+      ],
+      "final": [
+        "C01",
+        "D06",
+        "K2",
+        "K2",
+        "K6",
+        "K6",
+        "D01",
+        "D01",
+        "D02",
+        "D04"
+      ],
+      "previous_id": "10A"
+    },
+    {
+      "id": "10B",
+      "name": "Креветочная крышка — ассорти",
+      "price": 1899,
+      "roll_count": 10,
+      "seed": [
+        "C02",
+        "C01",
+        "K1",
+        "C05",
+        "C06",
+        "B01",
+        "B03",
+        "B04",
+        "B06",
+        "F03"
+      ],
+      "final": [
+        "C02",
+        "D06",
+        "K1",
+        "K2",
+        "K4",
+        "K5",
+        "D01",
+        "D02",
+        "D04",
+        "D05"
+      ],
+      "previous_id": "10B"
+    },
+    {
+      "id": "10C",
+      "name": "Копчёный тартар — ассорти",
+      "price": 1899,
+      "roll_count": 10,
+      "seed": [
+        "C06",
+        "C01",
+        "K1",
+        "C04",
+        "C05",
+        "B01",
+        "B03",
+        "B04",
+        "B06",
+        "F03"
+      ],
+      "final": [
+        "C06",
+        "D06",
+        "K1",
+        "K2",
+        "K2",
+        "K3",
+        "K6",
+        "D01",
+        "D02",
+        "D05"
+      ],
+      "previous_id": "10C"
+    }
+  ],
+  "previous_sets": [
+    {
+      "id": "4A",
+      "name": "Лососевая крышка и креветка",
+      "price": 999,
+      "roll_count": 4,
+      "seed": [
+        "C01",
+        "C02",
+        "B01",
+        "F03"
+      ],
+      "final": [
+        "C01",
+        "D06",
+        "D04",
+        "D05"
+      ],
+      "raw_budget_rub": 399.6,
+      "seed_food_rub": 599.5380445364823,
+      "seed_fc": 0.6001381827192015,
+      "seed_over_budget_rub": 199.93804453648227,
+      "substitutions": [
+        {
+          "slot": 2,
+          "from": "C02",
+          "to": "D06",
+          "before_food_rub": 599.5380445364823,
+          "after_food_rub": 549.3603679595321,
+          "over_budget_rub": 149.76036795953212,
+          "within_food_budget": false
+        },
+        {
+          "slot": 3,
+          "from": "B01",
+          "to": "D04",
+          "before_food_rub": 549.3603679595321,
+          "after_food_rub": 442.2684519460106,
+          "over_budget_rub": 42.66845194601058,
+          "within_food_budget": false
+        },
+        {
+          "slot": 4,
+          "from": "F03",
+          "to": "D05",
+          "before_food_rub": 442.2684519460106,
+          "after_food_rub": 386.03338230378756,
+          "over_budget_rub": 0,
+          "within_food_budget": true
+        }
+      ],
+      "retained_original_ids": [
+        "C01"
+      ],
+      "counts": {
+        "C01": 1,
+        "D06": 1,
+        "D04": 1,
+        "D05": 1
+      },
+      "food_cost_rub": 386.03338230378756,
+      "joint_food_cost_rub": 386.03338230378756,
+      "raw_fc": 0.38641980210589344,
+      "boxes_count": 2,
+      "boxes_cost_rub": 11.0,
+      "food_plus_boxes_rub": 397.03338230378756,
+      "food_plus_boxes_fc": 0.3974308131169045,
+      "contribution_after_food_boxes_rub": 601.9666176962124,
+      "raw_headroom_rub": 13.566617696212461,
+      "raw_cost_increase_tolerance": 0.03514363865437997,
+      "raw_headroom_per_roll": 3.3916544240531152,
+      "mussels_roll_count": 2,
+      "shrimp_roll_count": 1,
+      "salmon_roll_count": 1,
+      "eel_roll_count": 0,
+      "synthetic_standalone_sum": 1019,
+      "synthetic_saving_rub": 20,
+      "synthetic_saving_fraction": 0.01962708537782143,
+      "effective_fc_15": 0.45461153188928644,
+      "effective_fc_20": 0.48302475263236677,
+      "extra_box5_50_fc": 0.40293631862241,
+      "selected_for_paper_shortlist": true,
+      "set_surplus_eel_stress_food_rub": 386.03338230378756,
+      "set_surplus_eel_stress_fc": 0.38641980210589344,
+      "selection_note": "papercandidate; taste/size notvalidated"
+    },
+    {
+      "id": "4B",
+      "name": "Креветочная крышка и копчёный лосось",
+      "price": 999,
+      "roll_count": 4,
+      "seed": [
+        "C02",
+        "F03",
+        "C05",
+        "B01"
+      ],
+      "final": [
+        "C02",
+        "F03",
+        "B02",
+        "D01"
+      ],
+      "raw_budget_rub": 399.6,
+      "seed_food_rub": 606.7245553894618,
+      "seed_fc": 0.6073318872767385,
+      "seed_over_budget_rub": 207.12455538946176,
+      "substitutions": [
+        {
+          "slot": 3,
+          "from": "C05",
+          "to": "B02",
+          "before_food_rub": 606.7245553894618,
+          "after_food_rub": 511.41339803399336,
+          "over_budget_rub": 111.81339803399334,
+          "within_food_budget": false
+        },
+        {
+          "slot": 4,
+          "from": "B01",
+          "to": "D01",
+          "before_food_rub": 511.41339803399336,
+          "after_food_rub": 397.7792824507102,
+          "over_budget_rub": 0,
+          "within_food_budget": true
+        }
+      ],
+      "retained_original_ids": [
+        "C02",
+        "F03"
+      ],
+      "counts": {
+        "C02": 1,
+        "F03": 1,
+        "B02": 1,
+        "D01": 1
+      },
+      "food_cost_rub": 397.7792824507102,
+      "joint_food_cost_rub": 397.7792824507102,
+      "raw_fc": 0.3981774599106208,
+      "boxes_count": 2,
+      "boxes_cost_rub": 11.0,
+      "food_plus_boxes_rub": 408.7792824507102,
+      "food_plus_boxes_fc": 0.4091884709216318,
+      "contribution_after_food_boxes_rub": 590.2207175492898,
+      "raw_headroom_rub": 1.8207175492898386,
+      "raw_cost_increase_tolerance": 0.00457720557509278,
+      "raw_headroom_per_roll": 0.45517938732245966,
+      "mussels_roll_count": 2,
+      "shrimp_roll_count": 1,
+      "salmon_roll_count": 1,
+      "eel_roll_count": 0,
+      "synthetic_standalone_sum": 1145,
+      "synthetic_saving_rub": 146,
+      "synthetic_saving_fraction": 0.12751091703056772,
+      "effective_fc_15": 0.4684440704830833,
+      "effective_fc_20": 0.497721824888276,
+      "extra_box5_50_fc": 0.41469397642713735,
+      "selected_for_paper_shortlist": true,
+      "set_surplus_eel_stress_food_rub": 397.7792824507102,
+      "set_surplus_eel_stress_fc": 0.3981774599106208,
+      "selection_note": "papercandidate; taste/size notvalidated"
+    },
+    {
+      "id": "4C",
+      "name": "Тартар из лосося",
+      "price": 999,
+      "roll_count": 4,
+      "seed": [
+        "C05",
+        "C02",
+        "B01",
+        "F03"
+      ],
+      "final": [
+        "C05",
+        "D07",
+        "D03",
+        "D05"
+      ],
+      "raw_budget_rub": 399.6,
+      "seed_food_rub": 606.7245553894618,
+      "seed_fc": 0.6073318872767385,
+      "seed_over_budget_rub": 207.12455538946176,
+      "substitutions": [
+        {
+          "slot": 2,
+          "from": "C02",
+          "to": "D07",
+          "before_food_rub": 606.7245553894618,
+          "after_food_rub": 563.0890783822733,
+          "over_budget_rub": 163.4890783822733,
+          "within_food_budget": false
+        },
+        {
+          "slot": 3,
+          "from": "B01",
+          "to": "D03",
+          "before_food_rub": 563.0890783822733,
+          "after_food_rub": 451.5808887156568,
+          "over_budget_rub": 51.98088871565676,
+          "within_food_budget": false
+        },
+        {
+          "slot": 4,
+          "from": "F03",
+          "to": "D05",
+          "before_food_rub": 451.5808887156568,
+          "after_food_rub": 395.34581907343374,
+          "over_budget_rub": 0,
+          "within_food_budget": true
+        }
+      ],
+      "retained_original_ids": [
+        "C05"
+      ],
+      "counts": {
+        "C05": 1,
+        "D07": 1,
+        "D03": 1,
+        "D05": 1
+      },
+      "food_cost_rub": 395.34581907343374,
+      "joint_food_cost_rub": 395.34581907343374,
+      "raw_fc": 0.3957415606340678,
+      "boxes_count": 2,
+      "boxes_cost_rub": 11.0,
+      "food_plus_boxes_rub": 406.34581907343374,
+      "food_plus_boxes_fc": 0.40675257164507883,
+      "contribution_after_food_boxes_rub": 592.6541809265663,
+      "raw_headroom_rub": 4.254180926566278,
+      "raw_cost_increase_tolerance": 0.010760657432869136,
+      "raw_headroom_per_roll": 1.0635452316415694,
+      "mussels_roll_count": 2,
+      "shrimp_roll_count": 1,
+      "salmon_roll_count": 1,
+      "eel_roll_count": 0,
+      "synthetic_standalone_sum": 1029,
+      "synthetic_saving_rub": 30,
+      "synthetic_saving_fraction": 0.029154518950437303,
+      "effective_fc_15": 0.46557830662831506,
+      "effective_fc_20": 0.4946769507925847,
+      "extra_box5_50_fc": 0.4122580771505843,
+      "selected_for_paper_shortlist": true,
+      "set_surplus_eel_stress_food_rub": 395.34581907343374,
+      "set_surplus_eel_stress_fc": 0.3957415606340678,
+      "selection_note": "papercandidate; taste/size notvalidated"
+    },
+    {
+      "id": "5L-A",
+      "name": "Две крышки",
+      "price": 1299,
+      "roll_count": 5,
+      "seed": [
+        "C01",
+        "C02",
+        "C03",
+        "C05",
+        "F03"
+      ],
+      "final": [
+        "C01",
+        "C02",
+        "F05",
+        "D04",
+        "D05"
+      ],
+      "raw_budget_rub": 519.6,
+      "seed_food_rub": 805.8017699480488,
+      "seed_fc": 0.6203246881817158,
+      "seed_over_budget_rub": 286.20176994804876,
+      "substitutions": [
+        {
+          "slot": 3,
+          "from": "C03",
+          "to": "F05",
+          "before_food_rub": 805.8017699480488,
+          "after_food_rub": 685.3035750290038,
+          "over_budget_rub": 165.7035750290038,
+          "within_food_budget": false
+        },
+        {
+          "slot": 4,
+          "from": "C05",
+          "to": "D04",
+          "before_food_rub": 685.3035750290038,
+          "after_food_rub": 573.0437688552643,
+          "over_budget_rub": 53.44376885526424,
+          "within_food_budget": false
+        },
+        {
+          "slot": 5,
+          "from": "F03",
+          "to": "D05",
+          "before_food_rub": 573.0437688552643,
+          "after_food_rub": 516.8086992130412,
+          "over_budget_rub": 0,
+          "within_food_budget": true
+        }
+      ],
+      "retained_original_ids": [
+        "C01",
+        "C02"
+      ],
+      "counts": {
+        "C01": 1,
+        "C02": 1,
+        "F05": 1,
+        "D04": 1,
+        "D05": 1
+      },
+      "food_cost_rub": 516.8086992130412,
+      "joint_food_cost_rub": 516.8086992130412,
+      "raw_fc": 0.3978511926197392,
+      "boxes_count": 2,
+      "boxes_cost_rub": 11.0,
+      "food_plus_boxes_rub": 527.8086992130412,
+      "food_plus_boxes_fc": 0.40631924496769917,
+      "contribution_after_food_boxes_rub": 771.1913007869588,
+      "raw_headroom_rub": 2.7913007869588,
+      "raw_cost_increase_tolerance": 0.0054010328990381495,
+      "raw_headroom_per_roll": 0.55826015739176,
+      "mussels_roll_count": 3,
+      "shrimp_roll_count": 1,
+      "salmon_roll_count": 1,
+      "eel_roll_count": 0,
+      "synthetic_standalone_sum": 1394,
+      "synthetic_saving_rub": 95,
+      "synthetic_saving_fraction": 0.06814921090387371,
+      "effective_fc_15": 0.46806022661145796,
+      "effective_fc_20": 0.497313990774674,
+      "extra_box5_50_fc": 0.41055327114167917,
+      "selected_for_paper_shortlist": true,
+      "set_surplus_eel_stress_food_rub": 516.8086992130412,
+      "set_surplus_eel_stress_fc": 0.3978511926197392,
+      "selection_note": "papercandidate; taste/size notvalidated"
+    },
+    {
+      "id": "5L-B",
+      "name": "Копчёный лосось и креветка",
+      "price": 1299,
+      "roll_count": 5,
+      "seed": [
+        "C04",
+        "B03",
+        "F04",
+        "C05",
+        "F03"
+      ],
+      "final": [
+        "C04",
+        "B03",
+        "F02",
+        "B02",
+        "F05"
+      ],
+      "raw_budget_rub": 519.6,
+      "seed_food_rub": 748.3596350846165,
+      "seed_fc": 0.5761044149997048,
+      "seed_over_budget_rub": 228.75963508461643,
+      "substitutions": [
+        {
+          "slot": 3,
+          "from": "F04",
+          "to": "F02",
+          "before_food_rub": 748.3596350846165,
+          "after_food_rub": 647.4714897426041,
+          "over_budget_rub": 127.87148974260413,
+          "within_food_budget": false
+        },
+        {
+          "slot": 4,
+          "from": "C05",
+          "to": "B02",
+          "before_food_rub": 647.4714897426041,
+          "after_food_rub": 552.1603323871358,
+          "over_budget_rub": 32.56033238713576,
+          "within_food_budget": false
+        },
+        {
+          "slot": 5,
+          "from": "F03",
+          "to": "F05",
+          "before_food_rub": 552.1603323871358,
+          "after_food_rub": 509.64180205785146,
+          "over_budget_rub": 0,
+          "within_food_budget": true
+        }
+      ],
+      "retained_original_ids": [
+        "C04",
+        "B03"
+      ],
+      "counts": {
+        "C04": 1,
+        "B03": 1,
+        "F02": 1,
+        "B02": 1,
+        "F05": 1
+      },
+      "food_cost_rub": 509.64180205785146,
+      "joint_food_cost_rub": 509.64180205785146,
+      "raw_fc": 0.3923339507758672,
+      "boxes_count": 2,
+      "boxes_cost_rub": 11.0,
+      "food_plus_boxes_rub": 520.6418020578515,
+      "food_plus_boxes_fc": 0.40080200312382713,
+      "contribution_after_food_boxes_rub": 778.3581979421485,
+      "raw_headroom_rub": 9.958197942148558,
+      "raw_cost_increase_tolerance": 0.01953960193598525,
+      "raw_headroom_per_roll": 1.9916395884297118,
+      "mussels_roll_count": 2,
+      "shrimp_roll_count": 2,
+      "salmon_roll_count": 1,
+      "eel_roll_count": 0,
+      "synthetic_standalone_sum": 1470,
+      "synthetic_saving_rub": 171,
+      "synthetic_saving_fraction": 0.11632653061224485,
+      "effective_fc_15": 0.4615693538539614,
+      "effective_fc_20": 0.49041743846983393,
+      "extra_box5_50_fc": 0.40503602929780713,
+      "selected_for_paper_shortlist": true,
+      "set_surplus_eel_stress_food_rub": 509.64180205785146,
+      "set_surplus_eel_stress_fc": 0.3923339507758672,
+      "selection_note": "papercandidate; taste/size notvalidated"
+    },
+    {
+      "id": "5H-A",
+      "name": "Угорь и креветочная крышка",
+      "price": 1399,
+      "roll_count": 5,
+      "seed": [
+        "C03",
+        "C02",
+        "C01",
+        "C05",
+        "F04"
+      ],
+      "final": [
+        "C03",
+        "C02",
+        "B02",
+        "D04",
+        "D05"
+      ],
+      "raw_budget_rub": 559.6,
+      "seed_food_rub": 887.9290170980777,
+      "seed_fc": 0.6346883610422285,
+      "seed_over_budget_rub": 328.32901709807766,
+      "substitutions": [
+        {
+          "slot": 3,
+          "from": "C01",
+          "to": "B02",
+          "before_food_rub": 887.9290170980777,
+          "after_food_rub": 799.8043705955887,
+          "over_budget_rub": 240.20437059558867,
+          "within_food_budget": false
+        },
+        {
+          "slot": 4,
+          "from": "C05",
+          "to": "D04",
+          "before_food_rub": 799.8043705955887,
+          "after_food_rub": 687.5445644218491,
+          "over_budget_rub": 127.94456442184912,
+          "within_food_budget": false
+        },
+        {
+          "slot": 5,
+          "from": "F04",
+          "to": "D05",
+          "before_food_rub": 687.5445644218491,
+          "after_food_rub": 549.1822476295972,
+          "over_budget_rub": 0,
+          "within_food_budget": true
+        }
+      ],
+      "retained_original_ids": [
+        "C03",
+        "C02"
+      ],
+      "counts": {
+        "C03": 1,
+        "C02": 1,
+        "B02": 1,
+        "D04": 1,
+        "D05": 1
+      },
+      "food_cost_rub": 549.1822476295972,
+      "joint_food_cost_rub": 480.4114929126161,
+      "raw_fc": 0.39255342932780357,
+      "boxes_count": 2,
+      "boxes_cost_rub": 11.0,
+      "food_plus_boxes_rub": 560.1822476295972,
+      "food_plus_boxes_fc": 0.4004161884414562,
+      "contribution_after_food_boxes_rub": 838.8177523704028,
+      "raw_headroom_rub": 10.417752370402809,
+      "raw_cost_increase_tolerance": 0.01896957233298835,
+      "raw_headroom_per_roll": 2.0835504740805617,
+      "mussels_roll_count": 3,
+      "shrimp_roll_count": 1,
+      "salmon_roll_count": 0,
+      "eel_roll_count": 1,
+      "synthetic_standalone_sum": 1404,
+      "synthetic_saving_rub": 5,
+      "synthetic_saving_fraction": 0.0035612535612535856,
+      "effective_fc_15": 0.4618275639150631,
+      "effective_fc_20": 0.49069178665975444,
+      "extra_box5_50_fc": 0.4043475679982825,
+      "selected_for_paper_shortlist": false,
+      "set_surplus_eel_stress_food_rub": 609.2576536102905,
+      "set_surplus_eel_stress_fc": 0.4354951062260833,
+      "selection_note": "deferred: only5RUBsyntheticconsumer saving; eelcooutputfullwastestress43.55%"
+    },
+    {
+      "id": "5H-B",
+      "name": "Тартар и копчёный лосось",
+      "price": 1399,
+      "roll_count": 5,
+      "seed": [
+        "C05",
+        "F03",
+        "B06",
+        "C01",
+        "C02"
+      ],
+      "final": [
+        "C05",
+        "F03",
+        "B06",
+        "D01",
+        "D02"
+      ],
+      "raw_budget_rub": 559.6,
+      "seed_food_rub": 731.9912854926743,
+      "seed_fc": 0.523224650101983,
+      "seed_over_budget_rub": 172.39128549267423,
+      "substitutions": [
+        {
+          "slot": 4,
+          "from": "C01",
+          "to": "D01",
+          "before_food_rub": 731.9912854926743,
+          "after_food_rub": 620.3757906021525,
+          "over_budget_rub": 60.77579060215248,
+          "within_food_budget": false
+        },
+        {
+          "slot": 5,
+          "from": "C02",
+          "to": "D02",
+          "before_food_rub": 620.3757906021525,
+          "after_food_rub": 553.514955047345,
+          "over_budget_rub": 0,
+          "within_food_budget": true
+        }
+      ],
+      "retained_original_ids": [
+        "C05",
+        "F03",
+        "B06"
+      ],
+      "counts": {
+        "C05": 1,
+        "F03": 1,
+        "B06": 1,
+        "D01": 1,
+        "D02": 1
+      },
+      "food_cost_rub": 553.514955047345,
+      "joint_food_cost_rub": 553.514955047345,
+      "raw_fc": 0.3956504324855933,
+      "boxes_count": 2,
+      "boxes_cost_rub": 11.0,
+      "food_plus_boxes_rub": 564.514955047345,
+      "food_plus_boxes_fc": 0.40351319159924587,
+      "contribution_after_food_boxes_rub": 834.485044952655,
+      "raw_headroom_rub": 6.085044952655039,
+      "raw_cost_increase_tolerance": 0.010993460785778675,
+      "raw_headroom_per_roll": 1.2170089905310078,
+      "mussels_roll_count": 3,
+      "shrimp_roll_count": 1,
+      "salmon_roll_count": 2,
+      "eel_roll_count": 0,
+      "synthetic_standalone_sum": 1474,
+      "synthetic_saving_rub": 75,
+      "synthetic_saving_fraction": 0.05088195386702854,
+      "effective_fc_15": 0.4654710970418745,
+      "effective_fc_20": 0.4945630406069916,
+      "extra_box5_50_fc": 0.4074445711560722,
+      "selected_for_paper_shortlist": true,
+      "set_surplus_eel_stress_food_rub": 553.514955047345,
+      "set_surplus_eel_stress_fc": 0.3956504324855933,
+      "selection_note": "papercandidate; taste/size notvalidated"
+    },
+    {
+      "id": "10A",
+      "name": "Большой с лососевой крышкой",
+      "price": 1899,
+      "roll_count": 10,
+      "seed": [
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "C06",
+        "B01",
+        "B05",
+        "F03",
+        "F04"
+      ],
+      "final": [
+        "C01",
+        "D06",
+        "D01",
+        "D01",
+        "D02",
+        "D02",
+        "D03",
+        "D03",
+        "D04",
+        "D05"
+      ],
+      "raw_budget_rub": 759.6,
+      "seed_food_rub": 1638.2402970423993,
+      "seed_fc": 0.8626857804330696,
+      "seed_over_budget_rub": 878.6402970423993,
+      "substitutions": [
+        {
+          "slot": 2,
+          "from": "C02",
+          "to": "D06",
+          "before_food_rub": 1638.2402970423993,
+          "after_food_rub": 1588.0626204654493,
+          "over_budget_rub": 828.4626204654493,
+          "within_food_budget": false
+        },
+        {
+          "slot": 3,
+          "from": "C03",
+          "to": "D01",
+          "before_food_rub": 1588.0626204654493,
+          "after_food_rub": 1447.8527644476899,
+          "over_budget_rub": 688.2527644476899,
+          "within_food_budget": false
+        },
+        {
+          "slot": 4,
+          "from": "C04",
+          "to": "D01",
+          "before_food_rub": 1447.8527644476899,
+          "after_food_rub": 1377.962095603277,
+          "over_budget_rub": 618.362095603277,
+          "within_food_budget": false
+        },
+        {
+          "slot": 5,
+          "from": "C05",
+          "to": "D02",
+          "before_food_rub": 1377.962095603277,
+          "after_food_rub": 1260.8135800052903,
+          "over_budget_rub": 501.2135800052903,
+          "within_food_budget": false
+        },
+        {
+          "slot": 6,
+          "from": "C06",
+          "to": "D02",
+          "before_food_rub": 1260.8135800052903,
+          "after_food_rub": 1165.3708464957351,
+          "over_budget_rub": 405.7708464957351,
+          "within_food_budget": false
+        },
+        {
+          "slot": 7,
+          "from": "B01",
+          "to": "D03",
+          "before_food_rub": 1165.3708464957351,
+          "after_food_rub": 1053.8626568291186,
+          "over_budget_rub": 294.26265682911855,
+          "within_food_budget": false
+        },
+        {
+          "slot": 8,
+          "from": "B05",
+          "to": "D03",
+          "before_food_rub": 1053.8626568291186,
+          "after_food_rub": 952.958398480174,
+          "over_budget_rub": 193.35839848017395,
+          "within_food_budget": false
+        },
+        {
+          "slot": 9,
+          "from": "F03",
+          "to": "D04",
+          "before_food_rub": 952.958398480174,
+          "after_food_rub": 897.2704066219371,
+          "over_budget_rub": 137.6704066219371,
+          "within_food_budget": false
+        },
+        {
+          "slot": 10,
+          "from": "F04",
+          "to": "D05",
+          "before_food_rub": 897.2704066219371,
+          "after_food_rub": 758.9080898296851,
+          "over_budget_rub": 0,
+          "within_food_budget": true
+        }
+      ],
+      "retained_original_ids": [
+        "C01"
+      ],
+      "counts": {
+        "C01": 1,
+        "D06": 1,
+        "D01": 2,
+        "D02": 2,
+        "D03": 2,
+        "D04": 1,
+        "D05": 1
+      },
+      "food_cost_rub": 758.9080898296851,
+      "joint_food_cost_rub": 758.9080898296851,
+      "raw_fc": 0.39963564498666937,
+      "boxes_count": 4,
+      "boxes_cost_rub": 22.0,
+      "food_plus_boxes_rub": 780.9080898296851,
+      "food_plus_boxes_fc": 0.41122068974706955,
+      "contribution_after_food_boxes_rub": 1118.0919101703148,
+      "raw_headroom_rub": 0.6919101703149408,
+      "raw_cost_increase_tolerance": 0.0009117180058921814,
+      "raw_headroom_per_roll": 0.06919101703149408,
+      "mussels_roll_count": 8,
+      "shrimp_roll_count": 1,
+      "salmon_roll_count": 1,
+      "eel_roll_count": 0,
+      "synthetic_standalone_sum": 2099,
+      "synthetic_saving_rub": 200,
+      "synthetic_saving_fraction": 0.09528346831824674,
+      "effective_fc_15": 0.4701595823372581,
+      "effective_fc_20": 0.49954455623333666,
+      "extra_box5_50_fc": 0.4141169509371696,
+      "selected_for_paper_shortlist": true,
+      "set_surplus_eel_stress_food_rub": 758.9080898296851,
+      "set_surplus_eel_stress_fc": 0.39963564498666937,
+      "selection_note": "papercandidate; taste/size notvalidated"
+    },
+    {
+      "id": "10B",
+      "name": "Большой с тартаром х/к",
+      "price": 1899,
+      "roll_count": 10,
+      "seed": [
+        "C06",
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "B01",
+        "B05",
+        "F03",
+        "F04"
+      ],
+      "final": [
+        "C06",
+        "D06",
+        "D01",
+        "D01",
+        "D02",
+        "D02",
+        "D03",
+        "D03",
+        "D04",
+        "D05"
+      ],
+      "raw_budget_rub": 759.6,
+      "seed_food_rub": 1638.2402970423993,
+      "seed_fc": 0.8626857804330696,
+      "seed_over_budget_rub": 878.6402970423993,
+      "substitutions": [
+        {
+          "slot": 2,
+          "from": "C01",
+          "to": "D06",
+          "before_food_rub": 1638.2402970423993,
+          "after_food_rub": 1544.9614512752496,
+          "over_budget_rub": 785.3614512752496,
+          "within_food_budget": false
+        },
+        {
+          "slot": 3,
+          "from": "C02",
+          "to": "D01",
+          "before_food_rub": 1544.9614512752496,
+          "after_food_rub": 1476.4471255749274,
+          "over_budget_rub": 716.8471255749274,
+          "within_food_budget": false
+        },
+        {
+          "slot": 4,
+          "from": "C03",
+          "to": "D01",
+          "before_food_rub": 1476.4471255749274,
+          "after_food_rub": 1336.2372695571682,
+          "over_budget_rub": 576.6372695571682,
+          "within_food_budget": false
+        },
+        {
+          "slot": 5,
+          "from": "C04",
+          "to": "D02",
+          "before_food_rub": 1336.2372695571682,
+          "after_food_rub": 1268.00009085827,
+          "over_budget_rub": 508.4000908582699,
+          "within_food_budget": false
+        },
+        {
+          "slot": 6,
+          "from": "C05",
+          "to": "D02",
+          "before_food_rub": 1268.00009085827,
+          "after_food_rub": 1150.8515752602832,
+          "over_budget_rub": 391.2515752602832,
+          "within_food_budget": false
+        },
+        {
+          "slot": 7,
+          "from": "B01",
+          "to": "D03",
+          "before_food_rub": 1150.8515752602832,
+          "after_food_rub": 1039.3433855936667,
+          "over_budget_rub": 279.74338559366663,
+          "within_food_budget": false
+        },
+        {
+          "slot": 8,
+          "from": "B05",
+          "to": "D03",
+          "before_food_rub": 1039.3433855936667,
+          "after_food_rub": 938.439127244722,
+          "over_budget_rub": 178.83912724472202,
+          "within_food_budget": false
+        },
+        {
+          "slot": 9,
+          "from": "F03",
+          "to": "D04",
+          "before_food_rub": 938.439127244722,
+          "after_food_rub": 882.7511353864852,
+          "over_budget_rub": 123.15113538648518,
+          "within_food_budget": false
+        },
+        {
+          "slot": 10,
+          "from": "F04",
+          "to": "D05",
+          "before_food_rub": 882.7511353864852,
+          "after_food_rub": 744.3888185942333,
+          "over_budget_rub": 0,
+          "within_food_budget": true
+        }
+      ],
+      "retained_original_ids": [
+        "C06"
+      ],
+      "counts": {
+        "C06": 1,
+        "D06": 1,
+        "D01": 2,
+        "D02": 2,
+        "D03": 2,
+        "D04": 1,
+        "D05": 1
+      },
+      "food_cost_rub": 744.3888185942333,
+      "joint_food_cost_rub": 744.3888185942333,
+      "raw_fc": 0.3919898992070739,
+      "boxes_count": 4,
+      "boxes_cost_rub": 22.0,
+      "food_plus_boxes_rub": 766.3888185942333,
+      "food_plus_boxes_fc": 0.40357494396747406,
+      "contribution_after_food_boxes_rub": 1132.6111814057667,
+      "raw_headroom_rub": 15.211181405766752,
+      "raw_cost_increase_tolerance": 0.02043445713557701,
+      "raw_headroom_per_roll": 1.5211181405766752,
+      "mussels_roll_count": 8,
+      "shrimp_roll_count": 1,
+      "salmon_roll_count": 1,
+      "eel_roll_count": 0,
+      "synthetic_standalone_sum": 2099,
+      "synthetic_saving_rub": 200,
+      "synthetic_saving_fraction": 0.09528346831824674,
+      "effective_fc_15": 0.46116458730243987,
+      "effective_fc_20": 0.4899873740088423,
+      "extra_box5_50_fc": 0.4064712051575741,
+      "selected_for_paper_shortlist": true,
+      "set_surplus_eel_stress_food_rub": 744.3888185942333,
+      "set_surplus_eel_stress_fc": 0.3919898992070739,
+      "selection_note": "papercandidate; taste/size notvalidated"
+    },
+    {
+      "id": "10C",
+      "name": "Большой: лосось и четыре креветочных",
+      "price": 1899,
+      "roll_count": 10,
+      "seed": [
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "C06",
+        "B01",
+        "B05",
+        "F03",
+        "F04"
+      ],
+      "final": [
+        "D08",
+        "D06",
+        "D06",
+        "D07",
+        "D09",
+        "D01",
+        "D01",
+        "D02",
+        "D04",
+        "D05"
+      ],
+      "raw_budget_rub": 759.6,
+      "seed_food_rub": 1638.2402970423993,
+      "seed_fc": 0.8626857804330696,
+      "seed_over_budget_rub": 878.6402970423993,
+      "substitutions": [
+        {
+          "slot": 1,
+          "from": "C01",
+          "to": "D08",
+          "before_food_rub": 1638.2402970423993,
+          "after_food_rub": 1569.1540253199817,
+          "over_budget_rub": 809.5540253199816,
+          "within_food_budget": false
+        },
+        {
+          "slot": 2,
+          "from": "C02",
+          "to": "D06",
+          "before_food_rub": 1569.1540253199817,
+          "after_food_rub": 1518.9763487430314,
+          "over_budget_rub": 759.3763487430314,
+          "within_food_budget": false
+        },
+        {
+          "slot": 3,
+          "from": "C03",
+          "to": "D06",
+          "before_food_rub": 1518.9763487430314,
+          "after_food_rub": 1397.103141848644,
+          "over_budget_rub": 637.5031418486441,
+          "within_food_budget": false
+        },
+        {
+          "slot": 4,
+          "from": "C04",
+          "to": "D07",
+          "before_food_rub": 1397.103141848644,
+          "after_food_rub": 1352.0913216973647,
+          "over_budget_rub": 592.4913216973647,
+          "within_food_budget": false
+        },
+        {
+          "slot": 5,
+          "from": "C05",
+          "to": "D09",
+          "before_food_rub": 1352.0913216973647,
+          "after_food_rub": 1255.9675967174962,
+          "over_budget_rub": 496.3675967174962,
+          "within_food_budget": false
+        },
+        {
+          "slot": 6,
+          "from": "C06",
+          "to": "D01",
+          "before_food_rub": 1255.9675967174962,
+          "after_food_rub": 1158.8713730624263,
+          "over_budget_rub": 399.2713730624263,
+          "within_food_budget": false
+        },
+        {
+          "slot": 7,
+          "from": "B01",
+          "to": "D01",
+          "before_food_rub": 1158.8713730624263,
+          "after_food_rub": 1045.2372574791432,
+          "over_budget_rub": 285.63725747914316,
+          "within_food_budget": false
+        },
+        {
+          "slot": 8,
+          "from": "B05",
+          "to": "D02",
+          "before_food_rub": 1045.2372574791432,
+          "after_food_rub": 943.8605633590465,
+          "over_budget_rub": 184.2605633590465,
+          "within_food_budget": false
+        },
+        {
+          "slot": 9,
+          "from": "F03",
+          "to": "D04",
+          "before_food_rub": 943.8605633590465,
+          "after_food_rub": 888.1725715008097,
+          "over_budget_rub": 128.57257150080966,
+          "within_food_budget": false
+        },
+        {
+          "slot": 10,
+          "from": "F04",
+          "to": "D05",
+          "before_food_rub": 888.1725715008097,
+          "after_food_rub": 749.8102547085577,
+          "over_budget_rub": 0,
+          "within_food_budget": true
+        }
+      ],
+      "retained_original_ids": [],
+      "counts": {
+        "D08": 1,
+        "D06": 2,
+        "D07": 1,
+        "D09": 1,
+        "D01": 2,
+        "D02": 1,
+        "D04": 1,
+        "D05": 1
+      },
+      "food_cost_rub": 749.8102547085577,
+      "joint_food_cost_rub": 749.8102547085577,
+      "raw_fc": 0.3948447892093511,
+      "boxes_count": 4,
+      "boxes_cost_rub": 22.0,
+      "food_plus_boxes_rub": 771.8102547085577,
+      "food_plus_boxes_fc": 0.4064298339697513,
+      "contribution_after_food_boxes_rub": 1127.1897452914423,
+      "raw_headroom_rub": 9.789745291442273,
+      "raw_cost_increase_tolerance": 0.013056296883066087,
+      "raw_headroom_per_roll": 0.9789745291442273,
+      "mussels_roll_count": 5,
+      "shrimp_roll_count": 4,
+      "salmon_roll_count": 1,
+      "eel_roll_count": 0,
+      "synthetic_standalone_sum": 2170,
+      "synthetic_saving_rub": 271,
+      "synthetic_saving_fraction": 0.12488479262672814,
+      "effective_fc_15": 0.46452328142276605,
+      "effective_fc_20": 0.49355598651168886,
+      "extra_box5_50_fc": 0.40932609515985136,
+      "selected_for_paper_shortlist": true,
+      "set_surplus_eel_stress_food_rub": 749.8102547085577,
+      "set_surplus_eel_stress_fc": 0.3948447892093511,
+      "selection_note": "papercandidate; taste/size notvalidated"
+    }
+  ],
+  "packaging": {
+    "product_id": "37977d9f-a43e-40f8-9798-e29c2d9dbe14",
+    "name": "Ланчбокс1секция",
+    "unit_price_rub": 5.5,
+    "quantity_by_set_roll_count": {
+      "4": 2,
+      "5": 2,
+      "10": 4
+    },
+    "basis": "current4rollНейросет/Токио/Лотос,5rollЖареный/Сушимания,10rollБигбэн cards; capacitynewrolls NOTverified",
+    "lastpurchase_date": "2026-10-14",
+    "pricebook_record": {
+      "guid": "37977d9f-a43e-40f8-9798-e29c2d9dbe14",
+      "price_type": "lastpurchase",
+      "price_date": "2026-10-14T15:00:00",
+      "age_days": 7,
+      "store_guid": "8a55c561-2598-4150-ac28-1b03cf8a1835",
+      "lines_in_period": 9,
+      "latest_sources": [
+        {
+          "document_guid": "3106904f-9454-c04c-01a1-3d32825f84da",
+          "document_number": "DX001496A",
+          "price": 5.5,
+          "amount_unit_guid": "cd19b5ea-1b32-a6e5-1df7-5d2784a0549a",
+          "amount": 200.0,
+          "sum": 1100.0,
+          "vat_percent": "22.000000000",
+          "vat_sum": "198.36"
+        }
+      ],
+      "variants": [
+        {
+          "unit_price_rub": 5.5,
+          "purchase_unit_guid": "cd19b5ea-1b32-a6e5-1df7-5d2784a0549a"
+        }
+      ],
+      "max_price_sum_deviation_rub": 0.0,
+      "unit_price_rub": 5.5,
+      "purchase_unit_guid": "cd19b5ea-1b32-a6e5-1df7-5d2784a0549a",
+      "status": "lastpurchase_confirmed",
+      "name": "Ланчбокс 1 секция",
+      "product_type": "GOODS",
+      "main_unit_guid": "cd19b5ea-1b32-a6e5-1df7-5d2784a0549a",
+      "main_unit": "шт",
+      "purchase_unit": "шт"
+    }
+  },
+  "source_sha256": {
+    "business-docs/strategy/snapshots/2026-10-21-new-roll-line-v1/inputs.json": "5a098888513b149bea04ca49606f30f0c9e8d5c2a4601a684c9578f978f81e48",
+    "business-docs/strategy/snapshots/2026-10-21-new-roll-line-v1/results.json": "20676e8a2ea6991b5f3296ff6bbf26a138c754d64c14734dd927628f9738f902",
+    "business-docs/strategy/snapshots/2026-10-21-sets-quality-first/inputs.json": "48a100ad22dd8d8324df5cb32e0be69d070e3c8c73dd94c3ca7e0c670769c71d",
+    "business-docs/strategy/snapshots/2026-10-21-sets-quality-first/results.json": "e0b5aef51460fe3d3fa0c6b51979c030bf51feb07be97488c1f4857b3439d848",
+    "business-docs/strategy/snapshots/2026-10-21-new-budget-roll-candidates/source-audit.json": "3ee814516766a26a77e52e045f5eba829ff10443b149696c8a200ae5959c497c"
+  },
+  "assumptions": [
+    "Frozen21Oct pricebook, calculations22Oct. No newly fetched price quotes.",
+    "40% raw material FC before extra benefits is carried working assumption, not owner universal ceiling.",
+    "New100g inner recipes use chicken40g target preparedportion, not existing calibrated dose; no1-3g gram shaving.",
+    "Frying25g batter15g crumbs5g oil provisional, not measured actual consumption.",
+    "All27 existing recipe records preserved. Project menu prices are proposals, not live prices.",
+    "Water, garnishes, bag and extra sauces beyond cards not priced; labour/order costs excluded from raw/boxFC.",
+    "Boxcount from old cards, capacity newrolls not proven.",
+    "No radish with stale2023 cost, no excluded squid/tuna/carrot/mushroom; unresolved eel not included in main sets.",
+    "Taste, visual consistency, delivery and manufacturing dose variability not validated. No physical trial started."
+  ]
+}
