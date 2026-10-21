@@ -1,0 +1,3277 @@
+{
+  "as_of": "2026-10-22",
+  "status": "correction_of_paper_hat_assumptions_not_production_recipe_change",
+  "owner_hat_range_g": [
+    70,
+    80
+  ],
+  "central75_is_analytical_assumption_not_fixed_recipe": true,
+  "application_roles": {
+    "B06": {
+      "sauce_hat": {
+        "cheese_sauce": 35
+      },
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "C01": {
+      "sauce_hat": {},
+      "drizzle": {},
+      "fish_cover": {
+        "salmon_plain": 50
+      },
+      "tartar_top": {},
+      "other": {}
+    },
+    "C02": {
+      "sauce_hat": {},
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {
+        "shrimp": 50
+      },
+      "tartar_top": {},
+      "other": {}
+    },
+    "C04": {
+      "sauce_hat": {},
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {
+        "masago": 15
+      }
+    },
+    "C05": {
+      "sauce_hat": {},
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {
+        "tartar_plain": 70
+      },
+      "other": {}
+    },
+    "C06": {
+      "sauce_hat": {},
+      "drizzle": {
+        "unagi": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {
+        "tartar_smoked": 70
+      },
+      "other": {}
+    },
+    "D01": {
+      "sauce_hat": {},
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "D02": {
+      "sauce_hat": {},
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "D04": {
+      "sauce_hat": {
+        "yaki": 20
+      },
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "D05": {
+      "sauce_hat": {},
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "D06": {
+      "sauce_hat": {},
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "D07": {
+      "sauce_hat": {
+        "yaki": 20
+      },
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "D09": {
+      "sauce_hat": {},
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "F02": {
+      "sauce_hat": {
+        "spice": 20
+      },
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "F03": {
+      "sauce_hat": {
+        "cheese_sauce": 20
+      },
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "K1": {
+      "sauce_hat": {},
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "K2": {
+      "sauce_hat": {},
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "K3": {
+      "sauce_hat": {
+        "yaki": 30
+      },
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "K4": {
+      "sauce_hat": {
+        "cheese_sauce": 30
+      },
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "K5": {
+      "sauce_hat": {
+        "spice": 20
+      },
+      "drizzle": {
+        "unagi": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "K6": {
+      "sauce_hat": {
+        "spice": 20
+      },
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    }
+  },
+  "recipe_scenarios": {
+    "B06": {
+      "id": "B06",
+      "name": "Креветка и мидии под сырным соусом",
+      "group": "Запечённые",
+      "old_materials_rub": 127.28535079597394,
+      "source_top": {
+        "cheese_sauce": 35,
+        "teriyaki": 5
+      },
+      "application_roles": {
+        "sauce_hat": {
+          "cheese_sauce": 35
+        },
+        "drizzle": {
+          "teriyaki": 5
+        },
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 139.52282448018445,
+          "sauce_hat": {
+            "cheese_sauce": 70.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 141.27103500650026,
+          "sauce_hat": {
+            "cheese_sauce": 75.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 143.01924553281603,
+          "sauce_hat": {
+            "cheese_sauce": 80.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 365,
+      "fc_at_old_project_price75": 0.3870439315246582,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 405,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "C01": {
+      "id": "C01",
+      "name": "Лосось — крышка",
+      "group": "Холодные",
+      "old_materials_rub": 172.5014741241109,
+      "source_top": {
+        "salmon_plain": 50
+      },
+      "application_roles": {
+        "sauce_hat": {},
+        "drizzle": {},
+        "fish_cover": {
+          "salmon_plain": 50
+        },
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 172.5014741241109,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {
+            "salmon_plain": 50
+          },
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 172.5014741241109,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {
+            "salmon_plain": 50
+          },
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 172.5014741241109,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {
+            "salmon_plain": 50
+          },
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 399,
+      "fc_at_old_project_price75": 0.432334521614313,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 495,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "C02": {
+      "id": "C02",
+      "name": "Креветка — крышка",
+      "group": "Холодные",
+      "old_materials_rub": 129.40030493391126,
+      "source_top": {
+        "shrimp": 50,
+        "teriyaki": 5
+      },
+      "application_roles": {
+        "sauce_hat": {},
+        "drizzle": {
+          "teriyaki": 5
+        },
+        "fish_cover": {
+          "shrimp": 50
+        },
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 129.40030493391126,
+          "sauce_hat": {},
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {
+            "shrimp": 50
+          },
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 129.40030493391126,
+          "sauce_hat": {},
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {
+            "shrimp": 50
+          },
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 129.40030493391126,
+          "sauce_hat": {},
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {
+            "shrimp": 50
+          },
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 370,
+      "fc_at_old_project_price75": 0.34973055387543583,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 370,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "C04": {
+      "id": "C04",
+      "name": "Копчёный лосось и масаго",
+      "group": "Холодные",
+      "old_materials_rub": 130.77664807800215,
+      "source_top": {
+        "masago": 15
+      },
+      "application_roles": {
+        "sauce_hat": {},
+        "drizzle": {},
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {
+          "masago": 15
+        }
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 130.77664807800215,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {
+            "masago": 15
+          }
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 130.77664807800215,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {
+            "masago": 15
+          }
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 130.77664807800215,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {
+            "masago": 15
+          }
+        }
+      },
+      "previous_project_single_price_rub": 375,
+      "fc_at_old_project_price75": 0.34873772820800575,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 375,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "C05": {
+      "id": "C05",
+      "name": "Тартар из лосося",
+      "group": "Холодные",
+      "old_materials_rub": 179.68798497709042,
+      "source_top": {
+        "tartar_plain": 70,
+        "teriyaki": 5
+      },
+      "application_roles": {
+        "sauce_hat": {},
+        "drizzle": {
+          "teriyaki": 5
+        },
+        "fish_cover": {},
+        "tartar_top": {
+          "tartar_plain": 70
+        },
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 179.68798497709042,
+          "sauce_hat": {},
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {
+            "tartar_plain": 70
+          },
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 179.68798497709042,
+          "sauce_hat": {},
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {
+            "tartar_plain": 70
+          },
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 179.68798497709042,
+          "sauce_hat": {},
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {
+            "tartar_plain": 70
+          },
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 399,
+      "fc_at_old_project_price75": 0.45034582701025166,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 515,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "C06": {
+      "id": "C06",
+      "name": "Тартар из копчёного лосося",
+      "group": "Холодные",
+      "old_materials_rub": 157.98220288865903,
+      "source_top": {
+        "tartar_smoked": 70,
+        "unagi": 5
+      },
+      "application_roles": {
+        "sauce_hat": {},
+        "drizzle": {
+          "unagi": 5
+        },
+        "fish_cover": {},
+        "tartar_top": {
+          "tartar_smoked": 70
+        },
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 157.98220288865903,
+          "sauce_hat": {},
+          "drizzle": {
+            "unagi": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {
+            "tartar_smoked": 70
+          },
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 157.98220288865903,
+          "sauce_hat": {},
+          "drizzle": {
+            "unagi": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {
+            "tartar_smoked": 70
+          },
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 157.98220288865903,
+          "sauce_hat": {},
+          "drizzle": {
+            "unagi": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {
+            "tartar_smoked": 70
+          },
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 399,
+      "fc_at_old_project_price75": 0.39594537064826824,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 455,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "D01": {
+      "id": "D01",
+      "name": "Мидии, краб и огурец",
+      "group": "Холодные",
+      "old_materials_rub": 60.88597923358919,
+      "source_top": {},
+      "application_roles": {
+        "sauce_hat": {},
+        "drizzle": {},
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 60.88597923358919,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 60.88597923358919,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 60.88597923358919,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 175,
+      "fc_at_old_project_price75": 0.34791988133479534,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 175,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "D02": {
+      "id": "D02",
+      "name": "Мидии и тамаго",
+      "group": "Холодные",
+      "old_materials_rub": 62.53946937910374,
+      "source_top": {},
+      "application_roles": {
+        "sauce_hat": {},
+        "drizzle": {},
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 62.53946937910374,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 62.53946937910374,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 62.53946937910374,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 180,
+      "fc_at_old_project_price75": 0.3474414965505763,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 180,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "D04": {
+      "id": "D04",
+      "name": "Мидии яки",
+      "group": "Запечённые",
+      "old_materials_rub": 67.42817880335089,
+      "source_top": {
+        "yaki": 20
+      },
+      "application_roles": {
+        "sauce_hat": {
+          "yaki": 20
+        },
+        "drizzle": {},
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 83.78367772775515,
+          "sauce_hat": {
+            "yaki": 70.0
+          },
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 85.41922762019557,
+          "sauce_hat": {
+            "yaki": 75.0
+          },
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 87.054777512636,
+          "sauce_hat": {
+            "yaki": 80.0
+          },
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 195,
+      "fc_at_old_project_price75": 0.4380473211292081,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 245,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "D05": {
+      "id": "D05",
+      "name": "Мидии темпура",
+      "group": "Жареные",
+      "old_materials_rub": 66.88110101936469,
+      "source_top": {},
+      "application_roles": {
+        "sauce_hat": {},
+        "drizzle": {},
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 66.88110101936469,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 66.88110101936469,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 66.88110101936469,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 195,
+      "fc_at_old_project_price75": 0.34298000522751126,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 195,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "D06": {
+      "id": "D06",
+      "name": "Креветка, краб и огурец",
+      "group": "Холодные",
+      "old_materials_rub": 79.22262835696107,
+      "source_top": {},
+      "application_roles": {
+        "sauce_hat": {},
+        "drizzle": {},
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 79.22262835696107,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 79.22262835696107,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 79.22262835696107,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 230,
+      "fc_at_old_project_price75": 0.3444462102476568,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 230,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "D07": {
+      "id": "D07",
+      "name": "Креветка яки — новая",
+      "group": "Запечённые",
+      "old_materials_rub": 85.76482792672277,
+      "source_top": {
+        "yaki": 20
+      },
+      "application_roles": {
+        "sauce_hat": {
+          "yaki": 20
+        },
+        "drizzle": {},
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 102.12032685112703,
+          "sauce_hat": {
+            "yaki": 70.0
+          },
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 103.75587674356746,
+          "sauce_hat": {
+            "yaki": 75.0
+          },
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 105.39142663600788,
+          "sauce_hat": {
+            "yaki": 80.0
+          },
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 250,
+      "fc_at_old_project_price75": 0.4150235069742698,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 300,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "D09": {
+      "id": "D09",
+      "name": "Креветка темпура — новая",
+      "group": "Жареные",
+      "old_materials_rub": 83.56425999722201,
+      "source_top": {},
+      "application_roles": {
+        "sauce_hat": {},
+        "drizzle": {},
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 83.56425999722201,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 83.56425999722201,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 83.56425999722201,
+          "sauce_hat": {},
+          "drizzle": {},
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 240,
+      "fc_at_old_project_price75": 0.3481844166550917,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 240,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "F02": {
+      "id": "F02",
+      "name": "Креветка и крабовая смесь",
+      "group": "Жареные",
+      "old_materials_rub": 104.35527246960443,
+      "source_top": {
+        "spice": 20,
+        "teriyaki": 5
+      },
+      "application_roles": {
+        "sauce_hat": {
+          "spice": 20
+        },
+        "drizzle": {
+          "teriyaki": 5
+        },
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 120.55909642293318,
+          "sauce_hat": {
+            "spice": 70.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 122.17947881826606,
+          "sauce_hat": {
+            "spice": 75.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 123.79986121359893,
+          "sauce_hat": {
+            "spice": 80.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 300,
+      "fc_at_old_project_price75": 0.4072649293942202,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 350,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "F03": {
+      "id": "F03",
+      "name": "Копчёный лосось и моцарелла",
+      "group": "Жареные",
+      "old_materials_rub": 123.11617066158774,
+      "source_top": {
+        "cheese_sauce": 20,
+        "teriyaki": 5
+      },
+      "application_roles": {
+        "sauce_hat": {
+          "cheese_sauce": 20
+        },
+        "drizzle": {
+          "teriyaki": 5
+        },
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 140.59827592474565,
+          "sauce_hat": {
+            "cheese_sauce": 70.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 142.34648645106142,
+          "sauce_hat": {
+            "cheese_sauce": 75.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 144.09469697737723,
+          "sauce_hat": {
+            "cheese_sauce": 80.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 355,
+      "fc_at_old_project_price75": 0.400976018172004,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 410,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "K1": {
+      "id": "K1",
+      "name": "Копчёная курица, сыр и огурец",
+      "group": "Холодные",
+      "old_materials_rub": 61.834490078976536,
+      "source_top": {
+        "teriyaki": 5
+      },
+      "application_roles": {
+        "sauce_hat": {},
+        "drizzle": {
+          "teriyaki": 5
+        },
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 61.834490078976536,
+          "sauce_hat": {},
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 61.834490078976536,
+          "sauce_hat": {},
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 61.834490078976536,
+          "sauce_hat": {},
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 180,
+      "fc_at_old_project_price75": 0.34352494488320295,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 180,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "K2": {
+      "id": "K2",
+      "name": "Копчёная курица, краб и тамаго",
+      "group": "Холодные",
+      "old_materials_rub": 58.988721109411735,
+      "source_top": {
+        "teriyaki": 5
+      },
+      "application_roles": {
+        "sauce_hat": {},
+        "drizzle": {
+          "teriyaki": 5
+        },
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 58.988721109411735,
+          "sauce_hat": {},
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 58.988721109411735,
+          "sauce_hat": {},
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 58.988721109411735,
+          "sauce_hat": {},
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 170,
+      "fc_at_old_project_price75": 0.3469924771141867,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 170,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "K3": {
+      "id": "K3",
+      "name": "Копчёная курица яки",
+      "group": "Запечённые",
+      "old_materials_rub": 67.59991176385238,
+      "source_top": {
+        "yaki": 30,
+        "teriyaki": 5
+      },
+      "application_roles": {
+        "sauce_hat": {
+          "yaki": 30
+        },
+        "drizzle": {
+          "teriyaki": 5
+        },
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 80.68431090337579,
+          "sauce_hat": {
+            "yaki": 70.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 82.31986079581621,
+          "sauce_hat": {
+            "yaki": 75.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 83.95541068825663,
+          "sauce_hat": {
+            "yaki": 80.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 195,
+      "fc_at_old_project_price75": 0.42215313228623697,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 240,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "K4": {
+      "id": "K4",
+      "name": "Копчёная курица с моцареллой",
+      "group": "Запечённые",
+      "old_materials_rub": 71.33103718131572,
+      "source_top": {
+        "cheese_sauce": 30,
+        "teriyaki": 5
+      },
+      "application_roles": {
+        "sauce_hat": {
+          "cheese_sauce": 30
+        },
+        "drizzle": {
+          "teriyaki": 5
+        },
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 85.31672139184204,
+          "sauce_hat": {
+            "cheese_sauce": 70.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 87.06493191815782,
+          "sauce_hat": {
+            "cheese_sauce": 75.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 88.81314244447361,
+          "sauce_hat": {
+            "cheese_sauce": 80.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 205,
+      "fc_at_old_project_price75": 0.4247069849666235,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 250,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "K5": {
+      "id": "K5",
+      "name": "Копчёная курица и краб темпура",
+      "group": "Жареные",
+      "old_materials_rub": 69.0140888515894,
+      "source_top": {
+        "spice": 20,
+        "unagi": 5
+      },
+      "application_roles": {
+        "sauce_hat": {
+          "spice": 20
+        },
+        "drizzle": {
+          "unagi": 5
+        },
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 85.21791280491816,
+          "sauce_hat": {
+            "spice": 70.0
+          },
+          "drizzle": {
+            "unagi": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 86.83829520025104,
+          "sauce_hat": {
+            "spice": 75.0
+          },
+          "drizzle": {
+            "unagi": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 88.45867759558391,
+          "sauce_hat": {
+            "spice": 80.0
+          },
+          "drizzle": {
+            "unagi": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 200,
+      "fc_at_old_project_price75": 0.4341914760012552,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 250,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    },
+    "K6": {
+      "id": "K6",
+      "name": "Копчёная курица и тамаго темпура",
+      "group": "Жареные",
+      "old_materials_rub": 63.36520574191339,
+      "source_top": {
+        "spice": 20,
+        "teriyaki": 5
+      },
+      "application_roles": {
+        "sauce_hat": {
+          "spice": 20
+        },
+        "drizzle": {
+          "teriyaki": 5
+        },
+        "fish_cover": {},
+        "tartar_top": {},
+        "other": {}
+      },
+      "interpretation_status": "explicit_paper_scenario_not_verified_production_application",
+      "scenarios": {
+        "70": {
+          "materials_subtotal_ex_unknown_sesame_rub": 79.56902969524215,
+          "sauce_hat": {
+            "spice": 70.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "75": {
+          "materials_subtotal_ex_unknown_sesame_rub": 81.18941209057502,
+          "sauce_hat": {
+            "spice": 75.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        },
+        "80": {
+          "materials_subtotal_ex_unknown_sesame_rub": 82.8097944859079,
+          "sauce_hat": {
+            "spice": 80.0
+          },
+          "drizzle": {
+            "teriyaki": 5
+          },
+          "fish_cover": {},
+          "tartar_top": {},
+          "other": {}
+        }
+      },
+      "previous_project_single_price_rub": 185,
+      "fc_at_old_project_price75": 0.4388616869760812,
+      "minimum_price_for35_at75_ex_unknown_sesame_rub": 235,
+      "sesame_g": null,
+      "sesame_cost_rub": null
+    }
+  },
+  "new_chicken_recipe_ids": [
+    "K1",
+    "K2",
+    "K3",
+    "K4",
+    "K5",
+    "K6"
+  ],
+  "sets_same_composition_and_prices": [
+    {
+      "id": "4A",
+      "name": "Лосось и курица яки",
+      "price_rub": 999,
+      "composition": [
+        "C01",
+        "D09",
+        "K3",
+        "D01"
+      ],
+      "old_food_rub": 384.5516251187745,
+      "old_food_fc": 0.3849365616804549,
+      "boxes_rub": 11.0,
+      "scenarios": {
+        "70": {
+          "food_rub": 397.6360242582979,
+          "raw_fc": 0.3980340583166145,
+          "food_plus_boxes_rub": 408.6360242582979,
+          "food_plus_boxes_fc": 0.4090450693276255,
+          "raw_headroom_to_previous40_rub": 1.9639757417021428,
+          "within_previous_raw40_before_sesame": true
+        },
+        "75": {
+          "food_rub": 399.27157415073833,
+          "raw_fc": 0.39967124539613447,
+          "food_plus_boxes_rub": 410.27157415073833,
+          "food_plus_boxes_fc": 0.41068225640714545,
+          "raw_headroom_to_previous40_rub": 0.3284258492616914,
+          "within_previous_raw40_before_sesame": true
+        },
+        "80": {
+          "food_rub": 400.9071240431787,
+          "raw_fc": 0.4013084324756544,
+          "food_plus_boxes_rub": 411.9071240431787,
+          "food_plus_boxes_fc": 0.4123194434866654,
+          "raw_headroom_to_previous40_rub": -1.3071240431787032,
+          "within_previous_raw40_before_sesame": false
+        }
+      },
+      "increase_rub_at75": 14.719949031963836
+    },
+    {
+      "id": "4B",
+      "name": "Креветочная крышка и сырная курица",
+      "price_rub": 999,
+      "composition": [
+        "C02",
+        "F03",
+        "K4",
+        "D01"
+      ],
+      "old_food_rub": 384.7334920104039,
+      "old_food_fc": 0.3851186106210249,
+      "boxes_rub": 11.0,
+      "scenarios": {
+        "70": {
+          "food_rub": 416.20128148408816,
+          "raw_fc": 0.4166178993834716,
+          "food_plus_boxes_rub": 427.20128148408816,
+          "food_plus_boxes_fc": 0.42762891039448264,
+          "raw_headroom_to_previous40_rub": -16.601281484088133,
+          "within_previous_raw40_before_sesame": false
+        },
+        "75": {
+          "food_rub": 419.6977025367197,
+          "raw_fc": 0.4201178203570768,
+          "food_plus_boxes_rub": 430.6977025367197,
+          "food_plus_boxes_fc": 0.4311288313680878,
+          "raw_headroom_to_previous40_rub": -20.09770253671968,
+          "within_previous_raw40_before_sesame": false
+        },
+        "80": {
+          "food_rub": 423.1941235893513,
+          "raw_fc": 0.423617741330682,
+          "food_plus_boxes_rub": 434.1941235893513,
+          "food_plus_boxes_fc": 0.434628752341693,
+          "raw_headroom_to_previous40_rub": -23.594123589351284,
+          "within_previous_raw40_before_sesame": false
+        }
+      },
+      "increase_rub_at75": 34.96421052631581
+    },
+    {
+      "id": "4C",
+      "name": "Тартар и курица темпура",
+      "price_rub": 999,
+      "composition": [
+        "C05",
+        "D07",
+        "K6",
+        "D01"
+      ],
+      "old_food_rub": 389.7039978793158,
+      "old_food_fc": 0.3900940919712871,
+      "boxes_rub": 11.0,
+      "scenarios": {
+        "70": {
+          "food_rub": 422.2633207570488,
+          "raw_fc": 0.4226860067638126,
+          "food_plus_boxes_rub": 433.2633207570488,
+          "food_plus_boxes_fc": 0.4336970177748236,
+          "raw_headroom_to_previous40_rub": -22.66332075704878,
+          "within_previous_raw40_before_sesame": false
+        },
+        "75": {
+          "food_rub": 425.5192530448221,
+          "raw_fc": 0.42594519824306515,
+          "food_plus_boxes_rub": 436.5192530448221,
+          "food_plus_boxes_fc": 0.4369562092540762,
+          "raw_headroom_to_previous40_rub": -25.919253044822085,
+          "within_previous_raw40_before_sesame": false
+        },
+        "80": {
+          "food_rub": 428.7751853325954,
+          "raw_fc": 0.4292043897223177,
+          "food_plus_boxes_rub": 439.7751853325954,
+          "food_plus_boxes_fc": 0.44021540073332877,
+          "raw_headroom_to_previous40_rub": -29.17518533259539,
+          "within_previous_raw40_before_sesame": false
+        }
+      },
+      "increase_rub_at75": 35.8152551655063
+    },
+    {
+      "id": "5L-A",
+      "name": "Две крышки и курица",
+      "price_rub": 1299,
+      "composition": [
+        "C01",
+        "C02",
+        "D05",
+        "K3",
+        "K1"
+      ],
+      "old_food_rub": 498.2172819202158,
+      "old_food_fc": 0.3835390930871561,
+      "boxes_rub": 11.0,
+      "scenarios": {
+        "70": {
+          "food_rub": 511.30168105973917,
+          "raw_fc": 0.3936117637103458,
+          "food_plus_boxes_rub": 522.3016810597392,
+          "food_plus_boxes_fc": 0.40207981605830573,
+          "raw_headroom_to_previous40_rub": 8.298318940260856,
+          "within_previous_raw40_before_sesame": true
+        },
+        "75": {
+          "food_rub": 512.9372309521796,
+          "raw_fc": 0.3948708475382445,
+          "food_plus_boxes_rub": 523.9372309521796,
+          "food_plus_boxes_fc": 0.4033388998862044,
+          "raw_headroom_to_previous40_rub": 6.662769047820461,
+          "within_previous_raw40_before_sesame": true
+        },
+        "80": {
+          "food_rub": 514.5727808446201,
+          "raw_fc": 0.3961299313661432,
+          "food_plus_boxes_rub": 525.5727808446201,
+          "food_plus_boxes_fc": 0.4045979837141032,
+          "raw_headroom_to_previous40_rub": 5.027219155379953,
+          "within_previous_raw40_before_sesame": true
+        }
+      },
+      "increase_rub_at75": 14.719949031963779
+    },
+    {
+      "id": "5L-B",
+      "name": "Лосось, креветка и курица яки",
+      "price_rub": 1299,
+      "composition": [
+        "C04",
+        "B06",
+        "F02",
+        "D04",
+        "K3"
+      ],
+      "old_food_rub": 497.4453619107838,
+      "old_food_fc": 0.3829448513554918,
+      "boxes_rub": 11.0,
+      "scenarios": {
+        "70": {
+          "food_rub": 555.3265576122508,
+          "raw_fc": 0.4275031236429952,
+          "food_plus_boxes_rub": 566.3265576122508,
+          "food_plus_boxes_fc": 0.4359711759909552,
+          "raw_headroom_to_previous40_rub": -35.72655761225076,
+          "within_previous_raw40_before_sesame": false
+        },
+        "75": {
+          "food_rub": 561.9662503187802,
+          "raw_fc": 0.43261451140783697,
+          "food_plus_boxes_rub": 572.9662503187802,
+          "food_plus_boxes_fc": 0.44108256375579696,
+          "raw_headroom_to_previous40_rub": -42.3662503187802,
+          "within_previous_raw40_before_sesame": false
+        },
+        "80": {
+          "food_rub": 568.6059430253098,
+          "raw_fc": 0.43772589917267885,
+          "food_plus_boxes_rub": 579.6059430253098,
+          "food_plus_boxes_fc": 0.4461939515206388,
+          "raw_headroom_to_previous40_rub": -49.00594302530976,
+          "within_previous_raw40_before_sesame": false
+        }
+      },
+      "increase_rub_at75": 64.52088840799644
+    },
+    {
+      "id": "5H-B",
+      "name": "Тартар, креветка и две курицы",
+      "price_rub": 1399,
+      "composition": [
+        "C05",
+        "F03",
+        "B06",
+        "K1",
+        "K2"
+      ],
+      "old_food_rub": 550.9127176230404,
+      "old_food_fc": 0.3937903628470625,
+      "boxes_rub": 11.0,
+      "scenarios": {
+        "70": {
+          "food_rub": 580.6322965704088,
+          "raw_fc": 0.41503380741272966,
+          "food_plus_boxes_rub": 591.6322965704088,
+          "food_plus_boxes_fc": 0.4228965665263823,
+          "raw_headroom_to_previous40_rub": -21.03229657040879,
+          "within_previous_raw40_before_sesame": false
+        },
+        "75": {
+          "food_rub": 584.1287176230404,
+          "raw_fc": 0.41753303618516113,
+          "food_plus_boxes_rub": 595.1287176230404,
+          "food_plus_boxes_fc": 0.4253957952988137,
+          "raw_headroom_to_previous40_rub": -24.528717623040393,
+          "within_previous_raw40_before_sesame": false
+        },
+        "80": {
+          "food_rub": 587.6251386756719,
+          "raw_fc": 0.4200322649575925,
+          "food_plus_boxes_rub": 598.6251386756719,
+          "food_plus_boxes_fc": 0.42789502407124513,
+          "raw_headroom_to_previous40_rub": -28.025138675671883,
+          "within_previous_raw40_before_sesame": false
+        }
+      },
+      "increase_rub_at75": 33.21600000000001
+    },
+    {
+      "id": "10A",
+      "name": "Лососевая крышка — ассорти",
+      "price_rub": 1899,
+      "composition": [
+        "C01",
+        "D06",
+        "K2",
+        "K2",
+        "K6",
+        "K6",
+        "D01",
+        "D01",
+        "D02",
+        "D04"
+      ],
+      "old_food_rub": 748.1715628333552,
+      "old_food_fc": 0.3939818656310454,
+      "boxes_rub": 22.0,
+      "scenarios": {
+        "70": {
+          "food_rub": 796.934709664417,
+          "raw_fc": 0.4196601946626735,
+          "food_plus_boxes_rub": 818.934709664417,
+          "food_plus_boxes_fc": 0.43124523942307375,
+          "raw_headroom_to_previous40_rub": -37.334709664417005,
+          "within_previous_raw40_before_sesame": false
+        },
+        "75": {
+          "food_rub": 801.8110243475231,
+          "raw_fc": 0.4222280275658363,
+          "food_plus_boxes_rub": 823.8110243475231,
+          "food_plus_boxes_fc": 0.4338130723262365,
+          "raw_headroom_to_previous40_rub": -42.21102434752311,
+          "within_previous_raw40_before_sesame": false
+        },
+        "80": {
+          "food_rub": 806.6873390306293,
+          "raw_fc": 0.42479586046899914,
+          "food_plus_boxes_rub": 828.6873390306293,
+          "food_plus_boxes_fc": 0.4363809052293993,
+          "raw_headroom_to_previous40_rub": -47.08733903062932,
+          "within_previous_raw40_before_sesame": false
+        }
+      },
+      "increase_rub_at75": 53.63946151416792
+    },
+    {
+      "id": "10B",
+      "name": "Креветочная крышка — ассорти",
+      "price_rub": 1899,
+      "composition": [
+        "C02",
+        "D06",
+        "K1",
+        "K2",
+        "K4",
+        "K5",
+        "D01",
+        "D02",
+        "D04",
+        "D05"
+      ],
+      "old_food_rub": 727.5259989475742,
+      "old_food_fc": 0.38311005737102377,
+      "boxes_rub": 22.0,
+      "scenarios": {
+        "70": {
+          "food_rub": 774.0710060358335,
+          "raw_fc": 0.40762032966605244,
+          "food_plus_boxes_rub": 796.0710060358335,
+          "food_plus_boxes_fc": 0.4192053744264526,
+          "raw_headroom_to_previous40_rub": -14.471006035833511,
+          "within_previous_raw40_before_sesame": false
+        },
+        "75": {
+          "food_rub": 779.0751488499227,
+          "raw_fc": 0.41025547596099143,
+          "food_plus_boxes_rub": 801.0751488499227,
+          "food_plus_boxes_fc": 0.4218405207213916,
+          "raw_headroom_to_previous40_rub": -19.475148849922675,
+          "within_previous_raw40_before_sesame": false
+        },
+        "80": {
+          "food_rub": 784.0792916640117,
+          "raw_fc": 0.4128906222559304,
+          "food_plus_boxes_rub": 806.0792916640117,
+          "food_plus_boxes_fc": 0.42447566701633055,
+          "raw_headroom_to_previous40_rub": -24.479291664011726,
+          "within_previous_raw40_before_sesame": false
+        }
+      },
+      "increase_rub_at75": 51.54914990234852
+    },
+    {
+      "id": "10C",
+      "name": "Копчёный тартар — ассорти",
+      "price_rub": 1899,
+      "composition": [
+        "C06",
+        "D06",
+        "K1",
+        "K2",
+        "K2",
+        "K3",
+        "K6",
+        "D01",
+        "D02",
+        "D05"
+      ],
+      "old_food_rub": 738.2884306812435,
+      "old_food_fc": 0.38877747797853796,
+      "boxes_rub": 22.0,
+      "scenarios": {
+        "70": {
+          "food_rub": 767.5766537740957,
+          "raw_fc": 0.40420044959141427,
+          "food_plus_boxes_rub": 789.5766537740957,
+          "food_plus_boxes_fc": 0.4157854943518145,
+          "raw_headroom_to_previous40_rub": -7.9766537740956664,
+          "within_previous_raw40_before_sesame": false
+        },
+        "75": {
+          "food_rub": 770.8325860618689,
+          "raw_fc": 0.4059150005591727,
+          "food_plus_boxes_rub": 792.8325860618689,
+          "food_plus_boxes_fc": 0.4175000453195729,
+          "raw_headroom_to_previous40_rub": -11.232586061868915,
+          "within_previous_raw40_before_sesame": false
+        },
+        "80": {
+          "food_rub": 774.0885183496423,
+          "raw_fc": 0.4076295515269312,
+          "food_plus_boxes_rub": 796.0885183496423,
+          "food_plus_boxes_fc": 0.4192145962873314,
+          "raw_headroom_to_previous40_rub": -14.488518349642277,
+          "within_previous_raw40_before_sesame": false
+        }
+      },
+      "increase_rub_at75": 32.5441553806254
+    }
+  ],
+  "sesame": {
+    "name": "Кунжут белый",
+    "product_id": "a9eb0f18-d512-4053-aeee-19c2034e42fb",
+    "type": "GOODS",
+    "deleted": false,
+    "main_unit_guid": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+    "main_unit": "кг",
+    "purchase_unit": "кг",
+    "price_rub_per_purchase_kg": 285.0,
+    "cost_rub_per_purchased_g": 0.285,
+    "price_date": "2026-10-01T18:00:00",
+    "price_status": "lastpurchase_confirmed",
+    "store_guid": "8a55c561-2598-4150-ac28-1b03cf8a1835",
+    "confirmed_line_quantity_kg": 3.0,
+    "confirmed_line_sum_rub": 855.0,
+    "standalone_current_prepared_chart": [],
+    "catalog_cold_loss_percent": 0,
+    "catalog_hot_loss_percent": 0,
+    "actual_preparation_or_toasting_yield": null,
+    "new_roll_sprinkle_mass_g": null,
+    "new_roll_sprinkle_cost_rub": null,
+    "known_current_assembly_uses": 101,
+    "existing_card_amountout_over_in_ratios": [
+      0.0,
+      1.0
+    ],
+    "yield_interpretation": "GOODS priced per purchased gram; no separate preparation chart found. Catalog0% loss and recipe accounting ratios do not measure toasting/handling yield. No mass, zero-cost assumption or extra yield multiplier assigned."
+  },
+  "source_sha256": {
+    "2026-10-22-chicken-rolls-and-sets/inputs.json": "94f9862e70d410c0cdfbd0eb3fc7e206f88bcbac396a90eacf817851b6b1c8da",
+    "2026-10-22-chicken-rolls-and-sets/results.json": "347110dd493b26cdefce2edb92ed01f33b9f4dbe91954b1e0002a04c9d8637d8"
+  },
+  "checks": [
+    {
+      "check": "B06 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 total ready hat 70g",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 total ready hat 75g",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 total ready hat 80g",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "B06 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C01 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "C01 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "C01 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "C01 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C01 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C01 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C01 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C01 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C01 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C01 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C01 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C01 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C01 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C01 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C01 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C02 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "C02 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "C02 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "C02 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C02 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C02 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C02 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C02 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C02 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C02 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C02 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C02 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C02 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C02 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C02 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C04 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "C04 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "C04 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "C04 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C04 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C04 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C04 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C04 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C04 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C04 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C04 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C04 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C04 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C04 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C04 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C05 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "C05 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "C05 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "C05 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C05 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C05 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C05 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C05 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C05 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C05 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C05 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C05 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C05 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C05 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C05 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C06 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "C06 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "C06 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "C06 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C06 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C06 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C06 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "C06 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C06 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C06 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C06 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "C06 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C06 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C06 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "C06 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D01 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "D01 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "D01 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "D01 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D01 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D01 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D01 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D01 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D01 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D01 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D01 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D01 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D01 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D01 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D01 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D02 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "D02 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "D02 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "D02 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D02 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D02 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D02 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D02 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D02 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D02 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D02 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D02 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D02 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D02 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D02 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 total ready hat 70g",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 total ready hat 75g",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 total ready hat 80g",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D04 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D05 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "D05 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "D05 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "D05 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D05 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D05 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D05 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D05 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D05 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D05 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D05 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D05 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D05 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D05 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D05 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D06 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "D06 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "D06 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "D06 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D06 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D06 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D06 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D06 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D06 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D06 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D06 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D06 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D06 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D06 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D06 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 total ready hat 70g",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 total ready hat 75g",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 total ready hat 80g",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D07 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D09 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "D09 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "D09 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "D09 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D09 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D09 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D09 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "D09 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D09 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D09 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D09 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "D09 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D09 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D09 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "D09 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 total ready hat 70g",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 total ready hat 75g",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 total ready hat 80g",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "F02 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 total ready hat 70g",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 total ready hat 75g",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 total ready hat 80g",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "F03 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K1 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K2 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 total ready hat 70g",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 total ready hat 75g",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 total ready hat 80g",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K3 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 total ready hat 70g",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 total ready hat 75g",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 total ready hat 80g",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K4 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 total ready hat 70g",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 total ready hat 75g",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 total ready hat 80g",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K5 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 baseline cost",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 classification covers every original top component",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 roles are disjoint",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 total ready hat 70g",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 inner/base/frying unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 no new top ingredient 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 drizzle unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 fish/tartar/other unchanged 70",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 total ready hat 75g",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 inner/base/frying unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 no new top ingredient 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 drizzle unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 fish/tartar/other unchanged 75",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 total ready hat 80g",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 inner/base/frying unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 no new top ingredient 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 drizzle unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "K6 fish/tartar/other unchanged 80",
+      "status": "PASS"
+    },
+    {
+      "check": "4A max2 same recipe",
+      "status": "PASS"
+    },
+    {
+      "check": "4B max2 same recipe",
+      "status": "PASS"
+    },
+    {
+      "check": "4C max2 same recipe",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-A max2 same recipe",
+      "status": "PASS"
+    },
+    {
+      "check": "5L-B max2 same recipe",
+      "status": "PASS"
+    },
+    {
+      "check": "5H-B max2 same recipe",
+      "status": "PASS"
+    },
+    {
+      "check": "10A max2 same recipe",
+      "status": "PASS"
+    },
+    {
+      "check": "10B max2 same recipe",
+      "status": "PASS"
+    },
+    {
+      "check": "10C max2 same recipe",
+      "status": "PASS"
+    }
+  ],
+  "limits": [
+    "Owner range 70–80 g is approximate. 75 g is an analytical center, not an approved production dose or tolerance.",
+    "Total ready sauce hat per whole roll, not 70–80 g per cut piece or per component of a mixed sauce.",
+    "Explicit paper application classification: exterior thick sauces in used cards are treated as hats for this scenario. Fried K5/K6/F02/F03 application is conditional; a drizzle or no-hat construction must be a separate scenario.",
+    "Original Q22/Q24/Q29 ingredient records and frozen costs stay unchanged. This corrects agent paper assumptions, not production/iiko recipes. Sets keep compositions and prices.",
+    "Five grams of teriyaki/unagi is retained from previous paper proxy, not newly confirmed by owner. Thin drizzle must remain separate from sauce hats.",
+    "Sesame is usually a sprinkle, not mandated on every roll. Price known, specific applicability/mass/preparation yield unknown; costs are not assumed zero.",
+    "Fish covers 50 g and previously separate tartar topping 62–80 g retain old norms. No hat added to blank tops, no extra fish/tartar/masago.",
+    "Costs are ingredient subtotals before unknown sesame/water and previous unpriced items. Boxes 11/22 RUB are unchanged proxies, not verified package capacity. No sauces-for-serving/sidekits/bags/delivery/payroll/taxes/equipment treated as free.",
+    "Working raw40% threshold is historical comparison, not a newly approved universal target. No hidden substitution or price change."
+  ]
+}

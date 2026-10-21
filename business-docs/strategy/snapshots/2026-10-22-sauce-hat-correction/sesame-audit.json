@@ -1,0 +1,232 @@
+{
+  "model_as_of": "2026-10-22",
+  "source_pricebook_as_of": "2026-10-21",
+  "status": "local_read_only_audit_no_recipe_changes",
+  "sesame": {
+    "name": "Кунжут белый",
+    "product_id": "a9eb0f18-d512-4053-aeee-19c2034e42fb",
+    "type": "GOODS",
+    "deleted": false,
+    "main_unit_guid": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+    "main_unit": "кг",
+    "purchase_unit": "кг",
+    "price_rub_per_purchase_kg": 285.0,
+    "cost_rub_per_purchased_g": 0.285,
+    "price_date": "2026-10-01T18:00:00",
+    "price_status": "lastpurchase_confirmed",
+    "store_guid": "8a55c561-2598-4150-ac28-1b03cf8a1835",
+    "confirmed_line_quantity_kg": 3.0,
+    "confirmed_line_sum_rub": 855.0,
+    "standalone_current_prepared_chart": [],
+    "catalog_cold_loss_percent": 0,
+    "catalog_hot_loss_percent": 0,
+    "actual_preparation_or_toasting_yield": null,
+    "new_roll_sprinkle_mass_g": null,
+    "new_roll_sprinkle_cost_rub": null,
+    "known_current_assembly_uses": 101,
+    "existing_card_amountout_over_in_ratios": [
+      0.0,
+      1.0
+    ],
+    "yield_interpretation": "GOODS priced per purchased gram; no separate preparation chart found. Catalog0% loss and recipe accounting ratios do not measure toasting/handling yield. No mass, zero-cost assumption or extra yield multiplier assigned."
+  },
+  "k1_k2_unchanged": [
+    {
+      "id": "K1",
+      "materials_rub": 61.834490078976536,
+      "project_menu_price_rub": 180
+    },
+    {
+      "id": "K2",
+      "materials_rub": 58.988721109411735,
+      "project_menu_price_rub": 170
+    }
+  ],
+  "k3_k6_thick_sauce_sensitivity": [
+    {
+      "id": "K3",
+      "name": "Копчёная курица яки",
+      "sauce": "yaki",
+      "sauce_cost_per_ready_g": 0.32710997848808515,
+      "old_thick_sauce_g": 30,
+      "old_materials_rub": 67.59991176385238,
+      "old_project_price_rub": 195,
+      "thin_drizzle_unchanged": {
+        "teriyaki": 5
+      },
+      "inner_and_frying_unchanged": true,
+      "scenarios": [
+        {
+          "thick_sauce_g": 70,
+          "materials_rub_excluding_unknown_sesame": 80.68431090337577,
+          "increment_vs_old_rub": 13.084399139523406,
+          "project_price_35pct_round5_rub": 235,
+          "fc_at_old_project_price": 0.41376569694038856,
+          "fc_at_recalculated_project_price": 0.3433374932058544
+        },
+        {
+          "thick_sauce_g": 75,
+          "materials_rub_excluding_unknown_sesame": 82.31986079581621,
+          "increment_vs_old_rub": 14.719949031963832,
+          "project_price_35pct_round5_rub": 240,
+          "fc_at_old_project_price": 0.42215313228623697,
+          "fc_at_recalculated_project_price": 0.34299941998256755
+        },
+        {
+          "thick_sauce_g": 80,
+          "materials_rub_excluding_unknown_sesame": 83.95541068825663,
+          "increment_vs_old_rub": 16.35549892440426,
+          "project_price_35pct_round5_rub": 240,
+          "fc_at_old_project_price": 0.4305405676320853,
+          "fc_at_recalculated_project_price": 0.3498142112010693
+        }
+      ]
+    },
+    {
+      "id": "K4",
+      "name": "Копчёная курица с моцареллой",
+      "sauce": "cheese_sauce",
+      "sauce_cost_per_ready_g": 0.3496421052631579,
+      "old_thick_sauce_g": 30,
+      "old_materials_rub": 71.33103718131572,
+      "old_project_price_rub": 205,
+      "thin_drizzle_unchanged": {
+        "teriyaki": 5
+      },
+      "inner_and_frying_unchanged": true,
+      "scenarios": [
+        {
+          "thick_sauce_g": 70,
+          "materials_rub_excluding_unknown_sesame": 85.31672139184204,
+          "increment_vs_old_rub": 13.985684210526317,
+          "project_price_35pct_round5_rub": 245,
+          "fc_at_old_project_price": 0.41617912874069285,
+          "fc_at_recalculated_project_price": 0.34823151588506956
+        },
+        {
+          "thick_sauce_g": 75,
+          "materials_rub_excluding_unknown_sesame": 87.06493191815782,
+          "increment_vs_old_rub": 15.733894736842107,
+          "project_price_35pct_round5_rub": 250,
+          "fc_at_old_project_price": 0.4247069849666235,
+          "fc_at_recalculated_project_price": 0.3482597276726313
+        },
+        {
+          "thick_sauce_g": 80,
+          "materials_rub_excluding_unknown_sesame": 88.81314244447361,
+          "increment_vs_old_rub": 17.482105263157894,
+          "project_price_35pct_round5_rub": 255,
+          "fc_at_old_project_price": 0.43323484119255423,
+          "fc_at_recalculated_project_price": 0.3482868331155828
+        }
+      ]
+    },
+    {
+      "id": "K5",
+      "name": "Копчёная курица и краб темпура",
+      "sauce": "spice",
+      "sauce_cost_per_ready_g": 0.32407647906657516,
+      "old_thick_sauce_g": 20,
+      "old_materials_rub": 69.0140888515894,
+      "old_project_price_rub": 200,
+      "thin_drizzle_unchanged": {
+        "unagi": 5
+      },
+      "inner_and_frying_unchanged": true,
+      "scenarios": [
+        {
+          "thick_sauce_g": 70,
+          "materials_rub_excluding_unknown_sesame": 85.21791280491817,
+          "increment_vs_old_rub": 16.203823953328758,
+          "project_price_35pct_round5_rub": 245,
+          "fc_at_old_project_price": 0.42608956402459086,
+          "fc_at_recalculated_project_price": 0.34782821553027826
+        },
+        {
+          "thick_sauce_g": 75,
+          "materials_rub_excluding_unknown_sesame": 86.83829520025104,
+          "increment_vs_old_rub": 17.824206348661633,
+          "project_price_35pct_round5_rub": 250,
+          "fc_at_old_project_price": 0.4341914760012552,
+          "fc_at_recalculated_project_price": 0.34735318080100414
+        },
+        {
+          "thick_sauce_g": 80,
+          "materials_rub_excluding_unknown_sesame": 88.45867759558391,
+          "increment_vs_old_rub": 19.444588743994508,
+          "project_price_35pct_round5_rub": 255,
+          "fc_at_old_project_price": 0.44229338797791956,
+          "fc_at_recalculated_project_price": 0.34689677488464277
+        }
+      ]
+    },
+    {
+      "id": "K6",
+      "name": "Копчёная курица и тамаго темпура",
+      "sauce": "spice",
+      "sauce_cost_per_ready_g": 0.32407647906657516,
+      "old_thick_sauce_g": 20,
+      "old_materials_rub": 63.36520574191339,
+      "old_project_price_rub": 185,
+      "thin_drizzle_unchanged": {
+        "teriyaki": 5
+      },
+      "inner_and_frying_unchanged": true,
+      "scenarios": [
+        {
+          "thick_sauce_g": 70,
+          "materials_rub_excluding_unknown_sesame": 79.56902969524215,
+          "increment_vs_old_rub": 16.203823953328758,
+          "project_price_35pct_round5_rub": 230,
+          "fc_at_old_project_price": 0.4301028632175251,
+          "fc_at_recalculated_project_price": 0.34595230302279195
+        },
+        {
+          "thick_sauce_g": 75,
+          "materials_rub_excluding_unknown_sesame": 81.18941209057502,
+          "increment_vs_old_rub": 17.824206348661633,
+          "project_price_35pct_round5_rub": 235,
+          "fc_at_old_project_price": 0.4388616869760812,
+          "fc_at_recalculated_project_price": 0.3454868599598937
+        },
+        {
+          "thick_sauce_g": 80,
+          "materials_rub_excluding_unknown_sesame": 82.8097944859079,
+          "increment_vs_old_rub": 19.444588743994508,
+          "project_price_35pct_round5_rub": 240,
+          "fc_at_old_project_price": 0.4476205107346373,
+          "fc_at_recalculated_project_price": 0.3450408103579496
+        }
+      ]
+    }
+  ],
+  "formula": "new materials = old materials + (new thick-sauce grams - old thick-sauce grams) * already-yielded sauce cost/g. Sesame remains uncosted pending chosen grams; final ingredient cost must add0.285 * sesame purchased grams, with any proven preparation loss handled explicitly.",
+  "limits": [
+    "No card, set, production system or repository changes.",
+    "Side drizzles remain their old5g accounting allowances for this isolated sensitivity, not newly measured physical portions. K5 old unagi5 and teriyaki5 have identical frozen unit cost0.17267/g, if owner changes the drizzle.",
+    "The70/75/80 figures concern ready thick sauce only, not all top components together.",
+    "Recalculated project prices illustrate the existing35%-before-promotions rule and exclude unknown sesame; they are not published menu prices."
+  ],
+  "sources": {
+    "catalog": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/recipes/raw/products.json",
+      "sha256": "ec329226e4c07027fed74bb2c9b7eca9b6495cdc63fa21c668f9c761a9a30eba"
+    },
+    "pricebook": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/costing/pricebook.json",
+      "sha256": "2f264f01a0f0c050e12e8c3eeab6672ee328e8d0031aa23b898652e8a6210876"
+    },
+    "charts21": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/root/raw/charts21.json",
+      "sha256": "70e8b18eee0734c4b43625577c27b9dddad1f21df2bb1161ec4e9178a92f6283"
+    },
+    "chicken_inputs": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-chicken-rolls-and-sets/inputs.json",
+      "sha256": "94f9862e70d410c0cdfbd0eb3fc7e206f88bcbac396a90eacf817851b6b1c8da"
+    },
+    "chicken_results": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-chicken-rolls-and-sets/results.json",
+      "sha256": "347110dd493b26cdefce2edb92ed01f33b9f4dbe91954b1e0002a04c9d8637d8"
+    }
+  }
+}

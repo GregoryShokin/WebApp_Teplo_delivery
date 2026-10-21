@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "calculator_checks": 351,
+  "independent_numeric_qa": "independent-qa.json",
+  "semantic_review": "PASS: one total ready sauce hat; 75g analytical; fried interpretation conditional; fish/tartar/drizzle unchanged; unknown sesame not zero; Q29 sources/sets/prices preserved.",
+  "source_cards_modified": false,
+  "production_changes": false,
+  "independent_numeric_checks": 780,
+  "skill_validation": {
+    "repo": "PASS",
+    "installed": "PASS"
+  },
+  "git_diff_check": "PASS"
+}

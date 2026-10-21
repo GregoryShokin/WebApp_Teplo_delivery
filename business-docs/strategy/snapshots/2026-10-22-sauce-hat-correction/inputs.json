@@ -1,0 +1,255 @@
+{
+  "as_of": "2026-10-22",
+  "baseline_inputs": "2026-10-22-chicken-rolls-and-sets/inputs.json",
+  "baseline_results": "2026-10-22-chicken-rolls-and-sets/results.json",
+  "source_sha256": {
+    "2026-10-22-chicken-rolls-and-sets/inputs.json": "94f9862e70d410c0cdfbd0eb3fc7e206f88bcbac396a90eacf817851b6b1c8da",
+    "2026-10-22-chicken-rolls-and-sets/results.json": "347110dd493b26cdefce2edb92ed01f33b9f4dbe91954b1e0002a04c9d8637d8"
+  },
+  "application_roles": {
+    "B06": {
+      "sauce_hat": {
+        "cheese_sauce": 35
+      },
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "C01": {
+      "sauce_hat": {},
+      "drizzle": {},
+      "fish_cover": {
+        "salmon_plain": 50
+      },
+      "tartar_top": {},
+      "other": {}
+    },
+    "C02": {
+      "sauce_hat": {},
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {
+        "shrimp": 50
+      },
+      "tartar_top": {},
+      "other": {}
+    },
+    "C04": {
+      "sauce_hat": {},
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {
+        "masago": 15
+      }
+    },
+    "C05": {
+      "sauce_hat": {},
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {
+        "tartar_plain": 70
+      },
+      "other": {}
+    },
+    "C06": {
+      "sauce_hat": {},
+      "drizzle": {
+        "unagi": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {
+        "tartar_smoked": 70
+      },
+      "other": {}
+    },
+    "D01": {
+      "sauce_hat": {},
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "D02": {
+      "sauce_hat": {},
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "D04": {
+      "sauce_hat": {
+        "yaki": 20
+      },
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "D05": {
+      "sauce_hat": {},
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "D06": {
+      "sauce_hat": {},
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "D07": {
+      "sauce_hat": {
+        "yaki": 20
+      },
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "D09": {
+      "sauce_hat": {},
+      "drizzle": {},
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "F02": {
+      "sauce_hat": {
+        "spice": 20
+      },
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "F03": {
+      "sauce_hat": {
+        "cheese_sauce": 20
+      },
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "K1": {
+      "sauce_hat": {},
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "K2": {
+      "sauce_hat": {},
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "K3": {
+      "sauce_hat": {
+        "yaki": 30
+      },
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "K4": {
+      "sauce_hat": {
+        "cheese_sauce": 30
+      },
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "K5": {
+      "sauce_hat": {
+        "spice": 20
+      },
+      "drizzle": {
+        "unagi": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    },
+    "K6": {
+      "sauce_hat": {
+        "spice": 20
+      },
+      "drizzle": {
+        "teriyaki": 5
+      },
+      "fish_cover": {},
+      "tartar_top": {},
+      "other": {}
+    }
+  },
+  "classification_provenance": "Explicit analyst paper scenario using owner sauce-hat definitions; exterior location alone does not prove a production application. See limits for fried variants.",
+  "hat_mass_scenarios_g": [
+    70,
+    75,
+    80
+  ],
+  "sesame": {
+    "name": "Кунжут белый",
+    "product_id": "a9eb0f18-d512-4053-aeee-19c2034e42fb",
+    "type": "GOODS",
+    "deleted": false,
+    "main_unit_guid": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+    "main_unit": "кг",
+    "purchase_unit": "кг",
+    "price_rub_per_purchase_kg": 285.0,
+    "cost_rub_per_purchased_g": 0.285,
+    "price_date": "2026-10-01T18:00:00",
+    "price_status": "lastpurchase_confirmed",
+    "store_guid": "8a55c561-2598-4150-ac28-1b03cf8a1835",
+    "confirmed_line_quantity_kg": 3.0,
+    "confirmed_line_sum_rub": 855.0,
+    "standalone_current_prepared_chart": [],
+    "catalog_cold_loss_percent": 0,
+    "catalog_hot_loss_percent": 0,
+    "actual_preparation_or_toasting_yield": null,
+    "new_roll_sprinkle_mass_g": null,
+    "new_roll_sprinkle_cost_rub": null,
+    "known_current_assembly_uses": 101,
+    "existing_card_amountout_over_in_ratios": [
+      0.0,
+      1.0
+    ],
+    "yield_interpretation": "GOODS priced per purchased gram; no separate preparation chart found. Catalog0% loss and recipe accounting ratios do not measure toasting/handling yield. No mass, zero-cost assumption or extra yield multiplier assigned."
+  },
+  "limits": [
+    "Owner range 70–80 g is approximate. 75 g is an analytical center, not an approved production dose or tolerance.",
+    "Total ready sauce hat per whole roll, not 70–80 g per cut piece or per component of a mixed sauce.",
+    "Explicit paper application classification: exterior thick sauces in used cards are treated as hats for this scenario. Fried K5/K6/F02/F03 application is conditional; a drizzle or no-hat construction must be a separate scenario.",
+    "Original Q22/Q24/Q29 ingredient records and frozen costs stay unchanged. This corrects agent paper assumptions, not production/iiko recipes. Sets keep compositions and prices.",
+    "Five grams of teriyaki/unagi is retained from previous paper proxy, not newly confirmed by owner. Thin drizzle must remain separate from sauce hats.",
+    "Sesame is usually a sprinkle, not mandated on every roll. Price known, specific applicability/mass/preparation yield unknown; costs are not assumed zero.",
+    "Fish covers 50 g and previously separate tartar topping 62–80 g retain old norms. No hat added to blank tops, no extra fish/tartar/masago.",
+    "Costs are ingredient subtotals before unknown sesame/water and previous unpriced items. Boxes 11/22 RUB are unchanged proxies, not verified package capacity. No sauces-for-serving/sidekits/bags/delivery/payroll/taxes/equipment treated as free.",
+    "Working raw40% threshold is historical comparison, not a newly approved universal target. No hidden substitution or price change."
+  ]
+}

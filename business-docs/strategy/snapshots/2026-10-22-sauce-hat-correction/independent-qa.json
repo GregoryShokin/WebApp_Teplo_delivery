@@ -1,0 +1,258 @@
+{
+  "as_of": "2026-10-22",
+  "status": "PASS",
+  "method": "Independent arithmetic reconstructed from Q29 recipes/components; did not execute repository calculate.py or edit repo.",
+  "checks_executed": 780,
+  "errors": [],
+  "old27_whole_records_match_Q22_Q24": true,
+  "Q29_source_hashes": {
+    "2026-10-22-chicken-rolls-and-sets/inputs.json": "94f9862e70d410c0cdfbd0eb3fc7e206f88bcbac396a90eacf817851b6b1c8da",
+    "2026-10-22-chicken-rolls-and-sets/results.json": "347110dd493b26cdefce2edb92ed01f33b9f4dbe91954b1e0002a04c9d8637d8"
+  },
+  "sesame_mass_and_cost_remain_unknown": true,
+  "sesame_purchase_unit_cost_rub_per_g": 0.285,
+  "set_comparisons": [
+    {
+      "id": "4A",
+      "scenarios": [
+        {
+          "hat_g": 70,
+          "food_rub": 397.6360242582979,
+          "raw_fc": 0.3980340583166145,
+          "food_plus_boxes_fc": 0.4090450693276255
+        },
+        {
+          "hat_g": 75,
+          "food_rub": 399.27157415073833,
+          "raw_fc": 0.39967124539613447,
+          "food_plus_boxes_fc": 0.41068225640714545
+        },
+        {
+          "hat_g": 80,
+          "food_rub": 400.9071240431787,
+          "raw_fc": 0.4013084324756544,
+          "food_plus_boxes_fc": 0.4123194434866654
+        }
+      ]
+    },
+    {
+      "id": "4B",
+      "scenarios": [
+        {
+          "hat_g": 70,
+          "food_rub": 416.20128148408816,
+          "raw_fc": 0.4166178993834716,
+          "food_plus_boxes_fc": 0.42762891039448264
+        },
+        {
+          "hat_g": 75,
+          "food_rub": 419.6977025367197,
+          "raw_fc": 0.4201178203570768,
+          "food_plus_boxes_fc": 0.4311288313680878
+        },
+        {
+          "hat_g": 80,
+          "food_rub": 423.1941235893513,
+          "raw_fc": 0.423617741330682,
+          "food_plus_boxes_fc": 0.434628752341693
+        }
+      ]
+    },
+    {
+      "id": "4C",
+      "scenarios": [
+        {
+          "hat_g": 70,
+          "food_rub": 422.2633207570488,
+          "raw_fc": 0.4226860067638126,
+          "food_plus_boxes_fc": 0.4336970177748236
+        },
+        {
+          "hat_g": 75,
+          "food_rub": 425.5192530448221,
+          "raw_fc": 0.42594519824306515,
+          "food_plus_boxes_fc": 0.4369562092540762
+        },
+        {
+          "hat_g": 80,
+          "food_rub": 428.7751853325954,
+          "raw_fc": 0.4292043897223177,
+          "food_plus_boxes_fc": 0.44021540073332877
+        }
+      ]
+    },
+    {
+      "id": "5L-A",
+      "scenarios": [
+        {
+          "hat_g": 70,
+          "food_rub": 511.30168105973917,
+          "raw_fc": 0.3936117637103458,
+          "food_plus_boxes_fc": 0.40207981605830573
+        },
+        {
+          "hat_g": 75,
+          "food_rub": 512.9372309521796,
+          "raw_fc": 0.3948708475382445,
+          "food_plus_boxes_fc": 0.4033388998862044
+        },
+        {
+          "hat_g": 80,
+          "food_rub": 514.5727808446201,
+          "raw_fc": 0.3961299313661432,
+          "food_plus_boxes_fc": 0.4045979837141032
+        }
+      ]
+    },
+    {
+      "id": "5L-B",
+      "scenarios": [
+        {
+          "hat_g": 70,
+          "food_rub": 555.3265576122507,
+          "raw_fc": 0.42750312364299514,
+          "food_plus_boxes_fc": 0.4359711759909551
+        },
+        {
+          "hat_g": 75,
+          "food_rub": 561.9662503187802,
+          "raw_fc": 0.43261451140783697,
+          "food_plus_boxes_fc": 0.44108256375579696
+        },
+        {
+          "hat_g": 80,
+          "food_rub": 568.6059430253098,
+          "raw_fc": 0.43772589917267885,
+          "food_plus_boxes_fc": 0.4461939515206388
+        }
+      ]
+    },
+    {
+      "id": "5H-B",
+      "scenarios": [
+        {
+          "hat_g": 70,
+          "food_rub": 580.6322965704088,
+          "raw_fc": 0.41503380741272966,
+          "food_plus_boxes_fc": 0.4228965665263823
+        },
+        {
+          "hat_g": 75,
+          "food_rub": 584.1287176230404,
+          "raw_fc": 0.41753303618516113,
+          "food_plus_boxes_fc": 0.4253957952988137
+        },
+        {
+          "hat_g": 80,
+          "food_rub": 587.625138675672,
+          "raw_fc": 0.4200322649575926,
+          "food_plus_boxes_fc": 0.4278950240712452
+        }
+      ]
+    },
+    {
+      "id": "10A",
+      "scenarios": [
+        {
+          "hat_g": 70,
+          "food_rub": 796.934709664417,
+          "raw_fc": 0.4196601946626735,
+          "food_plus_boxes_fc": 0.43124523942307375
+        },
+        {
+          "hat_g": 75,
+          "food_rub": 801.8110243475231,
+          "raw_fc": 0.4222280275658363,
+          "food_plus_boxes_fc": 0.4338130723262365
+        },
+        {
+          "hat_g": 80,
+          "food_rub": 806.6873390306293,
+          "raw_fc": 0.42479586046899914,
+          "food_plus_boxes_fc": 0.4363809052293993
+        }
+      ]
+    },
+    {
+      "id": "10B",
+      "scenarios": [
+        {
+          "hat_g": 70,
+          "food_rub": 774.0710060358335,
+          "raw_fc": 0.40762032966605244,
+          "food_plus_boxes_fc": 0.4192053744264526
+        },
+        {
+          "hat_g": 75,
+          "food_rub": 779.0751488499227,
+          "raw_fc": 0.41025547596099143,
+          "food_plus_boxes_fc": 0.4218405207213916
+        },
+        {
+          "hat_g": 80,
+          "food_rub": 784.0792916640117,
+          "raw_fc": 0.4128906222559304,
+          "food_plus_boxes_fc": 0.42447566701633055
+        }
+      ]
+    },
+    {
+      "id": "10C",
+      "scenarios": [
+        {
+          "hat_g": 70,
+          "food_rub": 767.5766537740957,
+          "raw_fc": 0.40420044959141427,
+          "food_plus_boxes_fc": 0.4157854943518145
+        },
+        {
+          "hat_g": 75,
+          "food_rub": 770.8325860618689,
+          "raw_fc": 0.4059150005591727,
+          "food_plus_boxes_fc": 0.4175000453195729
+        },
+        {
+          "hat_g": 80,
+          "food_rub": 774.0885183496423,
+          "raw_fc": 0.4076295515269312,
+          "food_plus_boxes_fc": 0.4192145962873314
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "sets": 9,
+    "scenarios_each": [
+      70,
+      75,
+      80
+    ],
+    "raw40_pass_at75": [
+      "4A",
+      "5L-A"
+    ],
+    "all_food_plus_boxes_above40_at70": true
+  },
+  "audited_files": {
+    "inputs.json": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-sauce-hat-correction/inputs.json",
+      "sha256": "ae17a742eb1feca9c2c42654a03d148bd2933437b3eefb3d9bd3f0b0cc5b4f1f"
+    },
+    "results.json": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-sauce-hat-correction/results.json",
+      "sha256": "58e1618988f268155484623bbb64c327796344730e6c720fbae65f18b6c117ea"
+    },
+    "calculate.py": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-sauce-hat-correction/calculate.py",
+      "sha256": "ea0b169017282d17ced5a1d9f2e09bf7c98a53a9d07ab4ab92683ca087d0bcb3"
+    },
+    "report.md": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-sauce-hat-correction/report.md",
+      "sha256": "69ec24d7ff80288dd514914924769a96a1d59dcd43a113fbe5ce90ef6ae8ee8c"
+    },
+    "sesame-audit.json": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-sauce-hat-correction/sesame-audit.json",
+      "sha256": "c2e2fd4235ddfc1f878e03323eb1d86057ee3e9406d87118670fb2b2e7955d3a"
+    }
+  }
+}
