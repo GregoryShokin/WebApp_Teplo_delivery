@@ -1,0 +1,403 @@
+{
+  "as_of": "2026-10-21",
+  "status": "confirmed_product_historical_purchase_found_current_price_unknown",
+  "identity": {
+    "owner_mapping": "Owner identified takuan as radish; catalog entry is Редька маринованная. Do not repeat previous name-search negative.",
+    "product_id": "34980702-cc24-4875-b57a-f30e5148ef79",
+    "name": "Редька маринованная",
+    "deleted": false,
+    "code": "618",
+    "num": "00533",
+    "type": "GOODS",
+    "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+    "main_unit": "кг",
+    "unit_weight_kg": 1
+  },
+  "draining_and_preparation": {
+    "standalone_current_pf_chart": [],
+    "prepared_product_found": false,
+    "measured_drained_yield": null,
+    "cost_per_ready_kg": null,
+    "catalog_cold_loss_percent": 0,
+    "catalog_hot_loss_percent": 0,
+    "current_recipe_usage": [
+      {
+        "type": "assemblyCharts",
+        "chart_id": "637f06f2-a268-4819-a00f-9d717eab5b11",
+        "parent_product_id": "c4316ac1-1309-4397-95a9-ea179bfd062a",
+        "parent_name": "Такумаго ролл",
+        "date_from": "2023-08-31",
+        "date_to": null,
+        "amount_in_kg": 0.04,
+        "amount_middle_kg": 0.04,
+        "amount_out_kg": 0.04,
+        "prepared_writeoff_kg": null
+      },
+      {
+        "type": "assemblyCharts",
+        "chart_id": "89899981-70b0-444a-b4da-d33c7c848359",
+        "parent_product_id": "c0135761-d77a-4d05-a334-d094c17fbce4",
+        "parent_name": "Кампай",
+        "date_from": "2023-05-19",
+        "date_to": null,
+        "amount_in_kg": 0.02,
+        "amount_middle_kg": 0.02,
+        "amount_out_kg": 0.02,
+        "prepared_writeoff_kg": null
+      },
+      {
+        "type": "preparedCharts",
+        "chart_id": "79723842-8bd3-c540-019f-4bc104a706d7",
+        "parent_product_id": "c4316ac1-1309-4397-95a9-ea179bfd062a",
+        "parent_name": "Такумаго ролл",
+        "date_from": "2026-07-06",
+        "date_to": null,
+        "amount_in_kg": null,
+        "amount_middle_kg": null,
+        "amount_out_kg": null,
+        "prepared_writeoff_kg": 0.04
+      },
+      {
+        "type": "preparedCharts",
+        "chart_id": "79723842-8bd3-c540-019f-2272d795faf0",
+        "parent_product_id": "c0135761-d77a-4d05-a334-d094c17fbce4",
+        "parent_name": "Кампай",
+        "date_from": "2026-06-30",
+        "date_to": null,
+        "amount_in_kg": null,
+        "amount_middle_kg": null,
+        "amount_out_kg": null,
+        "prepared_writeoff_kg": 0.02
+      },
+      {
+        "type": "preparedCharts",
+        "chart_id": "6e2f25e1-af4f-8760-01a0-8ca99dda7dea",
+        "parent_product_id": "9a1f840b-e48f-4d95-8642-79f113fc3edc",
+        "parent_name": "Сет Карибы",
+        "date_from": "2026-09-14",
+        "date_to": null,
+        "amount_in_kg": null,
+        "amount_middle_kg": null,
+        "amount_out_kg": null,
+        "prepared_writeoff_kg": 0.02
+      }
+    ],
+    "interpretation": "Existing assembly cards write raw radish at 20/40 g with amountIn=amountMiddle=amountOut. This is an accounting card with no separate drainage step, not measured proof that purchased mass equals drained edible mass. Do not assume 100% drain yield or use zero catalog estimated price."
+  },
+  "supersedes": {
+    "file": "/private/tmp/teplo-new-ingredient-audit.json",
+    "item_key": "daikon_takuan",
+    "correction": "Product exists under Russian name. Live earlier invoices establish historical360rub/kg from2023-11-23. No newer confirmed purchase/currentprice or physical drainage yield established."
+  },
+  "sources": {
+    "catalog": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/recipes/raw/products.json",
+      "sha256": "ec329226e4c07027fed74bb2c9b7eca9b6495cdc63fa21c668f9c761a9a30eba"
+    },
+    "pricebook": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/costing/pricebook.json",
+      "sha256": "2f264f01a0f0c050e12e8c3eeab6672ee328e8d0031aa23b898652e8a6210876"
+    },
+    "charts21": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/root/raw/charts21.json",
+      "sha256": "70e8b18eee0734c4b43625577c27b9dddad1f21df2bb1161ec4e9178a92f6283"
+    },
+    "invoice_xml21": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/costing/raw/incoming-invoices.xml",
+      "sha256": "f28f690dbeec6702f6b7542d266faee9f99574049146bfbaed2f473334835ee2"
+    },
+    "invoice_manifest21": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/costing/raw/incoming-invoices.source.json",
+      "sha256": "e2d269a729aabbb2cf4c0762c024733faf2de8a0cba1b1978750292bdf41be1c"
+    },
+    "older_pricebook13": {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-14/a-private/work/pricebook-lastpurchase-2026-10-13.json",
+      "sha256": "a54273ceb72cb081145d22c7d59582ca772abde99a4e77d06ccf82ac0b53f65e"
+    }
+  },
+  "method": "Catalog/unit/chart evidence plus fresh read-only GET invoice checks spanning2020-01-01..2026-10-22; as_of2026-10-21. Only PROCESSED positive rows of Черникова store8a55c561 selected; price=sum/amount verified. The last found purchase from2023-11-23 is historical and must not be promoted to a current2026 price.",
+  "local_archive_result_before_live": {
+    "price_rub_per_kg": null,
+    "date": null,
+    "store_guid": null,
+    "status": "no_record_found_in_named_local_invoice_archives_or_pricebooks_not_a_zero_price",
+    "pricebook_store_scope_guid": "8a55c561-2598-4150-ac28-1b03cf8a1835",
+    "invoice_archive_from": "2026-07-01",
+    "invoice_archive_to_exclusive_or_requested": "2026-10-22",
+    "read_utc": "2026-10-21T09:56:31.063886+00:00",
+    "guid_found_in_raw_invoice_xml21": false
+  },
+  "selected_purchase": {
+    "price_rub_per_kg": 360.0,
+    "date": "2023-11-23T09:00:00",
+    "store_guid": "8a55c561-2598-4150-ac28-1b03cf8a1835",
+    "document_id": "439a40b4-af45-495b-b5b4-afeb3bc220dc",
+    "quantity_kg": 0.5,
+    "line_sum_rub": 180.0,
+    "unit_guid": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+    "freshness": "historical_2023_not_a_confirmed_current2026_price",
+    "current_price_confirmed": false
+  },
+  "confirmed_last_purchase": {
+    "price_rub_per_kg": 360.0,
+    "date": "2023-11-23T09:00:00",
+    "store_guid": "8a55c561-2598-4150-ac28-1b03cf8a1835",
+    "document_id": "439a40b4-af45-495b-b5b4-afeb3bc220dc",
+    "quantity_kg": 0.5,
+    "line_sum_rub": 180.0,
+    "unit_guid": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+    "freshness": "historical_2023_not_a_confirmed_current2026_price",
+    "current_price_confirmed": false
+  },
+  "live_readonly_invoice_checks": [
+    {
+      "read_utc": "2026-10-21T20:27:42.667439+00:00",
+      "endpoint": "/documents/export/incomingInvoice",
+      "params": {
+        "from": "2026-01-01",
+        "to": "2026-07-01"
+      },
+      "db_transaction_read_only": "on",
+      "response_sha256": "6fc841cd50a2ef68dada8087eb5ef0c405b14dbdc1983d835296e8b1d684b027",
+      "response_bytes": 2311822,
+      "root": "incomingInvoiceDtoes",
+      "document_count": 666,
+      "document_status_counts": {
+        "PROCESSED": 654,
+        "DELETED": 12
+      },
+      "target_product_id": "34980702-cc24-4875-b57a-f30e5148ef79",
+      "target_rows": []
+    },
+    {
+      "read_utc": "2026-10-21T20:28:22.935605+00:00",
+      "endpoint": "/documents/export/incomingInvoice",
+      "params": {
+        "from": "2025-01-01",
+        "to": "2026-01-01"
+      },
+      "db_transaction_read_only": "on",
+      "response_sha256": "dfc1415f8b6c126fd1a420063b3765b37aa4aab666a27a8b5c5ae569e7fd2783",
+      "response_bytes": 5068776,
+      "root": "incomingInvoiceDtoes",
+      "document_count": 1381,
+      "document_status_counts": {
+        "PROCESSED": 1343,
+        "DELETED": 38
+      },
+      "target_product_id": "34980702-cc24-4875-b57a-f30e5148ef79",
+      "target_rows": []
+    },
+    {
+      "read_utc": "2026-10-21T20:30:24.352847+00:00",
+      "endpoint": "/documents/export/incomingInvoice",
+      "params": {
+        "from": "2020-01-01",
+        "to": "2025-01-01"
+      },
+      "db_transaction_read_only": "on",
+      "response_sha256": "490889b005c08a64225a5d9cc4dd27f1fcf710900ffcb69e323d47f2f1c5f489",
+      "response_bytes": 18569586,
+      "root": "incomingInvoiceDtoes",
+      "document_count": 4208,
+      "document_status_counts": {
+        "PROCESSED": 4152,
+        "DELETED": 52,
+        "NEW": 4
+      },
+      "target_product_id": "34980702-cc24-4875-b57a-f30e5148ef79",
+      "target_rows": [
+        {
+          "product": "34980702-cc24-4875-b57a-f30e5148ef79",
+          "amount": "0.500000000",
+          "price": "350.000000000",
+          "sum": "175.000000000",
+          "amountUnit": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+          "store": "1239d270-1bbe-f64f-b7ea-5f00518ef508",
+          "containerId": null,
+          "unit": null,
+          "id": "d6fd1e95-387c-4d3a-8ea8-4561d6402c65",
+          "dateIncoming": "2023-05-18T09:00:00",
+          "status": "PROCESSED"
+        },
+        {
+          "product": "34980702-cc24-4875-b57a-f30e5148ef79",
+          "amount": "1.000000000",
+          "price": "300.000000000",
+          "sum": "300.000000000",
+          "amountUnit": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+          "store": "8a55c561-2598-4150-ac28-1b03cf8a1835",
+          "containerId": null,
+          "unit": null,
+          "id": "61dfb0e0-213b-4435-bcbd-d0ac7d48a368",
+          "dateIncoming": "2023-06-16T09:00:00",
+          "status": "PROCESSED"
+        },
+        {
+          "product": "34980702-cc24-4875-b57a-f30e5148ef79",
+          "amount": "1.000000000",
+          "price": "300.000000000",
+          "sum": "300.000000000",
+          "amountUnit": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+          "store": "1239d270-1bbe-f64f-b7ea-5f00518ef508",
+          "containerId": null,
+          "unit": null,
+          "id": "02d93980-beb3-4d85-8def-b7820c913049",
+          "dateIncoming": "2023-06-16T09:00:00",
+          "status": "PROCESSED"
+        },
+        {
+          "product": "34980702-cc24-4875-b57a-f30e5148ef79",
+          "amount": "0.500000000",
+          "price": "350.000000000",
+          "sum": "175.000000000",
+          "amountUnit": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+          "store": "1239d270-1bbe-f64f-b7ea-5f00518ef508",
+          "containerId": null,
+          "unit": null,
+          "id": "8ce011f8-508d-4a47-b447-295ee918d3b7",
+          "dateIncoming": "2023-06-22T09:00:00",
+          "status": "PROCESSED"
+        },
+        {
+          "product": "34980702-cc24-4875-b57a-f30e5148ef79",
+          "amount": "1.000000000",
+          "price": "360.000000000",
+          "sum": "360.000000000",
+          "amountUnit": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+          "store": "8a55c561-2598-4150-ac28-1b03cf8a1835",
+          "containerId": null,
+          "unit": null,
+          "id": "cb9ffebb-0490-48e0-adc3-1b5fc804f296",
+          "dateIncoming": "2023-07-13T09:00:00",
+          "status": "PROCESSED"
+        },
+        {
+          "product": "34980702-cc24-4875-b57a-f30e5148ef79",
+          "amount": "1.000000000",
+          "price": "360.000000000",
+          "sum": "360.000000000",
+          "amountUnit": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+          "store": "1239d270-1bbe-f64f-b7ea-5f00518ef508",
+          "containerId": null,
+          "unit": null,
+          "id": "ead1410c-dd46-4cad-8dac-87aa5c3c45c4",
+          "dateIncoming": "2023-08-18T09:00:00",
+          "status": "PROCESSED"
+        },
+        {
+          "product": "34980702-cc24-4875-b57a-f30e5148ef79",
+          "amount": "1.500000000",
+          "price": "360.000000000",
+          "sum": "540.000000000",
+          "amountUnit": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+          "store": "1239d270-1bbe-f64f-b7ea-5f00518ef508",
+          "containerId": null,
+          "unit": null,
+          "id": "3215f15c-5bea-4fe5-82d7-f4d2b08f4551",
+          "dateIncoming": "2023-08-24T09:00:00",
+          "status": "PROCESSED"
+        },
+        {
+          "product": "34980702-cc24-4875-b57a-f30e5148ef79",
+          "amount": "1.000000000",
+          "price": "360.000000000",
+          "sum": "360.000000000",
+          "amountUnit": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+          "store": "8a55c561-2598-4150-ac28-1b03cf8a1835",
+          "containerId": null,
+          "unit": null,
+          "id": "abe53e3d-da46-4c19-bd84-3d7cdb4e89c4",
+          "dateIncoming": "2023-08-24T09:00:00",
+          "status": "PROCESSED"
+        },
+        {
+          "product": "34980702-cc24-4875-b57a-f30e5148ef79",
+          "amount": "0.500000000",
+          "price": "360.000000000",
+          "sum": "180.000000000",
+          "amountUnit": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+          "store": "8a55c561-2598-4150-ac28-1b03cf8a1835",
+          "containerId": null,
+          "unit": null,
+          "id": "439a40b4-af45-495b-b5b4-afeb3bc220dc",
+          "dateIncoming": "2023-11-23T09:00:00",
+          "status": "PROCESSED"
+        },
+        {
+          "product": "34980702-cc24-4875-b57a-f30e5148ef79",
+          "amount": "1.000000000",
+          "price": "360.000000000",
+          "sum": "360.000000000",
+          "amountUnit": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+          "store": "8a55c561-2598-4150-ac28-1b03cf8a1835",
+          "containerId": null,
+          "unit": null,
+          "id": "dece22a4-1eda-6d54-018a-97f8da5511ab",
+          "dateIncoming": "2023-09-14T09:00:00",
+          "status": "PROCESSED"
+        },
+        {
+          "product": "34980702-cc24-4875-b57a-f30e5148ef79",
+          "amount": "0.500000000",
+          "price": "360.000000000",
+          "sum": "180.000000000",
+          "amountUnit": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+          "store": "1239d270-1bbe-f64f-b7ea-5f00518ef508",
+          "containerId": null,
+          "unit": null,
+          "id": "dece22a4-1eda-6d54-018b-0017f425799d",
+          "dateIncoming": "2023-10-05T09:00:00",
+          "status": "PROCESSED"
+        },
+        {
+          "product": "34980702-cc24-4875-b57a-f30e5148ef79",
+          "amount": "1.000000000",
+          "price": "360.000000000",
+          "sum": "360.000000000",
+          "amountUnit": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+          "store": "8a55c561-2598-4150-ac28-1b03cf8a1835",
+          "containerId": null,
+          "unit": null,
+          "id": "08d7aa58-7b73-4799-989c-f5178d81c60f",
+          "dateIncoming": "2023-10-26T09:00:00",
+          "status": "PROCESSED"
+        },
+        {
+          "product": "34980702-cc24-4875-b57a-f30e5148ef79",
+          "amount": "1.000000000",
+          "price": "360.000000000",
+          "sum": "360.000000000",
+          "amountUnit": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+          "store": "1239d270-1bbe-f64f-b7ea-5f00518ef508",
+          "containerId": null,
+          "unit": null,
+          "id": "f8f05c85-56f0-4b2b-9a79-ef05aeffb981",
+          "dateIncoming": "2023-11-09T09:00:00",
+          "status": "PROCESSED"
+        }
+      ]
+    },
+    {
+      "read_utc": "2026-10-21T20:32:04.269997+00:00",
+      "endpoint": "/documents/export/incomingInvoice",
+      "params": {
+        "from": "2026-07-01",
+        "to": "2026-10-22"
+      },
+      "db_transaction_read_only": "on",
+      "response_sha256": "f28f690dbeec6702f6b7542d266faee9f99574049146bfbaed2f473334835ee2",
+      "response_bytes": 1378102,
+      "root": "incomingInvoiceDtoes",
+      "document_count": 451,
+      "document_status_counts": {
+        "PROCESSED": 419,
+        "DELETED": 31,
+        "NEW": 1
+      },
+      "target_product_id": "34980702-cc24-4875-b57a-f30e5148ef79",
+      "target_rows": []
+    }
+  ],
+  "current_price_rub_per_kg": null
+}

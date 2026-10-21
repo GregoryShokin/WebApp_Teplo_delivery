@@ -1,6 +1,6 @@
 {
   "as_of": "2026-10-21",
-  "status": "read_only_local_source_audit_no_live_requests_no_new_measurements_no_recipe_or_set_changes",
+  "status": "dated_local_sources_plus_live_radish_correction_and_owner_selection",
   "scope": "Known accounting prices and current chart yields, not new supplier quotations or proven trial results. Absence means not found in the named local archives searched.",
   "pricebook_period": {
     "from": "2026-07-01T09:00:00",
@@ -23,6 +23,10 @@
     "older_pricebook": {
       "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-14/a-private/work/pricebook-lastpurchase-2026-10-13.json",
       "sha256": "a54273ceb72cb081145d22c7d59582ca772abde99a4e77d06ccf82ac0b53f65e"
+    },
+    "radish_supplement": {
+      "path": "radish-audit.json",
+      "sha256": "c77d8e12446a3275df125492c1a7734b583bc9da3a5640e39be230c9e28c22b1"
     }
   },
   "items": [
@@ -44,7 +48,8 @@
       ],
       "notes": [
         "Catalog entry only. No current preparation chart; no confirmed purchase price or cooked edible yield."
-      ]
+      ],
+      "assortment_status": "excluded_by_owner_2026_10_21_Q28"
     },
     {
       "key": "chicken_raw",
@@ -80,7 +85,8 @@
         "catalog",
         "pricebook"
       ],
-      "notes": []
+      "notes": [],
+      "assortment_status": "ingredient_accepted_by_owner_2026_10_21_Q28_not_recipe_approval"
     },
     {
       "key": "chicken_smoked_ready",
@@ -118,7 +124,8 @@
       ],
       "notes": [
         "1 kg purchased smoked chicken -> 0.74 kg finished; ready cost already includes 74% yield."
-      ]
+      ],
+      "assortment_status": "ingredient_accepted_by_owner_2026_10_21_Q28_not_recipe_approval"
     },
     {
       "key": "chicken_baked_ready",
@@ -264,7 +271,8 @@
       ],
       "notes": [
         "No standalone cooked mushroom preparation chart. Mushroom sauce chart uses 0.3 kg raw -> 0.18 kg mushroom amountOut, but 60% is recipe-specific, not a validated yield for a new roll. Do not label raw 300/kg as cooked 300/kg."
-      ]
+      ],
+      "assortment_status": "excluded_by_owner_2026_10_21_Q28"
     },
     {
       "key": "carrot_raw",
@@ -428,7 +436,8 @@
       ],
       "notes": [
         "1.9 kg raw carrot -> 1.33 kg carrot in chart (70%); complete seasoned batch output 1.86 kg. Ready cost includes all priced ingredients and current card yields; do not apply losses again. Some seasoning prices are older: coriander last purchased 20 July, carrot seasoning 17 September."
-      ]
+      ],
+      "assortment_status": "excluded_by_owner_2026_10_21_Q28"
     },
     {
       "key": "bell_pepper_raw",
@@ -483,7 +492,8 @@
         "catalog",
         "pricebook",
         "older_pricebook"
-      ]
+      ],
+      "assortment_status": "excluded_by_owner_2026_10_21_Q28"
     },
     {
       "key": "shiitake",
@@ -504,19 +514,26 @@
     },
     {
       "key": "daikon_takuan",
-      "name": "Дайкон / такуан",
-      "product_id": null,
+      "name": "Редька маринованная",
+      "product_id": "34980702-cc24-4875-b57a-f30e5148ef79",
       "chart_id": null,
-      "price_date": null,
-      "unit": null,
+      "price_date": "2023-11-23T09:00:00",
+      "unit": "kg of purchased product",
       "purchase_price_rub": null,
       "yield": null,
       "prepared_cost_rub_per_kg": null,
-      "status": "unknown_not_found_in_catalog_or_confirmed_purchase_data_searched",
+      "status": "catalog_presence_confirmed_historical_purchase_only",
       "source_refs": [
         "catalog",
         "pricebook",
         "older_pricebook"
+      ],
+      "historical_purchase_price_rub": 360.0,
+      "current_price_confirmed": false,
+      "assortment_status": "existing_product_price_check_requested",
+      "notes": [
+        "Q28 corrects prior failed name search; catalog contains Russian alias.",
+        "Historical2023 price only; current2026 price and measured drained yield remain unknown; see radish-audit.json."
       ]
     },
     {
@@ -539,12 +556,25 @@
   ],
   "search_notes": [
     "Target product GUIDs for squid, unspecified tuna and bell pepper absent from local archived pricebooks, purchase-lines and incoming-invoice XML searched.",
-    "No shiitake, daikon/takuan, corn or explicitly canned tuna product names found in the current catalog (including deleted names).",
     "Deleted older squid item 229bcfb7-7fba-4305-ba6c-d65838131099 has no confirmed price in purchase archives searched.",
-    "No assumption of 100% yield for raw mushrooms, tuna, squid or bell pepper."
+    "No assumption of 100% yield for raw mushrooms, tuna, squid or bell pepper.",
+    "Q28 correction: «Редька маринованная»,34980702-cc24-4875-b57a-f30e5148ef79 exists in the same catalog. Prior Latin/name-only negative for takuan was wrong; see radish-audit.json."
   ],
   "warnings": [
     "All costs are ingredients only; exclude labour, packaging, utilities, taxes, delivery, discounts and other order costs.",
     "No existing recipes or gram weights changed. No new roll or set was calculated."
-  ]
+  ],
+  "owner_selection_2026_10_21_Q28": {
+    "include": [
+      "chicken_smoked"
+    ],
+    "exclude_from_current_development": [
+      "squid",
+      "tuna_canned",
+      "carrot_korean",
+      "champignon"
+    ],
+    "prior_source_audit_sha256": "6eb3cec80a12b8a29ae533c5e110bd5986321ec0458a3796d6ee069f8c74139e",
+    "radish_price_audit": "radish-audit.json"
+  }
 }
