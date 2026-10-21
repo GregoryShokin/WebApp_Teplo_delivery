@@ -1,0 +1,38 @@
+[
+  {
+    "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/skills/teplo-profit-strategy/SKILL.md",
+    "old_sha256": "e9f7f5810dc8936d9eb53c7e7f4f460af22650f6cb8f3b0b5557b377f7200629",
+    "new_sha256": "1d40bd9356b7ad2f2c26fa64cb9c5c086ed995ae3604bc41b7e94aa9988b79a4",
+    "scope": "onlynewsetruleblock"
+  },
+  {
+    "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/skills/teplo-profit-strategy/references/hypothesis-evaluation.md",
+    "old_sha256": "2a763eb5829beb2afd7b9d4d9b38d4d432586bb39321014189ddf17eb8797be7",
+    "new_sha256": "46885dc2d545c20f39d7e3c3fcf33dae71c4d6b75a3621c86d6f3aca506b1626",
+    "scope": "onlynewsetruleblock"
+  },
+  {
+    "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/skills/teplo-profit-strategy/references/owner-decisions.md",
+    "old_sha256": "3d2e9388bdee9a552b4093777ac7c813c9b47f488314d2974cda8169ec68f64f",
+    "new_sha256": "1d4569b65f1bca98ca8989b5c5807018018a359e0d64a8df85d43f0c6641e5e7",
+    "scope": "onlynewsetruleblock"
+  },
+  {
+    "path": "/Users/grigorii/.codex/skills/teplo-profit-strategy/SKILL.md",
+    "old_sha256": "e9f7f5810dc8936d9eb53c7e7f4f460af22650f6cb8f3b0b5557b377f7200629",
+    "new_sha256": "1d40bd9356b7ad2f2c26fa64cb9c5c086ed995ae3604bc41b7e94aa9988b79a4",
+    "scope": "onlynewsetruleblock"
+  },
+  {
+    "path": "/Users/grigorii/.codex/skills/teplo-profit-strategy/references/hypothesis-evaluation.md",
+    "old_sha256": "2a763eb5829beb2afd7b9d4d9b38d4d432586bb39321014189ddf17eb8797be7",
+    "new_sha256": "46885dc2d545c20f39d7e3c3fcf33dae71c4d6b75a3621c86d6f3aca506b1626",
+    "scope": "onlynewsetruleblock"
+  },
+  {
+    "path": "/Users/grigorii/.codex/skills/teplo-profit-strategy/references/owner-decisions.md",
+    "old_sha256": "73411ee567e8bd1744217f220e5f0a4d45eb832cdb815eab011e3b39b074112d",
+    "new_sha256": "bbd1869e83cd61d410e38166d30da9a78092396e08c927ca827dd39cb0535a3b",
+    "scope": "onlynewsetruleblock"
+  }
+]

@@ -1,0 +1,28 @@
+{
+  "as_of": "2026-10-21",
+  "status": "PASS",
+  "internal_recipe_set_trace_checks": 180,
+  "independent_checks": 297,
+  "selected_sets": 9,
+  "deferred_sets": 1,
+  "new_recipes": 9,
+  "source_hashes_verified": 3,
+  "new_report_links": "PASS",
+  "skill_quick_validate_repo": "PASS using APIvenv Python/PyYAML",
+  "skill_quick_validate_installed": "PASS using APIvenv Python/PyYAML",
+  "skill_narrow_update_independent_review": "PASS, old content preserved",
+  "no_business_system_writes": true,
+  "limits": [
+    "No taste/physicalassembly/finishedweight proof",
+    "40% rawfood only; packaging andothercostsseparate",
+    "10A has<1RUBrawbuffer; no robust40%claim",
+    "Eelset deferred duefullcooutputwaste and5RUBnominalvalue"
+  ],
+  "artifact_sha256": {
+    "inputs.json": "48a100ad22dd8d8324df5cb32e0be69d070e3c8c73dd94c3ca7e0c670769c71d",
+    "results.json": "e0b5aef51460fe3d3fa0c6b51979c030bf51feb07be97488c1f4857b3439d848",
+    "calculate.py": "b00699965218cb843e0fffff3fda6fa070de3216a1245a72793b1d7e78c3788c",
+    "report.md": "68a5d143d1557d194f109f5e7ece723d2ddf4d94e8ec3c8b91faa23bd038f01b",
+    "skill-update.json": "22568ae3759ec08114c88403101b020878e9f095147f39418148e22b081ad14b"
+  }
+}

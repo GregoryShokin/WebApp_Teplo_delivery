@@ -1,0 +1,1195 @@
+{
+  "status": "PASS",
+  "independent_checks": [
+    {
+      "check": "C01 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "C02 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "C03 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "C04 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "C05 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "C06 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "B01 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "B02 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "B03 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "B04 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "B05 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "B06 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "F01 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "F02 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "F03 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "F04 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "F05 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "F06 original materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "D01 materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "D01 component line sum",
+      "pass": true
+    },
+    {
+      "check": "D01 inside100/rice110/norihalf",
+      "pass": true
+    },
+    {
+      "check": "D01 main30pct",
+      "pass": true
+    },
+    {
+      "check": "D01 creamcheeseorcrab",
+      "pass": true
+    },
+    {
+      "check": "D01 standalone price formula",
+      "pass": true
+    },
+    {
+      "check": "D02 materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "D02 component line sum",
+      "pass": true
+    },
+    {
+      "check": "D02 inside100/rice110/norihalf",
+      "pass": true
+    },
+    {
+      "check": "D02 main30pct",
+      "pass": true
+    },
+    {
+      "check": "D02 creamcheeseorcrab",
+      "pass": true
+    },
+    {
+      "check": "D02 standalone price formula",
+      "pass": true
+    },
+    {
+      "check": "D03 materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "D03 component line sum",
+      "pass": true
+    },
+    {
+      "check": "D03 inside100/rice110/norihalf",
+      "pass": true
+    },
+    {
+      "check": "D03 main30pct",
+      "pass": true
+    },
+    {
+      "check": "D03 creamcheeseorcrab",
+      "pass": true
+    },
+    {
+      "check": "D03 standalone price formula",
+      "pass": true
+    },
+    {
+      "check": "D04 materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "D04 component line sum",
+      "pass": true
+    },
+    {
+      "check": "D04 inside100/rice110/norihalf",
+      "pass": true
+    },
+    {
+      "check": "D04 main30pct",
+      "pass": true
+    },
+    {
+      "check": "D04 creamcheeseorcrab",
+      "pass": true
+    },
+    {
+      "check": "D04 standalone price formula",
+      "pass": true
+    },
+    {
+      "check": "D05 materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "D05 component line sum",
+      "pass": true
+    },
+    {
+      "check": "D05 inside100/rice110/norihalf",
+      "pass": true
+    },
+    {
+      "check": "D05 main30pct",
+      "pass": true
+    },
+    {
+      "check": "D05 creamcheeseorcrab",
+      "pass": true
+    },
+    {
+      "check": "D05 standalone price formula",
+      "pass": true
+    },
+    {
+      "check": "D06 materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "D06 component line sum",
+      "pass": true
+    },
+    {
+      "check": "D06 inside100/rice110/norihalf",
+      "pass": true
+    },
+    {
+      "check": "D06 main30pct",
+      "pass": true
+    },
+    {
+      "check": "D06 creamcheeseorcrab",
+      "pass": true
+    },
+    {
+      "check": "D06 standalone price formula",
+      "pass": true
+    },
+    {
+      "check": "D07 materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "D07 component line sum",
+      "pass": true
+    },
+    {
+      "check": "D07 inside100/rice110/norihalf",
+      "pass": true
+    },
+    {
+      "check": "D07 main30pct",
+      "pass": true
+    },
+    {
+      "check": "D07 creamcheeseorcrab",
+      "pass": true
+    },
+    {
+      "check": "D07 standalone price formula",
+      "pass": true
+    },
+    {
+      "check": "D08 materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "D08 component line sum",
+      "pass": true
+    },
+    {
+      "check": "D08 inside100/rice110/norihalf",
+      "pass": true
+    },
+    {
+      "check": "D08 main30pct",
+      "pass": true
+    },
+    {
+      "check": "D08 creamcheeseorcrab",
+      "pass": true
+    },
+    {
+      "check": "D08 standalone price formula",
+      "pass": true
+    },
+    {
+      "check": "D09 materialcost independent",
+      "pass": true
+    },
+    {
+      "check": "D09 component line sum",
+      "pass": true
+    },
+    {
+      "check": "D09 inside100/rice110/norihalf",
+      "pass": true
+    },
+    {
+      "check": "D09 main30pct",
+      "pass": true
+    },
+    {
+      "check": "D09 creamcheeseorcrab",
+      "pass": true
+    },
+    {
+      "check": "D09 standalone price formula",
+      "pass": true
+    },
+    {
+      "check": "4A completewholeportions",
+      "pass": true
+    },
+    {
+      "check": "4A food once independent",
+      "pass": true
+    },
+    {
+      "check": "4A rawFC40 independent",
+      "pass": true
+    },
+    {
+      "check": "4A boxes separate",
+      "pass": true
+    },
+    {
+      "check": "4A headroom",
+      "pass": true
+    },
+    {
+      "check": "4A benefit FC",
+      "pass": true
+    },
+    {
+      "check": "4A synthetic value",
+      "pass": true
+    },
+    {
+      "check": "4A seed over budget",
+      "pass": true
+    },
+    {
+      "check": "4A step0 beforepass",
+      "pass": true
+    },
+    {
+      "check": "4A step0 realcost",
+      "pass": true
+    },
+    {
+      "check": "4A step1 beforepass",
+      "pass": true
+    },
+    {
+      "check": "4A step1 realcost",
+      "pass": true
+    },
+    {
+      "check": "4A step2 beforepass",
+      "pass": true
+    },
+    {
+      "check": "4A step2 realcost",
+      "pass": true
+    },
+    {
+      "check": "4A firstpass stop",
+      "pass": true
+    },
+    {
+      "check": "4A mussels rollcount",
+      "pass": true
+    },
+    {
+      "check": "4A shrimp rollcount",
+      "pass": true
+    },
+    {
+      "check": "4A eel rollcount",
+      "pass": true
+    },
+    {
+      "check": "4A salmon rollcount",
+      "pass": true
+    },
+    {
+      "check": "4B completewholeportions",
+      "pass": true
+    },
+    {
+      "check": "4B food once independent",
+      "pass": true
+    },
+    {
+      "check": "4B rawFC40 independent",
+      "pass": true
+    },
+    {
+      "check": "4B boxes separate",
+      "pass": true
+    },
+    {
+      "check": "4B headroom",
+      "pass": true
+    },
+    {
+      "check": "4B benefit FC",
+      "pass": true
+    },
+    {
+      "check": "4B synthetic value",
+      "pass": true
+    },
+    {
+      "check": "4B seed over budget",
+      "pass": true
+    },
+    {
+      "check": "4B step0 beforepass",
+      "pass": true
+    },
+    {
+      "check": "4B step0 realcost",
+      "pass": true
+    },
+    {
+      "check": "4B step1 beforepass",
+      "pass": true
+    },
+    {
+      "check": "4B step1 realcost",
+      "pass": true
+    },
+    {
+      "check": "4B firstpass stop",
+      "pass": true
+    },
+    {
+      "check": "4B mussels rollcount",
+      "pass": true
+    },
+    {
+      "check": "4B shrimp rollcount",
+      "pass": true
+    },
+    {
+      "check": "4B eel rollcount",
+      "pass": true
+    },
+    {
+      "check": "4B salmon rollcount",
+      "pass": true
+    },
+    {
+      "check": "4C completewholeportions",
+      "pass": true
+    },
+    {
+      "check": "4C food once independent",
+      "pass": true
+    },
+    {
+      "check": "4C rawFC40 independent",
+      "pass": true
+    },
+    {
+      "check": "4C boxes separate",
+      "pass": true
+    },
+    {
+      "check": "4C headroom",
+      "pass": true
+    },
+    {
+      "check": "4C benefit FC",
+      "pass": true
+    },
+    {
+      "check": "4C synthetic value",
+      "pass": true
+    },
+    {
+      "check": "4C seed over budget",
+      "pass": true
+    },
+    {
+      "check": "4C step0 beforepass",
+      "pass": true
+    },
+    {
+      "check": "4C step0 realcost",
+      "pass": true
+    },
+    {
+      "check": "4C step1 beforepass",
+      "pass": true
+    },
+    {
+      "check": "4C step1 realcost",
+      "pass": true
+    },
+    {
+      "check": "4C step2 beforepass",
+      "pass": true
+    },
+    {
+      "check": "4C step2 realcost",
+      "pass": true
+    },
+    {
+      "check": "4C firstpass stop",
+      "pass": true
+    },
+    {
+      "check": "4C mussels rollcount",
+      "pass": true
+    },
+    {
+      "check": "4C shrimp rollcount",
+      "pass": true
+    },
+    {
+      "check": "4C eel rollcount",
+      "pass": true
+    },
+    {
+      "check": "4C salmon rollcount",
+      "pass": true
+    },
+    {
+      "check": "5L-A completewholeportions",
+      "pass": true
+    },
+    {
+      "check": "5L-A food once independent",
+      "pass": true
+    },
+    {
+      "check": "5L-A rawFC40 independent",
+      "pass": true
+    },
+    {
+      "check": "5L-A boxes separate",
+      "pass": true
+    },
+    {
+      "check": "5L-A headroom",
+      "pass": true
+    },
+    {
+      "check": "5L-A benefit FC",
+      "pass": true
+    },
+    {
+      "check": "5L-A synthetic value",
+      "pass": true
+    },
+    {
+      "check": "5L-A seed over budget",
+      "pass": true
+    },
+    {
+      "check": "5L-A step0 beforepass",
+      "pass": true
+    },
+    {
+      "check": "5L-A step0 realcost",
+      "pass": true
+    },
+    {
+      "check": "5L-A step1 beforepass",
+      "pass": true
+    },
+    {
+      "check": "5L-A step1 realcost",
+      "pass": true
+    },
+    {
+      "check": "5L-A step2 beforepass",
+      "pass": true
+    },
+    {
+      "check": "5L-A step2 realcost",
+      "pass": true
+    },
+    {
+      "check": "5L-A firstpass stop",
+      "pass": true
+    },
+    {
+      "check": "5L-A mussels rollcount",
+      "pass": true
+    },
+    {
+      "check": "5L-A shrimp rollcount",
+      "pass": true
+    },
+    {
+      "check": "5L-A eel rollcount",
+      "pass": true
+    },
+    {
+      "check": "5L-A salmon rollcount",
+      "pass": true
+    },
+    {
+      "check": "5L-B completewholeportions",
+      "pass": true
+    },
+    {
+      "check": "5L-B food once independent",
+      "pass": true
+    },
+    {
+      "check": "5L-B rawFC40 independent",
+      "pass": true
+    },
+    {
+      "check": "5L-B boxes separate",
+      "pass": true
+    },
+    {
+      "check": "5L-B headroom",
+      "pass": true
+    },
+    {
+      "check": "5L-B benefit FC",
+      "pass": true
+    },
+    {
+      "check": "5L-B synthetic value",
+      "pass": true
+    },
+    {
+      "check": "5L-B seed over budget",
+      "pass": true
+    },
+    {
+      "check": "5L-B step0 beforepass",
+      "pass": true
+    },
+    {
+      "check": "5L-B step0 realcost",
+      "pass": true
+    },
+    {
+      "check": "5L-B step1 beforepass",
+      "pass": true
+    },
+    {
+      "check": "5L-B step1 realcost",
+      "pass": true
+    },
+    {
+      "check": "5L-B step2 beforepass",
+      "pass": true
+    },
+    {
+      "check": "5L-B step2 realcost",
+      "pass": true
+    },
+    {
+      "check": "5L-B firstpass stop",
+      "pass": true
+    },
+    {
+      "check": "5L-B mussels rollcount",
+      "pass": true
+    },
+    {
+      "check": "5L-B shrimp rollcount",
+      "pass": true
+    },
+    {
+      "check": "5L-B eel rollcount",
+      "pass": true
+    },
+    {
+      "check": "5L-B salmon rollcount",
+      "pass": true
+    },
+    {
+      "check": "5H-A completewholeportions",
+      "pass": true
+    },
+    {
+      "check": "5H-A food once independent",
+      "pass": true
+    },
+    {
+      "check": "5H-A rawFC40 independent",
+      "pass": true
+    },
+    {
+      "check": "5H-A boxes separate",
+      "pass": true
+    },
+    {
+      "check": "5H-A headroom",
+      "pass": true
+    },
+    {
+      "check": "5H-A benefit FC",
+      "pass": true
+    },
+    {
+      "check": "5H-A synthetic value",
+      "pass": true
+    },
+    {
+      "check": "5H-A seed over budget",
+      "pass": true
+    },
+    {
+      "check": "5H-A step0 beforepass",
+      "pass": true
+    },
+    {
+      "check": "5H-A step0 realcost",
+      "pass": true
+    },
+    {
+      "check": "5H-A step1 beforepass",
+      "pass": true
+    },
+    {
+      "check": "5H-A step1 realcost",
+      "pass": true
+    },
+    {
+      "check": "5H-A step2 beforepass",
+      "pass": true
+    },
+    {
+      "check": "5H-A step2 realcost",
+      "pass": true
+    },
+    {
+      "check": "5H-A firstpass stop",
+      "pass": true
+    },
+    {
+      "check": "5H-A mussels rollcount",
+      "pass": true
+    },
+    {
+      "check": "5H-A shrimp rollcount",
+      "pass": true
+    },
+    {
+      "check": "5H-A eel rollcount",
+      "pass": true
+    },
+    {
+      "check": "5H-A salmon rollcount",
+      "pass": true
+    },
+    {
+      "check": "5H-B completewholeportions",
+      "pass": true
+    },
+    {
+      "check": "5H-B food once independent",
+      "pass": true
+    },
+    {
+      "check": "5H-B rawFC40 independent",
+      "pass": true
+    },
+    {
+      "check": "5H-B boxes separate",
+      "pass": true
+    },
+    {
+      "check": "5H-B headroom",
+      "pass": true
+    },
+    {
+      "check": "5H-B benefit FC",
+      "pass": true
+    },
+    {
+      "check": "5H-B synthetic value",
+      "pass": true
+    },
+    {
+      "check": "5H-B seed over budget",
+      "pass": true
+    },
+    {
+      "check": "5H-B step0 beforepass",
+      "pass": true
+    },
+    {
+      "check": "5H-B step0 realcost",
+      "pass": true
+    },
+    {
+      "check": "5H-B step1 beforepass",
+      "pass": true
+    },
+    {
+      "check": "5H-B step1 realcost",
+      "pass": true
+    },
+    {
+      "check": "5H-B firstpass stop",
+      "pass": true
+    },
+    {
+      "check": "5H-B mussels rollcount",
+      "pass": true
+    },
+    {
+      "check": "5H-B shrimp rollcount",
+      "pass": true
+    },
+    {
+      "check": "5H-B eel rollcount",
+      "pass": true
+    },
+    {
+      "check": "5H-B salmon rollcount",
+      "pass": true
+    },
+    {
+      "check": "10A completewholeportions",
+      "pass": true
+    },
+    {
+      "check": "10A food once independent",
+      "pass": true
+    },
+    {
+      "check": "10A rawFC40 independent",
+      "pass": true
+    },
+    {
+      "check": "10A boxes separate",
+      "pass": true
+    },
+    {
+      "check": "10A headroom",
+      "pass": true
+    },
+    {
+      "check": "10A benefit FC",
+      "pass": true
+    },
+    {
+      "check": "10A synthetic value",
+      "pass": true
+    },
+    {
+      "check": "10A seed over budget",
+      "pass": true
+    },
+    {
+      "check": "10A step0 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10A step0 realcost",
+      "pass": true
+    },
+    {
+      "check": "10A step1 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10A step1 realcost",
+      "pass": true
+    },
+    {
+      "check": "10A step2 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10A step2 realcost",
+      "pass": true
+    },
+    {
+      "check": "10A step3 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10A step3 realcost",
+      "pass": true
+    },
+    {
+      "check": "10A step4 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10A step4 realcost",
+      "pass": true
+    },
+    {
+      "check": "10A step5 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10A step5 realcost",
+      "pass": true
+    },
+    {
+      "check": "10A step6 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10A step6 realcost",
+      "pass": true
+    },
+    {
+      "check": "10A step7 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10A step7 realcost",
+      "pass": true
+    },
+    {
+      "check": "10A step8 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10A step8 realcost",
+      "pass": true
+    },
+    {
+      "check": "10A firstpass stop",
+      "pass": true
+    },
+    {
+      "check": "10A mussels rollcount",
+      "pass": true
+    },
+    {
+      "check": "10A shrimp rollcount",
+      "pass": true
+    },
+    {
+      "check": "10A eel rollcount",
+      "pass": true
+    },
+    {
+      "check": "10A salmon rollcount",
+      "pass": true
+    },
+    {
+      "check": "10B completewholeportions",
+      "pass": true
+    },
+    {
+      "check": "10B food once independent",
+      "pass": true
+    },
+    {
+      "check": "10B rawFC40 independent",
+      "pass": true
+    },
+    {
+      "check": "10B boxes separate",
+      "pass": true
+    },
+    {
+      "check": "10B headroom",
+      "pass": true
+    },
+    {
+      "check": "10B benefit FC",
+      "pass": true
+    },
+    {
+      "check": "10B synthetic value",
+      "pass": true
+    },
+    {
+      "check": "10B seed over budget",
+      "pass": true
+    },
+    {
+      "check": "10B step0 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10B step0 realcost",
+      "pass": true
+    },
+    {
+      "check": "10B step1 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10B step1 realcost",
+      "pass": true
+    },
+    {
+      "check": "10B step2 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10B step2 realcost",
+      "pass": true
+    },
+    {
+      "check": "10B step3 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10B step3 realcost",
+      "pass": true
+    },
+    {
+      "check": "10B step4 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10B step4 realcost",
+      "pass": true
+    },
+    {
+      "check": "10B step5 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10B step5 realcost",
+      "pass": true
+    },
+    {
+      "check": "10B step6 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10B step6 realcost",
+      "pass": true
+    },
+    {
+      "check": "10B step7 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10B step7 realcost",
+      "pass": true
+    },
+    {
+      "check": "10B step8 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10B step8 realcost",
+      "pass": true
+    },
+    {
+      "check": "10B firstpass stop",
+      "pass": true
+    },
+    {
+      "check": "10B mussels rollcount",
+      "pass": true
+    },
+    {
+      "check": "10B shrimp rollcount",
+      "pass": true
+    },
+    {
+      "check": "10B eel rollcount",
+      "pass": true
+    },
+    {
+      "check": "10B salmon rollcount",
+      "pass": true
+    },
+    {
+      "check": "10C completewholeportions",
+      "pass": true
+    },
+    {
+      "check": "10C food once independent",
+      "pass": true
+    },
+    {
+      "check": "10C rawFC40 independent",
+      "pass": true
+    },
+    {
+      "check": "10C boxes separate",
+      "pass": true
+    },
+    {
+      "check": "10C headroom",
+      "pass": true
+    },
+    {
+      "check": "10C benefit FC",
+      "pass": true
+    },
+    {
+      "check": "10C synthetic value",
+      "pass": true
+    },
+    {
+      "check": "10C seed over budget",
+      "pass": true
+    },
+    {
+      "check": "10C step0 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10C step0 realcost",
+      "pass": true
+    },
+    {
+      "check": "10C step1 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10C step1 realcost",
+      "pass": true
+    },
+    {
+      "check": "10C step2 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10C step2 realcost",
+      "pass": true
+    },
+    {
+      "check": "10C step3 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10C step3 realcost",
+      "pass": true
+    },
+    {
+      "check": "10C step4 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10C step4 realcost",
+      "pass": true
+    },
+    {
+      "check": "10C step5 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10C step5 realcost",
+      "pass": true
+    },
+    {
+      "check": "10C step6 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10C step6 realcost",
+      "pass": true
+    },
+    {
+      "check": "10C step7 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10C step7 realcost",
+      "pass": true
+    },
+    {
+      "check": "10C step8 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10C step8 realcost",
+      "pass": true
+    },
+    {
+      "check": "10C step9 beforepass",
+      "pass": true
+    },
+    {
+      "check": "10C step9 realcost",
+      "pass": true
+    },
+    {
+      "check": "10C firstpass stop",
+      "pass": true
+    },
+    {
+      "check": "10C mussels rollcount",
+      "pass": true
+    },
+    {
+      "check": "10C shrimp rollcount",
+      "pass": true
+    },
+    {
+      "check": "10C eel rollcount",
+      "pass": true
+    },
+    {
+      "check": "10C salmon rollcount",
+      "pass": true
+    },
+    {
+      "check": "total10sets9new",
+      "pass": true
+    }
+  ],
+  "critical_caveat": "5H-A raw39.26 useslegacy eel rate, fullcooutput unsold BlackEel stress43.55% raw unless sauce demand isbalanced elsewhere.",
+  "source": "/private/tmp/teplo-sets-work"
+}

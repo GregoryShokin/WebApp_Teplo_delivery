@@ -1,0 +1,160 @@
+{
+  "as_of": "2026-10-21",
+  "status": "read_only_independent_audit_of_root_draft_10_candidates_3x4_4x5_3x10",
+  "sources": [
+    {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-21-new-roll-line-v1/results.json",
+      "sha256": "20676e8a2ea6991b5f3296ff6bbf26a138c754d64c14734dd927628f9738f902"
+    },
+    {
+      "path": "/private/tmp/teplo-sets-locked-family-audit.json",
+      "sha256": "78d92b0096ea6c8948a5690ca1fde4c53b39b80759c38270e5d4d2bce0c4e706"
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-21-rolls/analysis/economics/costing/pricebook.json",
+      "sha256": "2f264f01a0f0c050e12e8c3eeab6672ee328e8d0031aa23b898652e8a6210876"
+    },
+    {
+      "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/sales-agent/current-sets21.json",
+      "sha256": "24d72eb38bab0851ef0308cd8fd610a2561605e25b71982fa11f674976ca728a"
+    },
+    {
+      "path": "/private/tmp/teplo-sets-cheap-recipes.json",
+      "sha256": "2f3c82b6e0c507acc48b8dacd430f4701fc7d34aafe6fa288a98bcf9ab83fd12"
+    }
+  ],
+  "packaging_catalog_evidence": [
+    {
+      "guid": "358af10e-7c6b-4ce3-b51d-ccfaa2f9d41f",
+      "name": "Ланч бокс 3 секции",
+      "main_unit": "шт",
+      "unit_price_rub": 5.5,
+      "price_date": "2026-10-14T15:00:00",
+      "status": "lastpurchase_confirmed"
+    },
+    {
+      "guid": "37977d9f-a43e-40f8-9798-e29c2d9dbe14",
+      "name": "Ланчбокс 1 секция",
+      "main_unit": "шт",
+      "unit_price_rub": 5.5,
+      "price_date": "2026-10-14T15:00:00",
+      "status": "lastpurchase_confirmed"
+    },
+    {
+      "guid": "824668b9-4a79-4f95-b0f2-fa6c932ffa97",
+      "name": "Контейнер 300мл",
+      "main_unit": "шт",
+      "unit_price_rub": 13.32,
+      "price_date": "2026-09-16T15:00:00",
+      "status": "lastpurchase_confirmed"
+    },
+    {
+      "guid": "8362edce-ca43-48d0-ba58-8701b289519a",
+      "name": "Контейнер для соуса 125гр",
+      "main_unit": "шт",
+      "unit_price_rub": 1.66,
+      "price_date": "2026-10-14T15:00:00",
+      "status": "lastpurchase_confirmed"
+    },
+    {
+      "guid": "96801277-d55b-4673-9f46-e1bbf756fc5f",
+      "name": "Крышки для конт. 125/250гр",
+      "main_unit": "шт",
+      "unit_price_rub": 1.44,
+      "price_date": "2026-10-14T15:00:00",
+      "status": "lastpurchase_confirmed"
+    },
+    {
+      "guid": "a3b0649f-c41f-4063-8bec-38432e9d673d",
+      "name": "Ланч-бокс 2 секции",
+      "main_unit": "шт",
+      "unit_price_rub": 5.5,
+      "price_date": "2026-10-14T15:00:00",
+      "status": "lastpurchase_confirmed"
+    },
+    {
+      "guid": "b99c5d66-0413-4310-8cad-e4caba619127",
+      "name": "Крышка к контейнеру 500мл",
+      "main_unit": "шт",
+      "unit_price_rub": 11.0,
+      "price_date": "2026-07-23T09:00:00",
+      "status": "lastpurchase_confirmed"
+    },
+    {
+      "guid": "bd4d3db1-1dea-4999-84df-c68cd1697856",
+      "name": "Крышка к контейнеру 300мл ",
+      "main_unit": "шт",
+      "unit_price_rub": 4.11,
+      "price_date": "2026-09-16T15:00:00",
+      "status": "lastpurchase_confirmed"
+    },
+    {
+      "guid": "eb4248d2-098f-40bd-8eb0-eeb241b4bf17",
+      "name": "Контейнер 500мл",
+      "main_unit": "шт",
+      "unit_price_rub": 18.0,
+      "price_date": "2026-07-23T09:00:00",
+      "status": "lastpurchase_confirmed"
+    }
+  ],
+  "historical_packaging_proxies": [
+    {
+      "set_id": "6cbaa016-c383-41a0-9fb1-0449569d9fcf",
+      "name": "Сет \"Нейросет\"",
+      "roll_qty": 4.0,
+      "priced_packaging_leaves": [
+        {
+          "id": "37977d9f-a43e-40f8-9798-e29c2d9dbe14",
+          "name": "Ланчбокс 1 секция",
+          "amount": 2.0,
+          "unit": "шт",
+          "price_rub": 5.5,
+          "price_date": "2026-10-14T15:00:00",
+          "cost_rub": 11.0
+        }
+      ]
+    },
+    {
+      "set_id": "2f3792af-99b1-44fc-9fed-b97126e532ea",
+      "name": "Сет\" Жареный\"",
+      "roll_qty": 5.0,
+      "priced_packaging_leaves": [
+        {
+          "id": "37977d9f-a43e-40f8-9798-e29c2d9dbe14",
+          "name": "Ланчбокс 1 секция",
+          "amount": 2.0,
+          "unit": "шт",
+          "price_rub": 5.5,
+          "price_date": "2026-10-14T15:00:00",
+          "cost_rub": 11.0
+        }
+      ]
+    },
+    {
+      "set_id": "c13d3f53-e621-4467-b78f-b0c7f54c4251",
+      "name": "Сет \"Биг бэн\"",
+      "roll_qty": 10.0,
+      "priced_packaging_leaves": [
+        {
+          "id": "37977d9f-a43e-40f8-9798-e29c2d9dbe14",
+          "name": "Ланчбокс 1 секция",
+          "amount": 4.0,
+          "unit": "шт",
+          "price_rub": 5.5,
+          "price_date": "2026-10-14T15:00:00",
+          "cost_rub": 22.0
+        }
+      ]
+    }
+  ],
+  "packaging_limit": "Known last-purchase prices, not current stock. No dimensions or actual placement tests. Existing tech card counts are a cost proxy, not proven capacity of new larger rolls.",
+  "limits": [
+    "Current5roll drafts include4 candidates; final3 require selection.",
+    "10A/B contain8 mussel rolls,1 shrimp,1 salmon/tartar; repeats explicitly listed.",
+    "10C contains5 mussel,4 shrimp,1 plain salmon.",
+    "Physical size/taste/sensory appeal and demand not proven.",
+    "RawFC40 target excludes boxcost and all offers.",
+    "10A raw budget headroom under1rub; changes/rounding losses exceed it readily."
+  ],
+  "reference_scope": "Packaging evidence only; preliminaryauditorcandidate tables omitted toavoid stale assortment."
+}
