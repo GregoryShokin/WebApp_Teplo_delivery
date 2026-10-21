@@ -48,7 +48,8 @@
     "allowed_main_sauces": [
       "Spice",
       "яки",
-      "сырный соус сверху"
+      "сырный соус сверху",
+      "Чёрный угорь"
     ],
     "allowed_thin_drizzles": [
       "унаги",
@@ -58,16 +59,55 @@
       "кляр",
       "сухари",
       "прочие реально используемые компоненты жарки, с отдельным учётом"
-    ]
+    ],
+    "minimum_each_selected_main_inside_fraction": 0.3,
+    "minimum_fraction_denominator": "all inner filling; rice,nori,outer lid/hat excluded",
+    "main_product_combinations_allowed": true,
+    "protein_lid_product_choices": [
+      "лосось",
+      "креветка",
+      "угорь"
+    ],
+    "protein_lid_exact_product_g": 50,
+    "protein_lid_inside_main_products_allowed": true,
+    "tartar_inside_main_products_allowed": false,
+    "tartar_inside_base_choices": [
+      "творожный сыр",
+      "снежный краб"
+    ],
+    "tartar_inside_additions": [
+      "огурец",
+      "тамаго"
+    ],
+    "use_existing_sauce_and_mixture_cards": true,
+    "use_existing_preparation_cards": true,
+    "crab_mixture_override_fractions": {
+      "snow_crab": 0.8,
+      "mayonnaise": 0.2
+    },
+    "black_eel_sauce_required_in_palette": true,
+    "eel_preparation_remainders_intended_for_black_eel_sauce": true,
+    "nominal_menu_food_cost_ceiling_before_promotions": 0.35,
+    "food_cost_ceiling_basis": "ordinary menu price BEFORE discounts and redeemed bonuses, explicitly confirmed; not net paid revenue",
+    "protein_lid_product_count": 1,
+    "black_eel_purpose": "use all eel processing remainders, with a small extra fillet addition; not an independently purchased extra eel stream",
+    "black_eel_remainders_majority_scope": "majority of EEL COMPONENT, not majority of all sauce; explicitly clarified by owner",
+    "black_eel_extra_fillet_required": true,
+    "black_eel_other_recipe_components": "retain current sauce proportions"
   },
   "working_interpretations_not_additional_owner_rules": {
-    "main_protein_rule": "At least one of four categories per roll, combinations allowed; inferred from owner salmon+creamcheese and crab+salmon+shrimp examples, not all four simultaneously. Salmon tartar hat can provide the salmon accent.",
+    "main_protein_rule": "Owner confirmed combinations and30% EACH selected principal product in total INNER filling. Outer protein lid fixed50g separately; tartar hat62–80g ready mix separately; tartar inside only fillers.",
     "rice_mass_basis": "cooked/prepared rice, inferred from previous prototype context",
     "inside_filling_range_includes": "All inner ingredients combined: principal protein, filler, vegetables, tamago, mozzarella, inner sauce if used; excludes rice/nori and exterior hat/coating/drizzle.",
     "cheese_crab_exclusion_scope": "Explicit exclusion concerns cream-cheese base plus snow crab inside; do not automatically extend to mozzarella or exterior cheese sauce.",
     "paper_family_structure": "Consider cold/baked/fried constructions and hat rolls as a draft matrix; final assortment size not selected.",
-    "existing_sources_usage": "Current purchase book and preparation cards are dated reference inputs, not mandatory recipes for the new line. New mixtures must be explicitly designed.",
-    "sauce_bases": "Do not silently add old crab/tartar mayonnaise recipes or ingredients outside palette; any proposed mixture composition must be explicit."
+    "existing_sources_usage": "Later owner clarification authorizes existing sauce/mixture recipes and shrimp/mussel/salmon/other preparation cards; override crab to80/20, creamcheese price+30%, rawcrab450, rice110 and new compositions. Eel offcut reuse requires joint material/cost balance, not automatic100% fillet yield.",
+    "sauce_bases": "Existing sauce subingredients are authorized, including mayonnaise etc. Earlier no-automatic-copy rule superseded by owner. Black Eel added to palette.",
+    "crab_ratio_quantity_stage": "80/20 confirmed; preparation input vs net mixing masses to be explicit. Reference costing can use80% preparedcrab+20%mayo with existing crab98% yield as a labeled scenario, not an unrecorded change.",
+    "protein_lid_inside_total_g": "Ordinary100–110g is the working starting range; no separately chosen inner recipe/size yet. Lid50g never counted within inner100–110g.",
+    "sauce_primary_weight": "Do not count whole mayonnaise sauce as pure main product. A sauce containing eel is not automatically an extra named main filling; if used to satisfy a principal-product promise, disclose and count its actual eel contribution.",
+    "eel_paper_complete_utilization": "Owner design condition: route all eel preparation remainders to sauce. For paperfull-utilization scenario with current53% initial fillet yield, model53g initial fillet +47g remainder per100g purchase; actual useful yields not newly measured. Adding x fillet to sauce reduces direct fillet to53-x and increases eel sauce component to47+x, same100g purchase once.",
+    "eel_cost_allocation": "Propose explicit allocation of ONE purchase between consumed fillet and eel component of sauce. A mass-based full-utilization scenario is one option; another assigns purchase cost to initial fillet and transfers its small sauce addition at that cost. Do not mix the methods or silently treat all sauce as free."
   },
   "derived_price_scenario": {
     "current_cream_cheese_rub_per_kg": 385,
@@ -79,34 +119,24 @@
   },
   "unresolved_parameters": [
     {
-      "id": "N01",
-      "question": "Minimum meaningful grams of principal product for each category; and combined grams/split when two principal products share a roll.",
-      "kind": "design choice to propose and test; do not invent an approved minimum"
-    },
-    {
       "id": "N02",
-      "question": "Exact total inside filling and composition for tartar-hat rolls below ordinary100–110g.",
-      "kind": "design choice; cannot automatically copy89g from Lava"
-    },
-    {
-      "id": "N03",
-      "question": "New crab mixture and each tartar mix proportions/yields; sauce and other components counted within62–80g hat.",
-      "kind": "design choice; current cards are reference only"
-    },
-    {
-      "id": "N04",
-      "question": "Applicability of ingredient form and preparation yield to the new raw material; especially eel53%, shrimp61.45%, mussels73% in current cards; mussel last price requires O13 check.",
-      "kind": "source/physical uncertainty; do not equate raw and ready prices"
-    },
-    {
-      "id": "N05",
-      "question": "Selling-price targets and proposed sets; calculate FC only after identifying net after applicable benefits.",
-      "kind": "owner commercial choice; can derive required prices from proposed compositions instead"
+      "question": "Exact smaller total inner filling under tartar hat; composition constrained to alternate base plus cucumber/tamago, no main product inside.",
+      "kind": "recipe-design variable; cannot turn Lava89g into a universal norm"
     },
     {
       "id": "N06",
-      "question": "Future assortment quantities/sales mix and share of new line, final sizes and taste/delivery outcomes.",
-      "kind": "unobserved future outcomes; scenario weights only, no fabricated forecast"
+      "question": "Final assortment, per-recipe chosen amounts of exterior sauces/drizzles/coating, selling mix and sets; real geometry/flavour/delivery.",
+      "kind": "design variables and unobserved outcomes; scenarios only"
+    },
+    {
+      "id": "N07",
+      "question": "Small extra fillet quantity per100g eel component not specified; choose a labeled variant. Couple fillet and sauce output volumes and one purchase cost. Owner full-use condition can be modeled on paper; actual yield/usage not newly measured.",
+      "kind": "recipe parameter and joint-output accounting; no zeroing purchase cost or duplicate purchases"
+    },
+    {
+      "id": "N08",
+      "question": "Mussel price729.78 raw vs earlier338.42 still requires primary-document verificationO13 for final source approval.",
+      "kind": "existing accounting snapshot usable as marked reference; no arbitrary cheaper price"
     }
   ],
   "work_plan": [
@@ -116,7 +146,7 @@
     },
     {
       "step": 2,
-      "output": "Dated price and yield matrix for usable ingredients; apply crab450 at raw leaf, cheese+30% only at cream-cheese leaf; define new mixtures explicitly."
+      "output": "Use authorized current preparation/sauce cards with rawcrab450, creamcheese+30%, crab80/20. Add Black Eel reference and a joint eel fillet/offcut/sauce balance."
     },
     {
       "step": 3,
@@ -124,11 +154,11 @@
     },
     {
       "step": 4,
-      "output": "Paper recipe alternatives: ordinary total inner100–110g, rice110g; hat total62–80g and separate smaller inner filling parameter. Explicit primary-protein share and exterior components."
+      "output": "Paper recipes: inner100–110g, each selected main inside>=30%; lids exactly50g of salmon/shrimp/eel, inside main optional; tartar readyhat62–80g with only filler inside of separately selected smaller mass."
     },
     {
       "step": 5,
-      "output": "Per-variant material cost and alternative prices/FC under current and lighter benefits; whole sets counted once; mixture sales scenarios evaluate wholeline33%, not a33% ceiling per SKU."
+      "output": "Material costs and nominal menu prices >=cost/0.35 before offers; separately evaluate actual after-offer FC, whole sets once, future sales mix only as scenarios."
     },
     {
       "step": 6,
@@ -139,7 +169,8 @@
     "Existing8-prototype/Q19 wholeline30.05/28.05 results do not automatically apply after new crab/cheese/rice/menu changes.",
     "33% remains a whole-rollline scenario target, not a hard ceiling for each recipe.",
     "Without selling price no unique FC; without future sales weights no demonstrated weighted new-line FC.",
-    "A food-cost calculation alone does not prove500000 monthly net profit; full budget/capacity/demand update follows selection of offer."
+    "A food-cost calculation alone does not prove500000 monthly net profit; full budget/capacity/demand update follows selection of offer.",
+    "New35% cap is a menu-price rule before promotions; it neither establishes35% after bonuses/discounts nor automatically confirms the earlier33% net wholeline scenario."
   ],
   "no_changes_to": [
     "production techcards",
@@ -161,6 +192,61 @@
       "path": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/root/raw/charts21.json",
       "sha256": "70e8b18eee0734c4b43625577c27b9dddad1f21df2bb1161ec4e9178a92f6283",
       "role": "dated current21Oct reference only; not mandatory new recipe"
+    }
+  ],
+  "resolved_parameters": [
+    {
+      "id": "N01",
+      "answer": "Each selected main product at least30% of whole inner filling, independently in mixes. Outer components governed separately.",
+      "source": "owner current clarification21Oct"
+    },
+    {
+      "id": "N03",
+      "answer": "Use current sauce/mixture cards; crab80/20 override. Tartar cards remain current proportions, with salmon variants explicitly substituted as requested.",
+      "source": "owner current clarification21Oct"
+    },
+    {
+      "id": "N04",
+      "answer": "Current ingredient preparation cards authorized, apart from new eel joint-output reuse. Mussel primary-price noteO13 retained.",
+      "source": "owner current clarification21Oct"
+    },
+    {
+      "id": "N05",
+      "answer": "Set menu prices so recipe/material food cost <=35% BEFORE offers; actual net FC under offers evaluated separately.",
+      "source": "owner async clarification21Oct"
+    }
+  ],
+  "change_history": [
+    {
+      "date": "2026-10-21",
+      "previous_brief_sha256": "5076990ef059021da98eab4f1ad49b8fc79f1d368e806f0d3b2e8ddd44d1f04c",
+      "reason": "Owner clarified first open parameters and approved current preparation/sauce cards",
+      "superseded": [
+        "minimum main share unknown",
+        "existing mixtures are reference only and must all be newly chosen",
+        "menu-pricing target/basis unknown"
+      ],
+      "retained": [
+        "paper project only",
+        "crab450 is purchased product",
+        "rice110",
+        "creamcheese+30%",
+        "tartar62–80 ready mixture",
+        "both salmon and tartar variants"
+      ]
+    },
+    {
+      "date": "2026-10-21",
+      "reason": "Owner clarified Black Eel specifically uses all preparation remainders with small fillet addition; remainder majority is within eel component only",
+      "superseded": [
+        "Black Eel as a possible separately purchased eel stream",
+        "remainder-majority might mean entire sauce"
+      ],
+      "retained": [
+        "current non-eel sauce ingredients",
+        "purchase cost counted once",
+        "unknown exact extra fillet grams"
+      ]
     }
   ]
 }

@@ -1,0 +1,114 @@
+{
+  "as_of": "2026-10-21",
+  "portion_rules": [
+    {
+      "inner_total_g": 100,
+      "main_product_count": 1,
+      "each_min_g": 30.0,
+      "all_main_min_g": 30.0,
+      "filler_vegetable_inner_sauce_remaining_max_g": 70.0,
+      "feasible_by_mass": true
+    },
+    {
+      "inner_total_g": 100,
+      "main_product_count": 2,
+      "each_min_g": 30.0,
+      "all_main_min_g": 60.0,
+      "filler_vegetable_inner_sauce_remaining_max_g": 40.0,
+      "feasible_by_mass": true
+    },
+    {
+      "inner_total_g": 100,
+      "main_product_count": 3,
+      "each_min_g": 30.0,
+      "all_main_min_g": 90.0,
+      "filler_vegetable_inner_sauce_remaining_max_g": 10.0,
+      "feasible_by_mass": true
+    },
+    {
+      "inner_total_g": 100,
+      "main_product_count": 4,
+      "each_min_g": 30.0,
+      "all_main_min_g": 120.0,
+      "filler_vegetable_inner_sauce_remaining_max_g": null,
+      "feasible_by_mass": false
+    },
+    {
+      "inner_total_g": 105,
+      "main_product_count": 1,
+      "each_min_g": 31.5,
+      "all_main_min_g": 31.5,
+      "filler_vegetable_inner_sauce_remaining_max_g": 73.5,
+      "feasible_by_mass": true
+    },
+    {
+      "inner_total_g": 105,
+      "main_product_count": 2,
+      "each_min_g": 31.5,
+      "all_main_min_g": 63.0,
+      "filler_vegetable_inner_sauce_remaining_max_g": 42.0,
+      "feasible_by_mass": true
+    },
+    {
+      "inner_total_g": 105,
+      "main_product_count": 3,
+      "each_min_g": 31.5,
+      "all_main_min_g": 94.5,
+      "filler_vegetable_inner_sauce_remaining_max_g": 10.5,
+      "feasible_by_mass": true
+    },
+    {
+      "inner_total_g": 105,
+      "main_product_count": 4,
+      "each_min_g": 31.5,
+      "all_main_min_g": 126.0,
+      "filler_vegetable_inner_sauce_remaining_max_g": null,
+      "feasible_by_mass": false
+    },
+    {
+      "inner_total_g": 110,
+      "main_product_count": 1,
+      "each_min_g": 33.0,
+      "all_main_min_g": 33.0,
+      "filler_vegetable_inner_sauce_remaining_max_g": 77.0,
+      "feasible_by_mass": true
+    },
+    {
+      "inner_total_g": 110,
+      "main_product_count": 2,
+      "each_min_g": 33.0,
+      "all_main_min_g": 66.0,
+      "filler_vegetable_inner_sauce_remaining_max_g": 44.0,
+      "feasible_by_mass": true
+    },
+    {
+      "inner_total_g": 110,
+      "main_product_count": 3,
+      "each_min_g": 33.0,
+      "all_main_min_g": 99.0,
+      "filler_vegetable_inner_sauce_remaining_max_g": 11.0,
+      "feasible_by_mass": true
+    },
+    {
+      "inner_total_g": 110,
+      "main_product_count": 4,
+      "each_min_g": 33.0,
+      "all_main_min_g": 132.0,
+      "filler_vegetable_inner_sauce_remaining_max_g": null,
+      "feasible_by_mass": false
+    }
+  ],
+  "pricing": {
+    "definition": "recipe_material/menu_price<=0.35 before any offer",
+    "menu_price_min_formula": "recipe_material_rub/0.35",
+    "exact_boundary_FC_after_simple_discount": {
+      "0": 0.35,
+      "0.1": 0.38888888888888884,
+      "0.15": 0.4117647058823529,
+      "0.2": 0.43749999999999994,
+      "0.5": 0.7
+    },
+    "not_a_profit_formula": true
+  },
+  "note": "No final new recipe grammages or prices assigned; illustrative arithmetic only."
+}

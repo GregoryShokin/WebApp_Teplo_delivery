@@ -1,0 +1,116 @@
+{
+  "as_of": "2026-10-21",
+  "records": [
+    {
+      "product_id": "8fde37d8-952e-42b8-85ea-9e8e9f85732f",
+      "name": "черный угорь п/ф",
+      "chart_id": "ffbba5de-1152-482c-a299-57b4759d13fc",
+      "date_from": "2026-04-01",
+      "yield_base_units": 0.384,
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "items": [
+        {
+          "product_id": "fa5411fe-e0bc-4d84-b1a1-b90eb22b2da0",
+          "name": "Майонез",
+          "type": "GOODS",
+          "amount_in_base_units": 0.2,
+          "amount_out_base_units": 0.2
+        },
+        {
+          "product_id": "c37017cf-27f9-401d-a3a0-0f4b68f9527e",
+          "name": "Угорь",
+          "type": "GOODS",
+          "amount_in_base_units": 0.1,
+          "amount_out_base_units": 0.1
+        },
+        {
+          "product_id": "b0dc3cc4-9382-40ee-93f3-6af15d56d8b7",
+          "name": "Масаго",
+          "type": "GOODS",
+          "amount_in_base_units": 0.02,
+          "amount_out_base_units": 0.02
+        },
+        {
+          "product_id": "cb4ed412-ef0b-49c6-ad99-de69553b3238",
+          "name": "Унаги соус",
+          "type": "GOODS",
+          "amount_in_base_units": 0.015,
+          "amount_out_base_units": 0.015
+        },
+        {
+          "product_id": "95143934-e55c-4ad6-8ade-e24dbd6122d6",
+          "name": "Лук перо",
+          "type": "GOODS",
+          "amount_in_base_units": 0.01,
+          "amount_out_base_units": 0.01
+        },
+        {
+          "product_id": "5285c185-fd3d-4856-b1b2-a7c9d4e59eea",
+          "name": "усилитель вкуса ",
+          "type": "GOODS",
+          "amount_in_base_units": 0.002,
+          "amount_out_base_units": 0.002
+        },
+        {
+          "product_id": "7e817df8-56fd-4c2d-8d3d-941dc2620d13",
+          "name": "Терияки",
+          "type": "GOODS",
+          "amount_in_base_units": 0.015,
+          "amount_out_base_units": 0.015
+        },
+        {
+          "product_id": "f1bb5ee8-2f9a-48d2-af15-65c69419568e",
+          "name": "Сухари Голд",
+          "type": "GOODS",
+          "amount_in_base_units": 0.022,
+          "amount_out_base_units": 0.022
+        }
+      ]
+    },
+    {
+      "product_id": "1daed58b-b495-4d25-b597-4c4db4c263ed",
+      "name": "Угорь пф",
+      "chart_id": "130572a8-af53-444a-9aa1-f1cb02ef90e9",
+      "date_from": "2025-04-03",
+      "yield_base_units": 0.053,
+      "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+      "items": [
+        {
+          "product_id": "c37017cf-27f9-401d-a3a0-0f4b68f9527e",
+          "name": "Угорь",
+          "type": "GOODS",
+          "amount_in_base_units": 0.1,
+          "amount_out_base_units": 0.053
+        }
+      ]
+    }
+  ],
+  "current_black_eel_card_unit_cost_reference_rub_per_kg": 613.9610849,
+  "current_black_eel_non_eel_components_reference_rub_per_kg": 210.0548349,
+  "new_joint_model": "Use all preparation remainders plus small fillet addition in sauce, retaining current other components. One purchase counted once; fillet diverted into sauce also counted once.",
+  "hypothesis_not_fact": "Full use is the explicit owner design condition. Current card53% remains source fact; actual usable remainder and achieved sauce demand not newly measured.",
+  "reference_source": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-21-eight-rolls-fc-offers/source/root/raw/charts21.json",
+  "source_sha256": "70e8b18eee0734c4b43625577c27b9dddad1f21df2bb1161ec4e9178a92f6283",
+  "owner_new_model_inputs": {
+    "purpose": "full reuse of preparation remainders",
+    "small_fillet_addition": true,
+    "majority_scope": "eel component only",
+    "non_eel_ingredients_current_card_retained": true
+  },
+  "paper_mass_balance": {
+    "R": "purchased eel mass",
+    "F0": "0.53*R initial prepared fillet using currentcard",
+    "T": "0.47*R remainder routed to sauce under owner full-use paper condition",
+    "x": "small fillet amount diverted to sauce; exact quantity not selected",
+    "direct_fillet": "0.53*R-x",
+    "eel_component_of_sauce": "0.47*R+x",
+    "conservation": "direct_fillet + eel_component_of_sauce = R",
+    "new_current_sauce_output": "3.84 * eel_component_of_sauce if existing sauce proportions/yield retained",
+    "constraints": [
+      "x>0",
+      "x <0.47*R for remainders majority of eel component",
+      "direct_fillet>=0"
+    ]
+  },
+  "status": "owner defined paper full-use model, not newly measured production yield"
+}
