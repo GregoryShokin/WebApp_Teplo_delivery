@@ -1,0 +1,109 @@
+{
+  "as_of": "2026-10-22",
+  "numeric_status": "PASS",
+  "status": "PASS",
+  "checks_executed": 862,
+  "errors": [],
+  "warnings": [],
+  "method": "Independent arithmetic reconstructed from component rates and nine source recipes at100/110g; no execution of repository calculate.py. Static HTML table/text audit, no visual rendering claim.",
+  "roll_scenarios_audited": 18,
+  "set_scenarios_audited": 6,
+  "sets": [
+    {
+      "id": "four",
+      "scenarios": {
+        "100": {
+          "priced_materials_rub": 421.2705292049286,
+          "partial_fc": 0.35430658469716453,
+          "unknown_takuan_g": 0,
+          "delta_vs_old_future75": 75.58646813391118
+        },
+        "110": {
+          "priced_materials_rub": 439.46874798043876,
+          "partial_fc": 0.3696120672669796,
+          "unknown_takuan_g": 0,
+          "delta_vs_old_future75": 93.78468690942134
+        }
+      }
+    },
+    {
+      "id": "ocean",
+      "scenarios": {
+        "100": {
+          "priced_materials_rub": 530.3218951107784,
+          "partial_fc": 0.3790721194501633,
+          "unknown_takuan_g": 0,
+          "delta_vs_old_future75": 13.477784983630613
+        },
+        "110": {
+          "priced_materials_rub": 549.4310044985335,
+          "partial_fc": 0.39273123981310476,
+          "unknown_takuan_g": 0,
+          "delta_vs_old_future75": 32.58689437138571
+        }
+      }
+    },
+    {
+      "id": "kalifila",
+      "scenarios": {
+        "100": {
+          "priced_materials_rub": 569.88314882234,
+          "partial_fc": 0.3960272055749409,
+          "unknown_takuan_g": 20,
+          "delta_vs_old_future75": -0.48314865794202433
+        },
+        "110": {
+          "priced_materials_rub": 600.0964608859223,
+          "partial_fc": 0.4170232528741642,
+          "unknown_takuan_g": 20,
+          "delta_vs_old_future75": 29.73016340564027
+        }
+      }
+    }
+  ],
+  "domain_confirmations": [
+    "P60cream+40cucumber andZ80cream+20takuan;110 adds10cream;no tamago.",
+    "Ready rice110g andnori0.5sheet, no competitor weight scaling.",
+    "Yaki75g exactly;set hatcounts2/2/1;P/Z fishcover50g outside nohat.",
+    "H50greadybatteredshrimp=40gshrimp+10gbatter;no secondcoating. Mwhole-roll25/15/5 distinct paperproxy.",
+    "Takuan/sesame line costs unknown preserved. Rice/batter carry unpricedwater;Hfryer oil unknown. All-in/foreign costs and finishedweights staynull.",
+    "FutureQ29 component records copied unchanged; special shrimpbatter cost1138.840621/kg exwater/oil applied once.",
+    "Comparison uses priorfuture75, not priorcurrentprice subtotal; Kalifila compared known part only."
+  ],
+  "html_table_shapes": [
+    {
+      "header_cells": 6,
+      "data_rows": 3
+    },
+    {
+      "header_cells": 5,
+      "data_rows": 9
+    },
+    {
+      "header_cells": 4,
+      "data_rows": 3
+    },
+    {
+      "header_cells": 3,
+      "data_rows": 9
+    }
+  ],
+  "audited_files": {
+    "inputs.json": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-wasabist-new-model/inputs.json",
+      "sha256": "27aef8c1a36c8291a6345a61754fe892fde76024e598120d566fcd3ceb59201a"
+    },
+    "results.json": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-wasabist-new-model/results.json",
+      "sha256": "745906304ec5d63c31f81e7da0fbe6cefa1192db76753104bc2708ea5f8937a2"
+    },
+    "calculate.py": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-wasabist-new-model/calculate.py",
+      "sha256": "25d9b99e64ba6ca898812112e33b533f377e876951b581f165b112745c9c6148"
+    },
+    "report.html": {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/business-docs/strategy/snapshots/2026-10-22-wasabist-new-model/report.html",
+      "sha256": "ea07524571bb9a97db24c2764064f140248dbe2f75cd558903b1a49ad2c2cefa"
+    }
+  }
+}

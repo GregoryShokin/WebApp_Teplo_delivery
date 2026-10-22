@@ -1,0 +1,610 @@
+{
+  "as_of": "2026-10-22",
+  "status": "new_model_recalculation_explicitly_requested_by_owner",
+  "pricebook_as_of": "2026-10-21",
+  "source_sha256": {
+    "2026-10-22-chicken-rolls-and-sets/inputs.json": "94f9862e70d410c0cdfbd0eb3fc7e206f88bcbac396a90eacf817851b6b1c8da",
+    "2026-10-22-wasabist-three-sets/inputs.json": "b653a9ef14e79aa0a481ba17cf49d59bd87fd6f77e77740d3fcdedb02a7e9bac",
+    "2026-10-22-wasabist-three-sets/results.json": "1500a4715342adb445e43c4c79c3552a27aa247a30b9d352f5bda6da885a9198",
+    "2026-10-22-wasabist-three-sets/live-dom.json": "204592c863a2b6ccd4f09b549991d01648db7e627605f2e6827fc8df81bccb45",
+    "2026-10-22-wasabist-three-sets/teplo-analogs.json": "e28fb5e2acba25ffbde85cd5a06fe70bed5faa3fd9facb186fc3411f5cda6090"
+  },
+  "components": {
+    "rice": {
+      "name": "Рис для роллов пф",
+      "product_id": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+      "chart_id": "18e9ff7a-3874-417c-8b8e-645af189bb84",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.0577324802975482,
+      "unpriced": [
+        {
+          "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+          "name": "Вода",
+          "amount_per_baseunit": 0.4417708431243538
+        }
+      ]
+    },
+    "nori": {
+      "name": "Нори",
+      "product_id": "402101dc-2501-4341-9c13-d020a38702ab",
+      "chart_id": null,
+      "quantity_basis": "one_iiko_purchase_sheet_unit",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_sheet": 9.4
+    },
+    "salmon_plain": {
+      "name": "Семга с/м вакуум п/ф",
+      "product_id": "2b9465ac-eab7-4b7c-aa14-548253b02024",
+      "chart_id": "2aeee468-62ee-4273-9d79-5faa0e974313",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 2.371794871794872
+    },
+    "shrimp": {
+      "name": "Креветка п/ф очищ отвар",
+      "product_id": "cfc06311-539c-4c41-9d99-21baf376c5de",
+      "chart_id": "85f19bab-9ac0-4229-a40a-f90eaa0ec143",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 1.6109202675827157
+    },
+    "cream_cheese": {
+      "name": "Творожный сыр +30%",
+      "product_id": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+      "chart_id": null,
+      "quantity_basis": "per_g_new_purchased_creamcheese; owner price scenario not supplier quote",
+      "scenario": "owner_paper_override_with_explicit_reference",
+      "yield_already_applied": false,
+      "cost_per_g": 0.5005
+    },
+    "crab_mix": {
+      "name": "Крабовая смесь80/20 по готовым массам",
+      "product_id": null,
+      "chart_id": null,
+      "quantity_basis": "80% READY preparedcrab +20% mayonnaise by ready mixing mass, with no second total-mixture loss imposed",
+      "scenario": "owner_paper_override_with_explicit_reference",
+      "yield_already_applied": true,
+      "cost_per_g": 0.4094109387755102,
+      "formula": "0.8*(450/0.98)+0.2*210.32",
+      "reference_old_product_id": "9d5cfeae-8717-4f4e-903d-6877561bb32c",
+      "do_not_apply_old_mixture_yield_again": true
+    },
+    "cucumber": {
+      "name": "Огурец п/ф роллы",
+      "product_id": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+      "chart_id": "604a3574-88e3-4c4e-81ad-6a8828f4f0b2",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.23827160555555554
+    },
+    "masago": {
+      "name": "Масаго п/ф",
+      "product_id": "901ac275-994e-45a4-8c90-71a3fed3ce43",
+      "chart_id": "5bafd0f5-265d-434d-88c2-b3d9fa9fd039",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 1.297872340425532
+    },
+    "yaki": {
+      "name": "Соус Яки п/ф",
+      "product_id": "4700248f-233a-4d5a-9f3e-3ceb888e844a",
+      "chart_id": "e36ca51b-865f-44d5-adce-6dd54272512f",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.32710997848808515
+    },
+    "unagi": {
+      "name": "Унаги соус",
+      "product_id": "cb4ed412-ef0b-49c6-ad99-de69553b3238",
+      "chart_id": null,
+      "quantity_basis": "per_g_purchased",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_g": 0.17267
+    },
+    "batter": {
+      "name": "Кляр",
+      "product_id": "16ff10d9-6516-4a65-a843-fc72c9639e45",
+      "chart_id": "9284411a-57e1-43a9-bec1-81ba905d26e0",
+      "quantity_basis": "per_g_of_named_ready_component",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": true,
+      "cost_per_g": 0.029103103448275863,
+      "unpriced": [
+        {
+          "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+          "name": "Вода",
+          "amount_per_baseunit": 0.5287356321839081
+        }
+      ]
+    },
+    "crumbs": {
+      "name": "Сухари Голд",
+      "product_id": "f1bb5ee8-2f9a-48d2-af15-65c69419568e",
+      "chart_id": null,
+      "quantity_basis": "per_g_purchased",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_g": 0.192
+    },
+    "oil": {
+      "name": "Масло растительное",
+      "product_id": "c33018ee-a46d-4bfc-b224-3b62a1f69dd0",
+      "chart_id": null,
+      "quantity_basis": "per_g_using_iiko_unitWeight0.925kg_per_litre_not_new_measurement",
+      "scenario": "current_card_and21Octbook",
+      "yield_already_applied": false,
+      "cost_per_g": 0.14681081081081082,
+      "cost_per_ml": 0.1358,
+      "kg_per_litre_from_catalog": 0.925
+    },
+    "shrimp_batter": {
+      "name": "Креветка в кляре",
+      "product_id": "25a260e6-cb32-486d-8147-1ed91a9ed7c5",
+      "chart_id": "573a0683-8c5b-4a92-a969-739fcfe66469",
+      "cost_per_g": 1.1388406206896553,
+      "quantity_basis": "ready component; 25gchartoutput=20gshrimp+5gbatter; inputs include flour and crumbs; no second coating or yield factor",
+      "shrimp_fraction_by_ready_chart_output": 0.8,
+      "batter_fraction_by_ready_chart_output": 0.2,
+      "unpriced": [
+        "water",
+        "fryer_oil"
+      ],
+      "source": {
+        "product_id": "25a260e6-cb32-486d-8147-1ed91a9ed7c5",
+        "name": "Креветка в кляре",
+        "type": "PREPARED",
+        "main_unit_id": "7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc",
+        "main_unit": "кг",
+        "dated_current_cost_per_baseunit_ex_missing": null,
+        "priced_subtotal_ex_missing_per_baseunit": 1138.8406206896552,
+        "cost_per_ready_or_purchased_g": null,
+        "cost_per_sheet": null,
+        "basis": "named preparation; input/output yield already applied once",
+        "missing": [
+          "Вода"
+        ],
+        "lastpurchase": null,
+        "chart_id": "573a0683-8c5b-4a92-a969-739fcfe66469",
+        "chart_date_from": "2025-09-10",
+        "chart_output_baseunits": 0.025,
+        "chart_lines": [
+          {
+            "product_id": "d3a1f4a3-1198-45cb-9190-1263a3c76562",
+            "name": "Креветка блок 1,8 кг ",
+            "amount_in": 0.0239,
+            "amount_middle": 0.0215,
+            "amount_out": 0.02
+          },
+          {
+            "product_id": "16ff10d9-6516-4a65-a843-fc72c9639e45",
+            "name": "Кляр",
+            "amount_in": 0.005,
+            "amount_middle": 0.005,
+            "amount_out": 0.005
+          },
+          {
+            "product_id": "0eef42b7-61d9-4d57-a1de-b8c5016b248e",
+            "name": "мука донские дары ",
+            "amount_in": 0.02,
+            "amount_middle": 0,
+            "amount_out": 0
+          },
+          {
+            "product_id": "f1bb5ee8-2f9a-48d2-af15-65c69419568e",
+            "name": "Сухари Голд",
+            "amount_in": 0.02,
+            "amount_middle": 0.02,
+            "amount_out": 0
+          }
+        ],
+        "physical_yield_measured": false
+      }
+    },
+    "takuan": {
+      "name": "Такуан / редька маринованная",
+      "product_id": "34980702-cc24-4875-b57a-f30e5148ef79",
+      "cost_per_g": null,
+      "purchase_price_per_kg": null,
+      "drained_yield": null,
+      "status": "unknown_current_cost; not zero; no2023price inserted"
+    },
+    "sesame": {
+      "name": "Кунжут белый",
+      "product_id": "a9eb0f18-d512-4053-aeee-19c2034e42fb",
+      "cost_per_g": 0.285,
+      "portion_g": null,
+      "price_date": "2026-10-01",
+      "status": "price_known_portion_unknown; not zero"
+    }
+  },
+  "recipes": [
+    {
+      "id": "P",
+      "name": "Филадельфия: сыр и огурец, лососевая крышка",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner100": {
+        "cream_cheese": 60,
+        "cucumber": 40
+      },
+      "growth_to110": {
+        "cream_cheese": 10
+      },
+      "inside_primary_fraction": {},
+      "fish_cover": {
+        "salmon_plain": 50
+      },
+      "sauce_hat": {},
+      "outside_coating": {},
+      "drizzle": {},
+      "sprinkle": {},
+      "frying": {},
+      "notes": [
+        "Owner expressly selected cheese+cucumber inside, fish only outside.60/40g split is analyst proposal.50g preparedfillet before final processing, not a measured finished weight."
+      ],
+      "status": "new_paper_variant_not_approved_or_measured_production_card"
+    },
+    {
+      "id": "Z",
+      "name": "Запечённая Филадельфия: сыр и такуан, лососевая крышка",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner100": {
+        "cream_cheese": 80,
+        "takuan": 20
+      },
+      "growth_to110": {
+        "cream_cheese": 10
+      },
+      "inside_primary_fraction": {},
+      "fish_cover": {
+        "salmon_plain": 50
+      },
+      "sauce_hat": {},
+      "outside_coating": {},
+      "drizzle": {
+        "unagi": 5
+      },
+      "sprinkle": {
+        "sesame": null
+      },
+      "frying": {},
+      "notes": [
+        "Owner expressly selected cheese+takuan inside, fish only outside.80/20g split is analyst proposal; takuan currentprice/yieldunknown. Seared cover, no saucehat."
+      ],
+      "status": "new_paper_variant_not_approved_or_measured_production_card"
+    },
+    {
+      "id": "T",
+      "name": "Токио-аналог: лосось, сыр, огурец",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner100": {
+        "salmon_plain": 40,
+        "cream_cheese": 40,
+        "cucumber": 20
+      },
+      "growth_to110": {
+        "cream_cheese": 10
+      },
+      "inside_primary_fraction": {
+        "salmon_plain": 1
+      },
+      "fish_cover": {},
+      "sauce_hat": {
+        "yaki": 75
+      },
+      "outside_coating": {
+        "masago": 15
+      },
+      "drizzle": {
+        "unagi": 5
+      },
+      "sprinkle": {
+        "sesame": null
+      },
+      "frying": {},
+      "notes": [
+        "Our prepared salmon assembly input, not a measured competitor grilled-fish preparation.100/110g is prepared filling before final heat treatment. Separate prior grilling/yield not priced as fact."
+      ],
+      "status": "new_paper_variant_not_approved_or_measured_production_card"
+    },
+    {
+      "id": "S",
+      "name": "Сузуки-аналог: креветка, сыр, огурец",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner100": {
+        "shrimp": 40,
+        "cream_cheese": 40,
+        "cucumber": 20
+      },
+      "growth_to110": {
+        "cream_cheese": 10
+      },
+      "inside_primary_fraction": {
+        "shrimp": 1
+      },
+      "fish_cover": {},
+      "sauce_hat": {},
+      "outside_coating": {},
+      "drizzle": {},
+      "sprinkle": {},
+      "frying": {},
+      "notes": [],
+      "status": "new_paper_variant_not_approved_or_measured_production_card"
+    },
+    {
+      "id": "C",
+      "name": "Калифорния: крабовая смесь и огурец",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner100": {
+        "crab_mix": 80,
+        "cucumber": 20
+      },
+      "growth_to110": {
+        "crab_mix": 10
+      },
+      "inside_primary_fraction": {
+        "crab_mix": 0.8
+      },
+      "fish_cover": {},
+      "sauce_hat": {},
+      "outside_coating": {
+        "masago": 15
+      },
+      "drizzle": {},
+      "sprinkle": {},
+      "frying": {},
+      "notes": [
+        "Actual prepared crab64g in100g filling; mayonnaise16g not counted as crab. No inside cheese."
+      ],
+      "status": "new_paper_variant_not_approved_or_measured_production_card"
+    },
+    {
+      "id": "K",
+      "name": "Тёплый крабовый ролл",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner100": {
+        "crab_mix": 100
+      },
+      "growth_to110": {
+        "crab_mix": 10
+      },
+      "inside_primary_fraction": {
+        "crab_mix": 0.8
+      },
+      "fish_cover": {},
+      "sauce_hat": {
+        "yaki": 75
+      },
+      "outside_coating": {},
+      "drizzle": {
+        "unagi": 5
+      },
+      "sprinkle": {
+        "sesame": null
+      },
+      "frying": {},
+      "notes": [
+        "Single crabmix filling is our explicit new construction; competitor exact card unknown. This is not100g pure crab:80g preparedcrab+20gmayo at100g. No inside cheese."
+      ],
+      "status": "new_paper_variant_not_approved_or_measured_production_card"
+    },
+    {
+      "id": "M",
+      "name": "Мацахиро-аналог: лосось, сыр, огурец, темпура",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner100": {
+        "salmon_plain": 40,
+        "cream_cheese": 40,
+        "cucumber": 20
+      },
+      "growth_to110": {
+        "cream_cheese": 10
+      },
+      "inside_primary_fraction": {
+        "salmon_plain": 1
+      },
+      "fish_cover": {},
+      "sauce_hat": {
+        "yaki": 75
+      },
+      "outside_coating": {},
+      "drizzle": {
+        "unagi": 5
+      },
+      "sprinkle": {},
+      "frying": {
+        "batter": 25,
+        "crumbs": 15,
+        "oil": 5
+      },
+      "notes": [
+        "Whole-roll25/15/5 is retained analytical frying proxy, not measured production use or finished mass."
+      ],
+      "status": "new_paper_variant_not_approved_or_measured_production_card"
+    },
+    {
+      "id": "H",
+      "name": "Горячая креветочка-аналог",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner100": {
+        "shrimp_batter": 50,
+        "cream_cheese": 30,
+        "cucumber": 20
+      },
+      "growth_to110": {
+        "cream_cheese": 10
+      },
+      "inside_primary_fraction": {
+        "shrimp_batter": 0.8
+      },
+      "fish_cover": {},
+      "sauce_hat": {
+        "yaki": 75
+      },
+      "outside_coating": {
+        "masago": 15
+      },
+      "drizzle": {
+        "unagi": 5
+      },
+      "sprinkle": {
+        "sesame": null
+      },
+      "frying": {},
+      "notes": [
+        "Inside50g prepared batteredshrimp contains40g shrimp+10gbatter, and is part of the100/110g inside total. No extra batter/crumbs counted for this roll. Separate fryer oil absent in chart remains unknown."
+      ],
+      "status": "new_paper_variant_not_approved_or_measured_production_card"
+    },
+    {
+      "id": "B",
+      "name": "Запечённая Калифорния: креветка и огурец",
+      "base": {
+        "rice": 110,
+        "nori": 0.5
+      },
+      "inner100": {
+        "shrimp": 60,
+        "cucumber": 40
+      },
+      "growth_to110": {
+        "shrimp": 10
+      },
+      "inside_primary_fraction": {
+        "shrimp": 1
+      },
+      "fish_cover": {},
+      "sauce_hat": {
+        "yaki": 75
+      },
+      "outside_coating": {
+        "masago": 15
+      },
+      "drizzle": {
+        "unagi": 5
+      },
+      "sprinkle": {
+        "sesame": null
+      },
+      "frying": {},
+      "notes": [
+        "No inside creamcheese in this proposed version;60gpreparedshrimp+40gcucumber.110g variant increases shrimp to70g."
+      ],
+      "status": "new_paper_variant_not_approved_or_measured_production_card"
+    }
+  ],
+  "sets": [
+    {
+      "id": "four",
+      "name": "Четыре по цене трёх",
+      "price_rub": 1189,
+      "published_set_weight_g": 850,
+      "pieces": 32,
+      "rolls": [
+        "T",
+        "S",
+        "C",
+        "K"
+      ]
+    },
+    {
+      "id": "ocean",
+      "name": "Океан",
+      "price_rub": 1399,
+      "published_set_weight_g": null,
+      "pieces": 32,
+      "rolls": [
+        "P",
+        "M",
+        "H",
+        "C"
+      ]
+    },
+    {
+      "id": "kalifila",
+      "name": "Калифила",
+      "price_rub": 1439,
+      "published_set_weight_g": null,
+      "pieces": 32,
+      "rolls": [
+        "P",
+        "C",
+        "B",
+        "Z"
+      ]
+    }
+  ],
+  "inside_mass_scenarios_g": [
+    100,
+    110
+  ],
+  "owner_confirmed": {
+    "rice_g": 110,
+    "inside_range_g": [
+      100,
+      110
+    ],
+    "yaki_hat_g_per_whole_roll": 75,
+    "covers_g": 50,
+    "philadelphia_fillers": "cheese+cucumber/takuan inside; salmon only outside, confirmed by user reply22Oct",
+    "new_price_basis": "purchasedcrab450/kg,new80/20mix;creamcheese+30%=500.5/kg"
+  },
+  "analyst_portions": {
+    "nori_sheets": 0.5,
+    "masago_g_if_used": 15,
+    "unagi_g_if_used": 5,
+    "sesame_g": null,
+    "whole_roll_frying_proxy": {
+      "batter": 25,
+      "crumbs": 15,
+      "oil": 5
+    }
+  },
+  "no_competitor_weight_scaling": true,
+  "old_comparison": "../2026-10-22-wasabist-three-sets/results.json",
+  "box_proxy_rub_per_set": 11,
+  "limits": [
+    "Two deliberate whole recipes at100/110g, not averaging old cards or1–3g economy trimming. Growth component explicitly listed; total endpoints do not uniquely determine distribution or taste.",
+    "Base110greadyrice and100/110g prepared inner inputs refer to assembly before final cooking. Not confirmed finished/delivered weight. Covers/hats/outermasago/frying/drizzles do not count as inner filling.",
+    "P/Z have no chosen primary inside; fish-only50gcover outside. Ingredients/splits changed to our explicit new versions; competitor photos do not prove these recipes.",
+    "Every chosen primary inside has>=30% including actual crab/shrimp content of mixtures. Rice/hat/cover not denominator.",
+    "H50gbatteredshrimp is not50g shrimp. Its flour/crumbs already costed; additional fryer oil remains unpriced. M uses separate whole-rollfry25/15/5 assumption only.",
+    "T takes our preparedsalmon assembly input, not a confirmed grilled-salmon recipe/yield. If prior grilling is required, its recipe/yield must be separately specified.",
+    "Takuan currentprice/drainyield unknown. Sesame price known but quantity unknown. Water and Hfryer oil unpriced. These are material subtotals excluding unknowns, not complete delivered cost.",
+    "Packaging11/set only past proxy, capacity unconfirmed for bigger sets; sidekits/bags/labour/electricity/delivery/taxes/equipment excluded.",
+    "Competitor prices1189/1399/1439 fixed from22Oct live source as scenario denominator; no discounts/bonuses/delivery assumed.",
+    "Old sources, approved recipes and real menu remain unchanged. Costs/prices/portion designs not production approval."
+  ]
+}

@@ -1,0 +1,2297 @@
+{
+  "as_of": "2026-10-22",
+  "pricebook_as_of": "2026-10-21",
+  "label": "priced ingredients of proposed new Teplo variants at competitor prices; unknowns excluded, not zero",
+  "rolls": {
+    "P": {
+      "name": "Филадельфия: сыр и огурец, лососевая крышка",
+      "notes": [
+        "Owner expressly selected cheese+cucumber inside, fish only outside.60/40g split is analyst proposal.50g preparedfillet before final processing, not a measured finished weight."
+      ],
+      "scenarios": {
+        "100": {
+          "inside_g": 100,
+          "inner": {
+            "cream_cheese": 60,
+            "cucumber": 40
+          },
+          "primary_checks": [],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cream_cheese",
+              "name": "Творожный сыр +30%",
+              "quantity": 60,
+              "unit": "g",
+              "unit_cost_rub": 0.5005,
+              "priced_cost_rub": 30.029999999999998,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cucumber",
+              "name": "Огурец п/ф роллы",
+              "quantity": 40,
+              "unit": "g",
+              "unit_cost_rub": 0.23827160555555554,
+              "priced_cost_rub": 9.530864222222222,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "fish_cover",
+              "component": "salmon_plain",
+              "name": "Семга с/м вакуум п/ф",
+              "quantity": 50,
+              "unit": "g",
+              "unit_cost_rub": 2.371794871794872,
+              "priced_cost_rub": 118.58974358974359,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 169.2011806446961,
+          "unpriced_lines": [],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        },
+        "110": {
+          "inside_g": 110,
+          "inner": {
+            "cream_cheese": 70,
+            "cucumber": 40
+          },
+          "primary_checks": [],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cream_cheese",
+              "name": "Творожный сыр +30%",
+              "quantity": 70,
+              "unit": "g",
+              "unit_cost_rub": 0.5005,
+              "priced_cost_rub": 35.035,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cucumber",
+              "name": "Огурец п/ф роллы",
+              "quantity": 40,
+              "unit": "g",
+              "unit_cost_rub": 0.23827160555555554,
+              "priced_cost_rub": 9.530864222222222,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "fish_cover",
+              "component": "salmon_plain",
+              "name": "Семга с/м вакуум п/ф",
+              "quantity": 50,
+              "unit": "g",
+              "unit_cost_rub": 2.371794871794872,
+              "priced_cost_rub": 118.58974358974359,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 174.2061806446961,
+          "unpriced_lines": [],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        }
+      }
+    },
+    "Z": {
+      "name": "Запечённая Филадельфия: сыр и такуан, лососевая крышка",
+      "notes": [
+        "Owner expressly selected cheese+takuan inside, fish only outside.80/20g split is analyst proposal; takuan currentprice/yieldunknown. Seared cover, no saucehat."
+      ],
+      "scenarios": {
+        "100": {
+          "inside_g": 100,
+          "inner": {
+            "cream_cheese": 80,
+            "takuan": 20
+          },
+          "primary_checks": [],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cream_cheese",
+              "name": "Творожный сыр +30%",
+              "quantity": 80,
+              "unit": "g",
+              "unit_cost_rub": 0.5005,
+              "priced_cost_rub": 40.03999999999999,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "takuan",
+              "name": "Такуан / редька маринованная",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": null,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "fish_cover",
+              "component": "salmon_plain",
+              "name": "Семга с/м вакуум п/ф",
+              "quantity": 50,
+              "unit": "g",
+              "unit_cost_rub": 2.371794871794872,
+              "priced_cost_rub": 118.58974358974359,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "drizzle",
+              "component": "unagi",
+              "name": "Унаги соус",
+              "quantity": 5,
+              "unit": "g",
+              "unit_cost_rub": 0.17267,
+              "priced_cost_rub": 0.86335,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 170.54366642247388,
+          "unpriced_lines": [
+            {
+              "role": "inner",
+              "component": "takuan",
+              "name": "Такуан / редька маринованная",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": null,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        },
+        "110": {
+          "inside_g": 110,
+          "inner": {
+            "cream_cheese": 90,
+            "takuan": 20
+          },
+          "primary_checks": [],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cream_cheese",
+              "name": "Творожный сыр +30%",
+              "quantity": 90,
+              "unit": "g",
+              "unit_cost_rub": 0.5005,
+              "priced_cost_rub": 45.044999999999995,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "takuan",
+              "name": "Такуан / редька маринованная",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": null,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "fish_cover",
+              "component": "salmon_plain",
+              "name": "Семга с/м вакуум п/ф",
+              "quantity": 50,
+              "unit": "g",
+              "unit_cost_rub": 2.371794871794872,
+              "priced_cost_rub": 118.58974358974359,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "drizzle",
+              "component": "unagi",
+              "name": "Унаги соус",
+              "quantity": 5,
+              "unit": "g",
+              "unit_cost_rub": 0.17267,
+              "priced_cost_rub": 0.86335,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 175.5486664224739,
+          "unpriced_lines": [
+            {
+              "role": "inner",
+              "component": "takuan",
+              "name": "Такуан / редька маринованная",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": null,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        }
+      }
+    },
+    "T": {
+      "name": "Токио-аналог: лосось, сыр, огурец",
+      "notes": [
+        "Our prepared salmon assembly input, not a measured competitor grilled-fish preparation.100/110g is prepared filling before final heat treatment. Separate prior grilling/yield not priced as fact."
+      ],
+      "scenarios": {
+        "100": {
+          "inside_g": 100,
+          "inner": {
+            "salmon_plain": 40,
+            "cream_cheese": 40,
+            "cucumber": 20
+          },
+          "primary_checks": [
+            {
+              "component": "salmon_plain",
+              "actual_primary_g": 40,
+              "fraction_of_inside": 0.4
+            }
+          ],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "salmon_plain",
+              "name": "Семга с/м вакуум п/ф",
+              "quantity": 40,
+              "unit": "g",
+              "unit_cost_rub": 2.371794871794872,
+              "priced_cost_rub": 94.87179487179488,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cream_cheese",
+              "name": "Творожный сыр +30%",
+              "quantity": 40,
+              "unit": "g",
+              "unit_cost_rub": 0.5005,
+              "priced_cost_rub": 20.019999999999996,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cucumber",
+              "name": "Огурец п/ф роллы",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": 0.23827160555555554,
+              "priced_cost_rub": 4.765432111111111,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sauce_hat",
+              "component": "yaki",
+              "name": "Соус Яки п/ф",
+              "quantity": 75,
+              "unit": "g",
+              "unit_cost_rub": 0.32710997848808515,
+              "priced_cost_rub": 24.533248386606385,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "outside_coating",
+              "component": "masago",
+              "name": "Масаго п/ф",
+              "quantity": 15,
+              "unit": "g",
+              "unit_cost_rub": 1.297872340425532,
+              "priced_cost_rub": 19.46808510638298,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "drizzle",
+              "component": "unagi",
+              "name": "Унаги соус",
+              "quantity": 5,
+              "unit": "g",
+              "unit_cost_rub": 0.17267,
+              "priced_cost_rub": 0.86335,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 175.57248330862564,
+          "unpriced_lines": [
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        },
+        "110": {
+          "inside_g": 110,
+          "inner": {
+            "salmon_plain": 40,
+            "cream_cheese": 50,
+            "cucumber": 20
+          },
+          "primary_checks": [
+            {
+              "component": "salmon_plain",
+              "actual_primary_g": 40,
+              "fraction_of_inside": 0.36363636363636365
+            }
+          ],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "salmon_plain",
+              "name": "Семга с/м вакуум п/ф",
+              "quantity": 40,
+              "unit": "g",
+              "unit_cost_rub": 2.371794871794872,
+              "priced_cost_rub": 94.87179487179488,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cream_cheese",
+              "name": "Творожный сыр +30%",
+              "quantity": 50,
+              "unit": "g",
+              "unit_cost_rub": 0.5005,
+              "priced_cost_rub": 25.025,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cucumber",
+              "name": "Огурец п/ф роллы",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": 0.23827160555555554,
+              "priced_cost_rub": 4.765432111111111,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sauce_hat",
+              "component": "yaki",
+              "name": "Соус Яки п/ф",
+              "quantity": 75,
+              "unit": "g",
+              "unit_cost_rub": 0.32710997848808515,
+              "priced_cost_rub": 24.533248386606385,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "outside_coating",
+              "component": "masago",
+              "name": "Масаго п/ф",
+              "quantity": 15,
+              "unit": "g",
+              "unit_cost_rub": 1.297872340425532,
+              "priced_cost_rub": 19.46808510638298,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "drizzle",
+              "component": "unagi",
+              "name": "Унаги соус",
+              "quantity": 5,
+              "unit": "g",
+              "unit_cost_rub": 0.17267,
+              "priced_cost_rub": 0.86335,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 180.57748330862566,
+          "unpriced_lines": [
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        }
+      }
+    },
+    "S": {
+      "name": "Сузуки-аналог: креветка, сыр, огурец",
+      "notes": [],
+      "scenarios": {
+        "100": {
+          "inside_g": 100,
+          "inner": {
+            "shrimp": 40,
+            "cream_cheese": 40,
+            "cucumber": 20
+          },
+          "primary_checks": [
+            {
+              "component": "shrimp",
+              "actual_primary_g": 40,
+              "fraction_of_inside": 0.4
+            }
+          ],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "shrimp",
+              "name": "Креветка п/ф очищ отвар",
+              "quantity": 40,
+              "unit": "g",
+              "unit_cost_rub": 1.6109202675827157,
+              "priced_cost_rub": 64.43681070330862,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cream_cheese",
+              "name": "Творожный сыр +30%",
+              "quantity": 40,
+              "unit": "g",
+              "unit_cost_rub": 0.5005,
+              "priced_cost_rub": 20.019999999999996,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cucumber",
+              "name": "Огурец п/ф роллы",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": 0.23827160555555554,
+              "priced_cost_rub": 4.765432111111111,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 100.27281564715003,
+          "unpriced_lines": [],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        },
+        "110": {
+          "inside_g": 110,
+          "inner": {
+            "shrimp": 40,
+            "cream_cheese": 50,
+            "cucumber": 20
+          },
+          "primary_checks": [
+            {
+              "component": "shrimp",
+              "actual_primary_g": 40,
+              "fraction_of_inside": 0.36363636363636365
+            }
+          ],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "shrimp",
+              "name": "Креветка п/ф очищ отвар",
+              "quantity": 40,
+              "unit": "g",
+              "unit_cost_rub": 1.6109202675827157,
+              "priced_cost_rub": 64.43681070330862,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cream_cheese",
+              "name": "Творожный сыр +30%",
+              "quantity": 50,
+              "unit": "g",
+              "unit_cost_rub": 0.5005,
+              "priced_cost_rub": 25.025,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cucumber",
+              "name": "Огурец п/ф роллы",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": 0.23827160555555554,
+              "priced_cost_rub": 4.765432111111111,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 105.27781564715004,
+          "unpriced_lines": [],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        }
+      }
+    },
+    "C": {
+      "name": "Калифорния: крабовая смесь и огурец",
+      "notes": [
+        "Actual prepared crab64g in100g filling; mayonnaise16g not counted as crab. No inside cheese."
+      ],
+      "scenarios": {
+        "100": {
+          "inside_g": 100,
+          "inner": {
+            "crab_mix": 80,
+            "cucumber": 20
+          },
+          "primary_checks": [
+            {
+              "component": "crab_mix",
+              "actual_primary_g": 64.0,
+              "fraction_of_inside": 0.64
+            }
+          ],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "crab_mix",
+              "name": "Крабовая смесь80/20 по готовым массам",
+              "quantity": 80,
+              "unit": "g",
+              "unit_cost_rub": 0.4094109387755102,
+              "priced_cost_rub": 32.75287510204082,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cucumber",
+              "name": "Огурец п/ф роллы",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": 0.23827160555555554,
+              "priced_cost_rub": 4.765432111111111,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "outside_coating",
+              "component": "masago",
+              "name": "Масаго п/ф",
+              "quantity": 15,
+              "unit": "g",
+              "unit_cost_rub": 1.297872340425532,
+              "priced_cost_rub": 19.46808510638298,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 68.03696515226521,
+          "unpriced_lines": [],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        },
+        "110": {
+          "inside_g": 110,
+          "inner": {
+            "crab_mix": 90,
+            "cucumber": 20
+          },
+          "primary_checks": [
+            {
+              "component": "crab_mix",
+              "actual_primary_g": 72.0,
+              "fraction_of_inside": 0.6545454545454545
+            }
+          ],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "crab_mix",
+              "name": "Крабовая смесь80/20 по готовым массам",
+              "quantity": 90,
+              "unit": "g",
+              "unit_cost_rub": 0.4094109387755102,
+              "priced_cost_rub": 36.84698448979592,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cucumber",
+              "name": "Огурец п/ф роллы",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": 0.23827160555555554,
+              "priced_cost_rub": 4.765432111111111,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "outside_coating",
+              "component": "masago",
+              "name": "Масаго п/ф",
+              "quantity": 15,
+              "unit": "g",
+              "unit_cost_rub": 1.297872340425532,
+              "priced_cost_rub": 19.46808510638298,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 72.13107454002031,
+          "unpriced_lines": [],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        }
+      }
+    },
+    "K": {
+      "name": "Тёплый крабовый ролл",
+      "notes": [
+        "Single crabmix filling is our explicit new construction; competitor exact card unknown. This is not100g pure crab:80g preparedcrab+20gmayo at100g. No inside cheese."
+      ],
+      "scenarios": {
+        "100": {
+          "inside_g": 100,
+          "inner": {
+            "crab_mix": 100
+          },
+          "primary_checks": [
+            {
+              "component": "crab_mix",
+              "actual_primary_g": 80.0,
+              "fraction_of_inside": 0.8
+            }
+          ],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "crab_mix",
+              "name": "Крабовая смесь80/20 по готовым массам",
+              "quantity": 100,
+              "unit": "g",
+              "unit_cost_rub": 0.4094109387755102,
+              "priced_cost_rub": 40.94109387755102,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sauce_hat",
+              "component": "yaki",
+              "name": "Соус Яки п/ф",
+              "quantity": 75,
+              "unit": "g",
+              "unit_cost_rub": 0.32710997848808515,
+              "priced_cost_rub": 24.533248386606385,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "drizzle",
+              "component": "unagi",
+              "name": "Унаги соус",
+              "quantity": 5,
+              "unit": "g",
+              "unit_cost_rub": 0.17267,
+              "priced_cost_rub": 0.86335,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 77.38826509688771,
+          "unpriced_lines": [
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        },
+        "110": {
+          "inside_g": 110,
+          "inner": {
+            "crab_mix": 110
+          },
+          "primary_checks": [
+            {
+              "component": "crab_mix",
+              "actual_primary_g": 88.0,
+              "fraction_of_inside": 0.8
+            }
+          ],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "crab_mix",
+              "name": "Крабовая смесь80/20 по готовым массам",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.4094109387755102,
+              "priced_cost_rub": 45.03520326530612,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sauce_hat",
+              "component": "yaki",
+              "name": "Соус Яки п/ф",
+              "quantity": 75,
+              "unit": "g",
+              "unit_cost_rub": 0.32710997848808515,
+              "priced_cost_rub": 24.533248386606385,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "drizzle",
+              "component": "unagi",
+              "name": "Унаги соус",
+              "quantity": 5,
+              "unit": "g",
+              "unit_cost_rub": 0.17267,
+              "priced_cost_rub": 0.86335,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 81.4823744846428,
+          "unpriced_lines": [
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        }
+      }
+    },
+    "M": {
+      "name": "Мацахиро-аналог: лосось, сыр, огурец, темпура",
+      "notes": [
+        "Whole-roll25/15/5 is retained analytical frying proxy, not measured production use or finished mass."
+      ],
+      "scenarios": {
+        "100": {
+          "inside_g": 100,
+          "inner": {
+            "salmon_plain": 40,
+            "cream_cheese": 40,
+            "cucumber": 20
+          },
+          "primary_checks": [
+            {
+              "component": "salmon_plain",
+              "actual_primary_g": 40,
+              "fraction_of_inside": 0.4
+            }
+          ],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "salmon_plain",
+              "name": "Семга с/м вакуум п/ф",
+              "quantity": 40,
+              "unit": "g",
+              "unit_cost_rub": 2.371794871794872,
+              "priced_cost_rub": 94.87179487179488,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cream_cheese",
+              "name": "Творожный сыр +30%",
+              "quantity": 40,
+              "unit": "g",
+              "unit_cost_rub": 0.5005,
+              "priced_cost_rub": 20.019999999999996,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cucumber",
+              "name": "Огурец п/ф роллы",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": 0.23827160555555554,
+              "priced_cost_rub": 4.765432111111111,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sauce_hat",
+              "component": "yaki",
+              "name": "Соус Яки п/ф",
+              "quantity": 75,
+              "unit": "g",
+              "unit_cost_rub": 0.32710997848808515,
+              "priced_cost_rub": 24.533248386606385,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "drizzle",
+              "component": "unagi",
+              "name": "Унаги соус",
+              "quantity": 5,
+              "unit": "g",
+              "unit_cost_rub": 0.17267,
+              "priced_cost_rub": 0.86335,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "frying",
+              "component": "batter",
+              "name": "Кляр",
+              "quantity": 25,
+              "unit": "g",
+              "unit_cost_rub": 0.029103103448275863,
+              "priced_cost_rub": 0.7275775862068966,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.5287356321839081
+                }
+              ]
+            },
+            {
+              "role": "frying",
+              "component": "crumbs",
+              "name": "Сухари Голд",
+              "quantity": 15,
+              "unit": "g",
+              "unit_cost_rub": 0.192,
+              "priced_cost_rub": 2.88,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "frying",
+              "component": "oil",
+              "name": "Масло растительное",
+              "quantity": 5,
+              "unit": "g",
+              "unit_cost_rub": 0.14681081081081082,
+              "priced_cost_rub": 0.7340540540540541,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 160.4460298425036,
+          "unpriced_lines": [],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        },
+        "110": {
+          "inside_g": 110,
+          "inner": {
+            "salmon_plain": 40,
+            "cream_cheese": 50,
+            "cucumber": 20
+          },
+          "primary_checks": [
+            {
+              "component": "salmon_plain",
+              "actual_primary_g": 40,
+              "fraction_of_inside": 0.36363636363636365
+            }
+          ],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "salmon_plain",
+              "name": "Семга с/м вакуум п/ф",
+              "quantity": 40,
+              "unit": "g",
+              "unit_cost_rub": 2.371794871794872,
+              "priced_cost_rub": 94.87179487179488,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cream_cheese",
+              "name": "Творожный сыр +30%",
+              "quantity": 50,
+              "unit": "g",
+              "unit_cost_rub": 0.5005,
+              "priced_cost_rub": 25.025,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cucumber",
+              "name": "Огурец п/ф роллы",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": 0.23827160555555554,
+              "priced_cost_rub": 4.765432111111111,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sauce_hat",
+              "component": "yaki",
+              "name": "Соус Яки п/ф",
+              "quantity": 75,
+              "unit": "g",
+              "unit_cost_rub": 0.32710997848808515,
+              "priced_cost_rub": 24.533248386606385,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "drizzle",
+              "component": "unagi",
+              "name": "Унаги соус",
+              "quantity": 5,
+              "unit": "g",
+              "unit_cost_rub": 0.17267,
+              "priced_cost_rub": 0.86335,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "frying",
+              "component": "batter",
+              "name": "Кляр",
+              "quantity": 25,
+              "unit": "g",
+              "unit_cost_rub": 0.029103103448275863,
+              "priced_cost_rub": 0.7275775862068966,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.5287356321839081
+                }
+              ]
+            },
+            {
+              "role": "frying",
+              "component": "crumbs",
+              "name": "Сухари Голд",
+              "quantity": 15,
+              "unit": "g",
+              "unit_cost_rub": 0.192,
+              "priced_cost_rub": 2.88,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "frying",
+              "component": "oil",
+              "name": "Масло растительное",
+              "quantity": 5,
+              "unit": "g",
+              "unit_cost_rub": 0.14681081081081082,
+              "priced_cost_rub": 0.7340540540540541,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 165.45102984250363,
+          "unpriced_lines": [],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        }
+      }
+    },
+    "H": {
+      "name": "Горячая креветочка-аналог",
+      "notes": [
+        "Inside50g prepared batteredshrimp contains40g shrimp+10gbatter, and is part of the100/110g inside total. No extra batter/crumbs counted for this roll. Separate fryer oil absent in chart remains unknown."
+      ],
+      "scenarios": {
+        "100": {
+          "inside_g": 100,
+          "inner": {
+            "shrimp_batter": 50,
+            "cream_cheese": 30,
+            "cucumber": 20
+          },
+          "primary_checks": [
+            {
+              "component": "shrimp_batter",
+              "actual_primary_g": 40.0,
+              "fraction_of_inside": 0.4
+            }
+          ],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "shrimp_batter",
+              "name": "Креветка в кляре",
+              "quantity": 50,
+              "unit": "g",
+              "unit_cost_rub": 1.1388406206896553,
+              "priced_cost_rub": 56.94203103448277,
+              "unpriced_leaves": [
+                "water",
+                "fryer_oil"
+              ]
+            },
+            {
+              "role": "inner",
+              "component": "cream_cheese",
+              "name": "Творожный сыр +30%",
+              "quantity": 30,
+              "unit": "g",
+              "unit_cost_rub": 0.5005,
+              "priced_cost_rub": 15.014999999999999,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cucumber",
+              "name": "Огурец п/ф роллы",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": 0.23827160555555554,
+              "priced_cost_rub": 4.765432111111111,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sauce_hat",
+              "component": "yaki",
+              "name": "Соус Яки п/ф",
+              "quantity": 75,
+              "unit": "g",
+              "unit_cost_rub": 0.32710997848808515,
+              "priced_cost_rub": 24.533248386606385,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "outside_coating",
+              "component": "masago",
+              "name": "Масаго п/ф",
+              "quantity": 15,
+              "unit": "g",
+              "unit_cost_rub": 1.297872340425532,
+              "priced_cost_rub": 19.46808510638298,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "drizzle",
+              "component": "unagi",
+              "name": "Унаги соус",
+              "quantity": 5,
+              "unit": "g",
+              "unit_cost_rub": 0.17267,
+              "priced_cost_rub": 0.86335,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 132.63771947131355,
+          "unpriced_lines": [
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        },
+        "110": {
+          "inside_g": 110,
+          "inner": {
+            "shrimp_batter": 50,
+            "cream_cheese": 40,
+            "cucumber": 20
+          },
+          "primary_checks": [
+            {
+              "component": "shrimp_batter",
+              "actual_primary_g": 40.0,
+              "fraction_of_inside": 0.36363636363636365
+            }
+          ],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "shrimp_batter",
+              "name": "Креветка в кляре",
+              "quantity": 50,
+              "unit": "g",
+              "unit_cost_rub": 1.1388406206896553,
+              "priced_cost_rub": 56.94203103448277,
+              "unpriced_leaves": [
+                "water",
+                "fryer_oil"
+              ]
+            },
+            {
+              "role": "inner",
+              "component": "cream_cheese",
+              "name": "Творожный сыр +30%",
+              "quantity": 40,
+              "unit": "g",
+              "unit_cost_rub": 0.5005,
+              "priced_cost_rub": 20.019999999999996,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cucumber",
+              "name": "Огурец п/ф роллы",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": 0.23827160555555554,
+              "priced_cost_rub": 4.765432111111111,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sauce_hat",
+              "component": "yaki",
+              "name": "Соус Яки п/ф",
+              "quantity": 75,
+              "unit": "g",
+              "unit_cost_rub": 0.32710997848808515,
+              "priced_cost_rub": 24.533248386606385,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "outside_coating",
+              "component": "masago",
+              "name": "Масаго п/ф",
+              "quantity": 15,
+              "unit": "g",
+              "unit_cost_rub": 1.297872340425532,
+              "priced_cost_rub": 19.46808510638298,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "drizzle",
+              "component": "unagi",
+              "name": "Унаги соус",
+              "quantity": 5,
+              "unit": "g",
+              "unit_cost_rub": 0.17267,
+              "priced_cost_rub": 0.86335,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 137.64271947131354,
+          "unpriced_lines": [
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        }
+      }
+    },
+    "B": {
+      "name": "Запечённая Калифорния: креветка и огурец",
+      "notes": [
+        "No inside creamcheese in this proposed version;60gpreparedshrimp+40gcucumber.110g variant increases shrimp to70g."
+      ],
+      "scenarios": {
+        "100": {
+          "inside_g": 100,
+          "inner": {
+            "shrimp": 60,
+            "cucumber": 40
+          },
+          "primary_checks": [
+            {
+              "component": "shrimp",
+              "actual_primary_g": 60,
+              "fraction_of_inside": 0.6
+            }
+          ],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "shrimp",
+              "name": "Креветка п/ф очищ отвар",
+              "quantity": 60,
+              "unit": "g",
+              "unit_cost_rub": 1.6109202675827157,
+              "priced_cost_rub": 96.65521605496293,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cucumber",
+              "name": "Огурец п/ф роллы",
+              "quantity": 40,
+              "unit": "g",
+              "unit_cost_rub": 0.23827160555555554,
+              "priced_cost_rub": 9.530864222222222,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sauce_hat",
+              "component": "yaki",
+              "name": "Соус Яки п/ф",
+              "quantity": 75,
+              "unit": "g",
+              "unit_cost_rub": 0.32710997848808515,
+              "priced_cost_rub": 24.533248386606385,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "outside_coating",
+              "component": "masago",
+              "name": "Масаго п/ф",
+              "quantity": 15,
+              "unit": "g",
+              "unit_cost_rub": 1.297872340425532,
+              "priced_cost_rub": 19.46808510638298,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "drizzle",
+              "component": "unagi",
+              "name": "Унаги соус",
+              "quantity": 5,
+              "unit": "g",
+              "unit_cost_rub": 0.17267,
+              "priced_cost_rub": 0.86335,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 162.1013366029048,
+          "unpriced_lines": [
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        },
+        "110": {
+          "inside_g": 110,
+          "inner": {
+            "shrimp": 70,
+            "cucumber": 40
+          },
+          "primary_checks": [
+            {
+              "component": "shrimp",
+              "actual_primary_g": 70,
+              "fraction_of_inside": 0.6363636363636364
+            }
+          ],
+          "lines": [
+            {
+              "role": "base",
+              "component": "rice",
+              "name": "Рис для роллов пф",
+              "quantity": 110,
+              "unit": "g",
+              "unit_cost_rub": 0.0577324802975482,
+              "priced_cost_rub": 6.350572832730301,
+              "unpriced_leaves": [
+                {
+                  "id": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+                  "name": "Вода",
+                  "amount_per_baseunit": 0.4417708431243538
+                }
+              ]
+            },
+            {
+              "role": "base",
+              "component": "nori",
+              "name": "Нори",
+              "quantity": 0.5,
+              "unit": "sheet",
+              "unit_cost_rub": 9.4,
+              "priced_cost_rub": 4.7,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "shrimp",
+              "name": "Креветка п/ф очищ отвар",
+              "quantity": 70,
+              "unit": "g",
+              "unit_cost_rub": 1.6109202675827157,
+              "priced_cost_rub": 112.7644187307901,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "inner",
+              "component": "cucumber",
+              "name": "Огурец п/ф роллы",
+              "quantity": 40,
+              "unit": "g",
+              "unit_cost_rub": 0.23827160555555554,
+              "priced_cost_rub": 9.530864222222222,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sauce_hat",
+              "component": "yaki",
+              "name": "Соус Яки п/ф",
+              "quantity": 75,
+              "unit": "g",
+              "unit_cost_rub": 0.32710997848808515,
+              "priced_cost_rub": 24.533248386606385,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "outside_coating",
+              "component": "masago",
+              "name": "Масаго п/ф",
+              "quantity": 15,
+              "unit": "g",
+              "unit_cost_rub": 1.297872340425532,
+              "priced_cost_rub": 19.46808510638298,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "drizzle",
+              "component": "unagi",
+              "name": "Унаги соус",
+              "quantity": 5,
+              "unit": "g",
+              "unit_cost_rub": 0.17267,
+              "priced_cost_rub": 0.86335,
+              "unpriced_leaves": []
+            },
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "priced_food_subtotal_rub": 178.21053927873197,
+          "unpriced_lines": [
+            {
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "all_in_cost_rub": null,
+          "finished_weight_g": null
+        }
+      }
+    }
+  },
+  "sets": [
+    {
+      "id": "four",
+      "name": "Четыре по цене трёх",
+      "price_rub": 1189,
+      "published_set_weight_g": 850,
+      "pieces": 32,
+      "rolls": [
+        "T",
+        "S",
+        "C",
+        "K"
+      ],
+      "hat_count": 2,
+      "scenarios": {
+        "100": {
+          "inside_g_per_roll": 100,
+          "inside_g_per_set": 400,
+          "rice_g_per_set": 440,
+          "yaki_g_per_set": 150,
+          "priced_food_subtotal_rub": 421.2705292049286,
+          "priced_subtotal_fc_at_competitor_price": 0.35430658469716453,
+          "unpriced_takuan_g": 0,
+          "unpriced_lines": [
+            {
+              "roll_id": "T",
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            },
+            {
+              "roll_id": "K",
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "box_proxy_rub": 11,
+          "priced_food_plus_box_proxy_rub": 432.2705292049286,
+          "priced_food_plus_box_proxy_ratio": 0.3635580565222276,
+          "old_future75_priced_subtotal_rub": 345.6840610710174,
+          "delta_to_old_future75_priced_subtotal_rub": 75.58646813391118,
+          "material_budget_at35pct_rub": 416.15,
+          "priced_excess_above35pct_budget_rub": 5.12052920492863,
+          "full_food_cost_rub": null,
+          "actual_competitor_food_cost": null,
+          "finished_set_weight_g": null
+        },
+        "110": {
+          "inside_g_per_roll": 110,
+          "inside_g_per_set": 440,
+          "rice_g_per_set": 440,
+          "yaki_g_per_set": 150,
+          "priced_food_subtotal_rub": 439.4687479804388,
+          "priced_subtotal_fc_at_competitor_price": 0.36961206726697965,
+          "unpriced_takuan_g": 0,
+          "unpriced_lines": [
+            {
+              "roll_id": "T",
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            },
+            {
+              "roll_id": "K",
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "box_proxy_rub": 11,
+          "priced_food_plus_box_proxy_rub": 450.4687479804388,
+          "priced_food_plus_box_proxy_ratio": 0.37886353909204273,
+          "old_future75_priced_subtotal_rub": 345.6840610710174,
+          "delta_to_old_future75_priced_subtotal_rub": 93.7846869094214,
+          "material_budget_at35pct_rub": 416.15,
+          "priced_excess_above35pct_budget_rub": 23.318747980438843,
+          "full_food_cost_rub": null,
+          "actual_competitor_food_cost": null,
+          "finished_set_weight_g": null
+        }
+      }
+    },
+    {
+      "id": "ocean",
+      "name": "Океан",
+      "price_rub": 1399,
+      "published_set_weight_g": null,
+      "pieces": 32,
+      "rolls": [
+        "P",
+        "M",
+        "H",
+        "C"
+      ],
+      "hat_count": 2,
+      "scenarios": {
+        "100": {
+          "inside_g_per_roll": 100,
+          "inside_g_per_set": 400,
+          "rice_g_per_set": 440,
+          "yaki_g_per_set": 150,
+          "priced_food_subtotal_rub": 530.3218951107784,
+          "priced_subtotal_fc_at_competitor_price": 0.3790721194501633,
+          "unpriced_takuan_g": 0,
+          "unpriced_lines": [
+            {
+              "roll_id": "H",
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "box_proxy_rub": 11,
+          "priced_food_plus_box_proxy_rub": 541.3218951107784,
+          "priced_food_plus_box_proxy_ratio": 0.38693487856381586,
+          "old_future75_priced_subtotal_rub": 516.8441101271478,
+          "delta_to_old_future75_priced_subtotal_rub": 13.477784983630613,
+          "material_budget_at35pct_rub": 489.65,
+          "priced_excess_above35pct_budget_rub": 40.67189511077845,
+          "full_food_cost_rub": null,
+          "actual_competitor_food_cost": null,
+          "finished_set_weight_g": null
+        },
+        "110": {
+          "inside_g_per_roll": 110,
+          "inside_g_per_set": 440,
+          "rice_g_per_set": 440,
+          "yaki_g_per_set": 150,
+          "priced_food_subtotal_rub": 549.4310044985336,
+          "priced_subtotal_fc_at_competitor_price": 0.3927312398131048,
+          "unpriced_takuan_g": 0,
+          "unpriced_lines": [
+            {
+              "roll_id": "H",
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "box_proxy_rub": 11,
+          "priced_food_plus_box_proxy_rub": 560.4310044985336,
+          "priced_food_plus_box_proxy_ratio": 0.4005939989267574,
+          "old_future75_priced_subtotal_rub": 516.8441101271478,
+          "delta_to_old_future75_priced_subtotal_rub": 32.586894371385824,
+          "material_budget_at35pct_rub": 489.65,
+          "priced_excess_above35pct_budget_rub": 59.78100449853366,
+          "full_food_cost_rub": null,
+          "actual_competitor_food_cost": null,
+          "finished_set_weight_g": null
+        }
+      }
+    },
+    {
+      "id": "kalifila",
+      "name": "Калифила",
+      "price_rub": 1439,
+      "published_set_weight_g": null,
+      "pieces": 32,
+      "rolls": [
+        "P",
+        "C",
+        "B",
+        "Z"
+      ],
+      "hat_count": 1,
+      "scenarios": {
+        "100": {
+          "inside_g_per_roll": 100,
+          "inside_g_per_set": 400,
+          "rice_g_per_set": 440,
+          "yaki_g_per_set": 75,
+          "priced_food_subtotal_rub": 569.88314882234,
+          "priced_subtotal_fc_at_competitor_price": 0.3960272055749409,
+          "unpriced_takuan_g": 20,
+          "unpriced_lines": [
+            {
+              "roll_id": "B",
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            },
+            {
+              "roll_id": "Z",
+              "role": "inner",
+              "component": "takuan",
+              "name": "Такуан / редька маринованная",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": null,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            },
+            {
+              "roll_id": "Z",
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "box_proxy_rub": 11,
+          "priced_food_plus_box_proxy_rub": 580.88314882234,
+          "priced_food_plus_box_proxy_ratio": 0.4036714029342182,
+          "old_future75_priced_subtotal_rub": 570.366297480282,
+          "delta_to_old_future75_priced_subtotal_rub": -0.48314865794202433,
+          "material_budget_at35pct_rub": 503.65,
+          "priced_excess_above35pct_budget_rub": 66.23314882234001,
+          "full_food_cost_rub": null,
+          "actual_competitor_food_cost": null,
+          "finished_set_weight_g": null
+        },
+        "110": {
+          "inside_g_per_roll": 110,
+          "inside_g_per_set": 440,
+          "rice_g_per_set": 440,
+          "yaki_g_per_set": 75,
+          "priced_food_subtotal_rub": 600.0964608859223,
+          "priced_subtotal_fc_at_competitor_price": 0.4170232528741642,
+          "unpriced_takuan_g": 20,
+          "unpriced_lines": [
+            {
+              "roll_id": "B",
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            },
+            {
+              "roll_id": "Z",
+              "role": "inner",
+              "component": "takuan",
+              "name": "Такуан / редька маринованная",
+              "quantity": 20,
+              "unit": "g",
+              "unit_cost_rub": null,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            },
+            {
+              "roll_id": "Z",
+              "role": "sprinkle",
+              "component": "sesame",
+              "name": "Кунжут белый",
+              "quantity": null,
+              "unit": "g",
+              "unit_cost_rub": 0.285,
+              "priced_cost_rub": null,
+              "unpriced_leaves": []
+            }
+          ],
+          "box_proxy_rub": 11,
+          "priced_food_plus_box_proxy_rub": 611.0964608859223,
+          "priced_food_plus_box_proxy_ratio": 0.4246674502334415,
+          "old_future75_priced_subtotal_rub": 570.366297480282,
+          "delta_to_old_future75_priced_subtotal_rub": 29.73016340564027,
+          "material_budget_at35pct_rub": 503.65,
+          "priced_excess_above35pct_budget_rub": 96.4464608859223,
+          "full_food_cost_rub": null,
+          "actual_competitor_food_cost": null,
+          "finished_set_weight_g": null
+        }
+      }
+    }
+  ],
+  "checks": {
+    "frozen_source_hashes_match": true,
+    "inside_endpoints_exact_100_and110": true,
+    "ready_rice110_all_rolls": true,
+    "covers50_and_no_yaki_on_P_Z": true,
+    "hats75_and_set_counts2_2_1": true,
+    "each_selected_inside_primary_at_least30pct_actual_product": true,
+    "no_inside_cheese_with_crab": true,
+    "no_double_coating_or_yield_for_H": true,
+    "source_cards_and_prices_not_modified": true,
+    "unknowns_not_replaced_with_zero": true,
+    "no_finished_weight_inference": true,
+    "max_two_identical_rolls": true
+  },
+  "limits": [
+    "Two deliberate whole recipes at100/110g, not averaging old cards or1–3g economy trimming. Growth component explicitly listed; total endpoints do not uniquely determine distribution or taste.",
+    "Base110greadyrice and100/110g prepared inner inputs refer to assembly before final cooking. Not confirmed finished/delivered weight. Covers/hats/outermasago/frying/drizzles do not count as inner filling.",
+    "P/Z have no chosen primary inside; fish-only50gcover outside. Ingredients/splits changed to our explicit new versions; competitor photos do not prove these recipes.",
+    "Every chosen primary inside has>=30% including actual crab/shrimp content of mixtures. Rice/hat/cover not denominator.",
+    "H50gbatteredshrimp is not50g shrimp. Its flour/crumbs already costed; additional fryer oil remains unpriced. M uses separate whole-rollfry25/15/5 assumption only.",
+    "T takes our preparedsalmon assembly input, not a confirmed grilled-salmon recipe/yield. If prior grilling is required, its recipe/yield must be separately specified.",
+    "Takuan currentprice/drainyield unknown. Sesame price known but quantity unknown. Water and Hfryer oil unpriced. These are material subtotals excluding unknowns, not complete delivered cost.",
+    "Packaging11/set only past proxy, capacity unconfirmed for bigger sets; sidekits/bags/labour/electricity/delivery/taxes/equipment excluded.",
+    "Competitor prices1189/1399/1439 fixed from22Oct live source as scenario denominator; no discounts/bonuses/delivery assumed.",
+    "Old sources, approved recipes and real menu remain unchanged. Costs/prices/portion designs not production approval."
+  ],
+  "takuan_addition_formula_rub_per_kalifila": "20 * purchase_price_rub_per_kg / (1000 * drained_yield_fraction)",
+  "source_sha256": {
+    "2026-10-22-chicken-rolls-and-sets/inputs.json": "94f9862e70d410c0cdfbd0eb3fc7e206f88bcbac396a90eacf817851b6b1c8da",
+    "2026-10-22-wasabist-three-sets/inputs.json": "b653a9ef14e79aa0a481ba17cf49d59bd87fd6f77e77740d3fcdedb02a7e9bac",
+    "2026-10-22-wasabist-three-sets/results.json": "1500a4715342adb445e43c4c79c3552a27aa247a30b9d352f5bda6da885a9198",
+    "2026-10-22-wasabist-three-sets/live-dom.json": "204592c863a2b6ccd4f09b549991d01648db7e627605f2e6827fc8df81bccb45",
+    "2026-10-22-wasabist-three-sets/teplo-analogs.json": "e28fb5e2acba25ffbde85cd5a06fe70bed5faa3fd9facb186fc3411f5cda6090"
+  }
+}

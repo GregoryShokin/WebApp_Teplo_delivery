@@ -1,0 +1,21 @@
+{
+  "status": "pass",
+  "checks": {
+    "frozen_source_hashes_match": true,
+    "inside_endpoints_exact_100_and110": true,
+    "ready_rice110_all_rolls": true,
+    "covers50_and_no_yaki_on_P_Z": true,
+    "hats75_and_set_counts2_2_1": true,
+    "each_selected_inside_primary_at_least30pct_actual_product": true,
+    "no_inside_cheese_with_crab": true,
+    "no_double_coating_or_yield_for_H": true,
+    "source_cards_and_prices_not_modified": true,
+    "unknowns_not_replaced_with_zero": true,
+    "no_finished_weight_inference": true,
+    "max_two_identical_rolls": true
+  },
+  "input_sha256": "27aef8c1a36c8291a6345a61754fe892fde76024e598120d566fcd3ceb59201a",
+  "results_sha256": "745906304ec5d63c31f81e7da0fbe6cefa1192db76753104bc2708ea5f8937a2",
+  "static_report_only": "local file browser preview previously denied by URL policy; not attempted here",
+  "independent_review": "see independent-qa.json when present"
+}
