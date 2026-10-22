@@ -1,0 +1,90 @@
+{
+  "as_of": "2026-10-22",
+  "recorded_utc": "2026-10-22T17:17:07.014357+00:00",
+  "task": "Official METRO indicative price for takuan/marinated radish",
+  "search_domains": [
+    "online.metro-cc.ru",
+    "metro-cc.ru"
+  ],
+  "status": "partial_official_search_cache_one_relevant_product_found_live_not_verified",
+  "live_access": {
+    "attempted_url": "https://online.metro-cc.ru/category/bakaleya/kuhni-mira",
+    "tool": "web.open",
+    "result": "400 Redirect loop detected",
+    "live_card_price_confirmed": false,
+    "alternate_channel_bypass_attempted": false,
+    "handling": "Stopped live opening after redirect failure; continued only permitted official search-cache research."
+  },
+  "candidates": [
+    {
+      "name": "Редька Hansey маринованная,600г",
+      "brand": "Hansey",
+      "product_card_url": null,
+      "listing_url": "https://online.metro-cc.ru/category/bakaleya/kuhni-mira",
+      "evidence_type": "official_category_search_cache_not_live_product_card",
+      "search_cache_age_label": "last month",
+      "exact_cache_timestamp": null,
+      "observed_region_header": "Москва, Ул.Ленинградское шоссе,д.71Г(м.Речной вокзал)",
+      "target_region": "Volgodonsk / Teplo delivery location not checked",
+      "article_number": null,
+      "label_package_mass_g": 600,
+      "mass_with_brine_g": null,
+      "net_mass_of_main_product_g": null,
+      "drained_weight_g": null,
+      "drained_yield": null,
+      "comparability_to_yellow_sushi_takuan": "not_verified_no_product_ingredients_or_color_specification_obtained",
+      "regular_observation": {
+        "price_rub_per_pack": 189,
+        "price_rub_per_label_kg": 315.0,
+        "price_type": "unmarked_regular_price_in_official_cached_category",
+        "channel": "online price189; cachedTCpricealso189 from1pack",
+        "availability_cached": "В корзину;Товара много",
+        "availability_live": null,
+        "current_price_for_target_region": null,
+        "source_url": "https://online.metro-cc.ru/category/bakaleya/kuhni-mira"
+      },
+      "alternative_cached_promo_observation": {
+        "price_rub_per_pack": 179,
+        "regular_crossed_out_rub": 189,
+        "price_rub_per_label_kg": 298.33333333333337,
+        "discount_display": "-5%",
+        "channel": "online",
+        "promotion_validity_dates": null,
+        "cached_TС_price_rub_per_pack": 159,
+        "cached_TС_price_rub_per_label_kg": 265.0,
+        "cached_TС_oldprice_rub": 189,
+        "availability_cached": "Только в торговом центре;Товара много",
+        "availability_live": null,
+        "source_url": "https://online.metro-cc.ru/category/bakaleya/kuhni-mira/f/strana-proizvoditel/kitay",
+        "search_cache_age_label": "last month",
+        "note": "Separate cached observation, no chronological ordering or current promotional validity established. Not chosen as regular benchmark."
+      }
+    }
+  ],
+  "working_reference": {
+    "purchase_price_rub_per_label_kg": 315,
+    "basis": "189rub/0.600kg regular cached official listing; conditional planning reference only",
+    "cost_per_drained_ready_g": null,
+    "formula_for_q_ready_g": "315 * q_ready_g / (1000 * assumed_or_measured_drained_yield)",
+    "20g_ready_cost_formula_rub": "6.30 / drained_yield; no actual yield assigned",
+    "label600g_is_confirmed_drained_main_product": false
+  },
+  "excluded_substitutes": [
+    {
+      "name": "Редька Дайкон",
+      "url": "https://online.metro-cc.ru/products/redis-dajkon-470345",
+      "reason": "Fresh raw daikon, not marinated takuan;151rub/kg cached price not used."
+    },
+    {
+      "name": "Редька зеленая/черная",
+      "reason": "Fresh root vegetables, not relevant substitutes for purchased pickled radish."
+    }
+  ],
+  "limits": [
+    "Only one relevant marinated-radish listing found;1–3 product cards not fabricated.",
+    "Individual product URL,ingredients,yellowtakuan identity and drained/netmain-product weight not established.",
+    "Official search result gave cached page text; it is not a live22Octregional stock/quote check.",
+    "No login/order/message/API/privatecredential research; no repository changes.",
+    "Do not use fresh-daikon price or historical2023Teplo360/kg as this METRO product price."
+  ]
+}

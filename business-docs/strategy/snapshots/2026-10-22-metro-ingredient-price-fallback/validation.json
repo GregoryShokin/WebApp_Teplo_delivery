@@ -1,0 +1,40 @@
+{
+  "status": "pass",
+  "original_quick_validator_results": [
+    {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/skills/teplo-unit-economics",
+      "valid": true,
+      "message": "Skill is valid!"
+    },
+    {
+      "path": "/Users/grigorii/.codex/worktrees/teplo-modernization-goals/Teplo-all-for-business/skills/teplo-profit-strategy",
+      "valid": true,
+      "message": "Skill is valid!"
+    },
+    {
+      "path": "/Users/grigorii/.codex/skills/teplo-unit-economics",
+      "valid": true,
+      "message": "Skill is valid!"
+    },
+    {
+      "path": "/Users/grigorii/.codex/skills/teplo-profit-strategy",
+      "valid": true,
+      "message": "Skill is valid!"
+    },
+    {
+      "path": "/Users/grigorii/.codex/skills/teplo-rolls-analysis",
+      "valid": true,
+      "message": "Skill is valid!"
+    }
+  ],
+  "yaml_loader": "Original validator checks unchanged; Ruby standard-library YAML.safe_load adapter used because PyYAML unavailable",
+  "new_policy_and_entrypoints_equal_in_repository_and_installed_copies": true,
+  "new_owner_decision_sections_equal": true,
+  "preexisting_owner_reference_differences_preserved": true,
+  "frontmatter_unchanged": true,
+  "price_conversion_and_yield_sensitivity_verified": true,
+  "source_hashes_verified": true,
+  "static_html_tables_and_links_verified": true,
+  "semantic_review": "Independent agent PASS; no conflicts or unlabelled yields",
+  "visual_render": "not attempted; local file browser preview previously denied by URL policy"
+}

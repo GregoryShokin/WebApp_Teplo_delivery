@@ -1,0 +1,256 @@
+{
+  "as_of": "2026-10-22",
+  "status": "conditional_external_price_reference_not_iiko_purchase",
+  "price_type": "metro_reference",
+  "radish_price_rub_per_label_kg": 315,
+  "source_status": "partial_official_search_cache_one_relevant_product_found_live_not_verified",
+  "source_sha256": {
+    "../2026-10-22-wasabist-new-model/results.json": "745906304ec5d63c31f81e7da0fbe6cefa1192db76753104bc2708ea5f8937a2",
+    "metro-price-audit.json": "1310e448dc5aed0f8fff12604cb3033e46f6f6987dab36cdedffe6cd6ef81d5a"
+  },
+  "sets": [
+    {
+      "id": "four",
+      "name": "Четыре по цене трёх",
+      "price_rub": 1189,
+      "scenarios": {
+        "100": [
+          {
+            "assumed_ready_yield": 1,
+            "yield_measured": false,
+            "yield_basis": "1.0 matches old iiko amountIn=amountOut accounting usage, not proven drain yield",
+            "takuan_ready_g": 0,
+            "takuan_reference_cost_rub": 0.0,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 421.2705292049286,
+            "priced_ingredients_ratio_at_competitor_price": 0.35430658469716453,
+            "with_old_box11_proxy_rub": 432.2705292049286,
+            "full_actual_food_cost_rub": null
+          },
+          {
+            "assumed_ready_yield": 0.9,
+            "yield_measured": false,
+            "yield_basis": "sensitivity only, not a measured or owner-approved yield",
+            "takuan_ready_g": 0,
+            "takuan_reference_cost_rub": 0.0,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 421.2705292049286,
+            "priced_ingredients_ratio_at_competitor_price": 0.35430658469716453,
+            "with_old_box11_proxy_rub": 432.2705292049286,
+            "full_actual_food_cost_rub": null
+          },
+          {
+            "assumed_ready_yield": 0.8,
+            "yield_measured": false,
+            "yield_basis": "sensitivity only, not a measured or owner-approved yield",
+            "takuan_ready_g": 0,
+            "takuan_reference_cost_rub": 0.0,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 421.2705292049286,
+            "priced_ingredients_ratio_at_competitor_price": 0.35430658469716453,
+            "with_old_box11_proxy_rub": 432.2705292049286,
+            "full_actual_food_cost_rub": null
+          }
+        ],
+        "110": [
+          {
+            "assumed_ready_yield": 1,
+            "yield_measured": false,
+            "yield_basis": "1.0 matches old iiko amountIn=amountOut accounting usage, not proven drain yield",
+            "takuan_ready_g": 0,
+            "takuan_reference_cost_rub": 0.0,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 439.4687479804388,
+            "priced_ingredients_ratio_at_competitor_price": 0.36961206726697965,
+            "with_old_box11_proxy_rub": 450.4687479804388,
+            "full_actual_food_cost_rub": null
+          },
+          {
+            "assumed_ready_yield": 0.9,
+            "yield_measured": false,
+            "yield_basis": "sensitivity only, not a measured or owner-approved yield",
+            "takuan_ready_g": 0,
+            "takuan_reference_cost_rub": 0.0,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 439.4687479804388,
+            "priced_ingredients_ratio_at_competitor_price": 0.36961206726697965,
+            "with_old_box11_proxy_rub": 450.4687479804388,
+            "full_actual_food_cost_rub": null
+          },
+          {
+            "assumed_ready_yield": 0.8,
+            "yield_measured": false,
+            "yield_basis": "sensitivity only, not a measured or owner-approved yield",
+            "takuan_ready_g": 0,
+            "takuan_reference_cost_rub": 0.0,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 439.4687479804388,
+            "priced_ingredients_ratio_at_competitor_price": 0.36961206726697965,
+            "with_old_box11_proxy_rub": 450.4687479804388,
+            "full_actual_food_cost_rub": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "ocean",
+      "name": "Океан",
+      "price_rub": 1399,
+      "scenarios": {
+        "100": [
+          {
+            "assumed_ready_yield": 1,
+            "yield_measured": false,
+            "yield_basis": "1.0 matches old iiko amountIn=amountOut accounting usage, not proven drain yield",
+            "takuan_ready_g": 0,
+            "takuan_reference_cost_rub": 0.0,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 530.3218951107784,
+            "priced_ingredients_ratio_at_competitor_price": 0.3790721194501633,
+            "with_old_box11_proxy_rub": 541.3218951107784,
+            "full_actual_food_cost_rub": null
+          },
+          {
+            "assumed_ready_yield": 0.9,
+            "yield_measured": false,
+            "yield_basis": "sensitivity only, not a measured or owner-approved yield",
+            "takuan_ready_g": 0,
+            "takuan_reference_cost_rub": 0.0,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 530.3218951107784,
+            "priced_ingredients_ratio_at_competitor_price": 0.3790721194501633,
+            "with_old_box11_proxy_rub": 541.3218951107784,
+            "full_actual_food_cost_rub": null
+          },
+          {
+            "assumed_ready_yield": 0.8,
+            "yield_measured": false,
+            "yield_basis": "sensitivity only, not a measured or owner-approved yield",
+            "takuan_ready_g": 0,
+            "takuan_reference_cost_rub": 0.0,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 530.3218951107784,
+            "priced_ingredients_ratio_at_competitor_price": 0.3790721194501633,
+            "with_old_box11_proxy_rub": 541.3218951107784,
+            "full_actual_food_cost_rub": null
+          }
+        ],
+        "110": [
+          {
+            "assumed_ready_yield": 1,
+            "yield_measured": false,
+            "yield_basis": "1.0 matches old iiko amountIn=amountOut accounting usage, not proven drain yield",
+            "takuan_ready_g": 0,
+            "takuan_reference_cost_rub": 0.0,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 549.4310044985336,
+            "priced_ingredients_ratio_at_competitor_price": 0.3927312398131048,
+            "with_old_box11_proxy_rub": 560.4310044985336,
+            "full_actual_food_cost_rub": null
+          },
+          {
+            "assumed_ready_yield": 0.9,
+            "yield_measured": false,
+            "yield_basis": "sensitivity only, not a measured or owner-approved yield",
+            "takuan_ready_g": 0,
+            "takuan_reference_cost_rub": 0.0,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 549.4310044985336,
+            "priced_ingredients_ratio_at_competitor_price": 0.3927312398131048,
+            "with_old_box11_proxy_rub": 560.4310044985336,
+            "full_actual_food_cost_rub": null
+          },
+          {
+            "assumed_ready_yield": 0.8,
+            "yield_measured": false,
+            "yield_basis": "sensitivity only, not a measured or owner-approved yield",
+            "takuan_ready_g": 0,
+            "takuan_reference_cost_rub": 0.0,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 549.4310044985336,
+            "priced_ingredients_ratio_at_competitor_price": 0.3927312398131048,
+            "with_old_box11_proxy_rub": 560.4310044985336,
+            "full_actual_food_cost_rub": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "kalifila",
+      "name": "Калифила",
+      "price_rub": 1439,
+      "scenarios": {
+        "100": [
+          {
+            "assumed_ready_yield": 1,
+            "yield_measured": false,
+            "yield_basis": "1.0 matches old iiko amountIn=amountOut accounting usage, not proven drain yield",
+            "takuan_ready_g": 20,
+            "takuan_reference_cost_rub": 6.3,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 576.18314882234,
+            "priced_ingredients_ratio_at_competitor_price": 0.4004052458807088,
+            "with_old_box11_proxy_rub": 587.18314882234,
+            "full_actual_food_cost_rub": null
+          },
+          {
+            "assumed_ready_yield": 0.9,
+            "yield_measured": false,
+            "yield_basis": "sensitivity only, not a measured or owner-approved yield",
+            "takuan_ready_g": 20,
+            "takuan_reference_cost_rub": 7.0,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 576.88314882234,
+            "priced_ingredients_ratio_at_competitor_price": 0.4008916948035719,
+            "with_old_box11_proxy_rub": 587.88314882234,
+            "full_actual_food_cost_rub": null
+          },
+          {
+            "assumed_ready_yield": 0.8,
+            "yield_measured": false,
+            "yield_basis": "sensitivity only, not a measured or owner-approved yield",
+            "takuan_ready_g": 20,
+            "takuan_reference_cost_rub": 7.875,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 577.75814882234,
+            "priced_ingredients_ratio_at_competitor_price": 0.4014997559571508,
+            "with_old_box11_proxy_rub": 588.75814882234,
+            "full_actual_food_cost_rub": null
+          }
+        ],
+        "110": [
+          {
+            "assumed_ready_yield": 1,
+            "yield_measured": false,
+            "yield_basis": "1.0 matches old iiko amountIn=amountOut accounting usage, not proven drain yield",
+            "takuan_ready_g": 20,
+            "takuan_reference_cost_rub": 6.3,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 606.3964608859222,
+            "priced_ingredients_ratio_at_competitor_price": 0.4214012931799321,
+            "with_old_box11_proxy_rub": 617.3964608859222,
+            "full_actual_food_cost_rub": null
+          },
+          {
+            "assumed_ready_yield": 0.9,
+            "yield_measured": false,
+            "yield_basis": "sensitivity only, not a measured or owner-approved yield",
+            "takuan_ready_g": 20,
+            "takuan_reference_cost_rub": 7.0,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 607.0964608859223,
+            "priced_ingredients_ratio_at_competitor_price": 0.42188774210279517,
+            "with_old_box11_proxy_rub": 618.0964608859223,
+            "full_actual_food_cost_rub": null
+          },
+          {
+            "assumed_ready_yield": 0.8,
+            "yield_measured": false,
+            "yield_basis": "sensitivity only, not a measured or owner-approved yield",
+            "takuan_ready_g": 20,
+            "takuan_reference_cost_rub": 7.875,
+            "priced_ingredient_subtotal_with_metro_reference_rub": 607.9714608859223,
+            "priced_ingredients_ratio_at_competitor_price": 0.4224958032563741,
+            "with_old_box11_proxy_rub": 618.9714608859223,
+            "full_actual_food_cost_rub": null
+          }
+        ]
+      }
+    }
+  ],
+  "unknowns": [
+    "drained/main-product mass of Hansey600g pack",
+    "exact match to yellow sushi takuan",
+    "live price and availability in Teplo region",
+    "sesame dose, water, part of fryer oil; packaging11/set remains a proxy"
+  ],
+  "limits": [
+    "All recipes, covers, hats, prices of sets and other ingredients unchanged fromQ34.",
+    "Ready radish20g costs6.30/y; accounting center y=1 is not a measured drainage yield.",
+    "Historical2023 price360 is preserved inS28, not silently overwritten.",
+    "No historical P&L, iiko price or production recipe changed."
+  ]
+}
