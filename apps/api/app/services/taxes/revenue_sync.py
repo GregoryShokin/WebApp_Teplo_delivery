@@ -11,22 +11,33 @@
    задвоится. Обратно так же: месячная строка вытесняет ранее залитые дни этого месяца.
 2. **Правки логируются только при реальном изменении суммы.** Повторная заливка тех же
    чисел журнал не засоряет.
+
+Источник по умолчанию — живой OLAP iiko (``sync_revenue_from_iiko``): ночная задача
+планировщика и кнопка на странице «Налоги». Месячные строки января–июня 2026 залиты из
+выгрузок ``revenue_by_direction`` скриптом ``sync_tax_revenue``; подневный запрос с теми же
+фильтрами дал те же суммы до копейки (сверено на проде 22.10.2026 по январю и июню).
 """
 
 from __future__ import annotations
 
 import calendar
-from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
-from datetime import date
+from collections.abc import Awaitable, Callable, Iterable, Sequence
+from dataclasses import dataclass, field
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tax import IikoRevenuePeriod, IikoRevenueRevision
+from app.services.taxes.repository import DEFAULT_DEPARTMENT
 
 ZERO = Decimal("0")
+
+# Раньше 2026 года ИП был на патенте: база УСН не нужна, и окно подкачки её не тянет.
+SYNC_FLOOR = date(2026, 1, 1)
+
+DailyRevenueFetcher = Callable[[AsyncSession, date, date], Awaitable[dict[date, Decimal]]]
 
 
 @dataclass(frozen=True)
@@ -239,4 +250,155 @@ def records_from_iiko_monthly(
         revenue_gross=gross,
         discount_amount=discount,
         source="iiko_olap",
+    )
+
+
+class RevenueSyncError(RuntimeError):
+    """Подкачка выручки из iiko не удалась. База налога при этом не тронута."""
+
+
+@dataclass
+class IikoRevenueSyncReport:
+    """Итог подкачки: окно, сколько дней пришло и по месяцам — для страницы и журнала."""
+
+    date_from: date
+    date_to: date
+    days: int
+    total: Decimal
+    result: SyncResult
+    months: dict[str, Decimal] = field(default_factory=dict)
+
+    def as_dict(self) -> dict:
+        return {
+            "date_from": self.date_from.isoformat(),
+            "date_to": self.date_to.isoformat(),
+            "days": self.days,
+            "total": str(self.total),
+            "months": {k: str(v) for k, v in self.months.items()},
+            **self.result.as_dict(),
+        }
+
+
+async def revenue_sync_window(
+    session: AsyncSession, *, today: date, department: str = DEFAULT_DEPARTMENT
+) -> tuple[date, date]:
+    """Окно подкачки: с начала прошлого месяца (iiko правит закрытые дни задним числом)
+    по вчера — и раньше, если в году есть месяцы вовсе без выручки.
+
+    Вторая половина правила — то, чего не хватило осенью 2026: выручку за январь–июнь
+    залили руками, июль–сентябрь никто не догрузил, и расчёт УСН за III квартал показал 0.
+    С этим правилом первый же ночной прогон сам догружает все пропущенные месяцы года.
+    """
+    date_to = today - timedelta(days=1)
+    prev_month_start = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+    year_start = max(date(date_to.year, 1, 1), SYNC_FLOOR)
+    covered = {
+        (d.year, d.month)
+        for d in (
+            await session.scalars(
+                select(IikoRevenuePeriod.period_start).where(
+                    IikoRevenuePeriod.department == department,
+                    IikoRevenuePeriod.period_start >= year_start,
+                    IikoRevenuePeriod.period_start <= date_to,
+                )
+            )
+        ).all()
+    }
+    date_from = prev_month_start
+    cursor = year_start
+    while cursor <= date_to:
+        if (cursor.year, cursor.month) not in covered:
+            date_from = min(date_from, cursor)
+            break
+        cursor = _last_day_of_month(cursor) + timedelta(days=1)
+    return max(date_from, SYNC_FLOOR), date_to
+
+
+async def _fetch_tax_revenue(
+    session: AsyncSession, date_from: date, date_to: date
+) -> dict[date, Decimal]:
+    from app.services.iiko_revenue import fetch_daily_revenue
+
+    return await fetch_daily_revenue(session, date_from, date_to, exclude_deleted=True)
+
+
+async def sync_revenue_from_iiko(
+    session: AsyncSession,
+    *,
+    date_from: date,
+    date_to: date,
+    department: str = DEFAULT_DEPARTMENT,
+    sync_reason: str = "daily_job",
+    fetch: DailyRevenueFetcher | None = None,
+) -> IikoRevenueSyncReport:
+    """Подтянуть подневную выручку из iiko за окно и залить её в базу налога.
+
+    Окно расширяется до начала месяца: подневные строки вытесняют месячную строку своего
+    месяца, и неполный месяц дней занизил бы базу. День, который был в базе, а теперь
+    из отчёта iiko пропал (заказы дня удалены), обнуляется с записью в журнал правок.
+
+    Пустой ответ iiko — ошибка, а не «выручки не было»: разбор OLAP молча возвращает пустой
+    словарь на любой сбой формата, и записать такое — значит тихо занизить налог.
+    """
+    date_from = date_from.replace(day=1)
+    if date_from > date_to:
+        raise RevenueSyncError(
+            f"Пустое окно подкачки: {date_from.isoformat()} позже {date_to.isoformat()}."
+        )
+    try:
+        by_day = await (fetch or _fetch_tax_revenue)(session, date_from, date_to)
+    except SystemExit as exc:
+        # IikoClient без адреса сервера бросает SystemExit — он пробивает обработчики
+        # FastAPI и планировщика и роняет процесс целиком. Превращаем в обычную ошибку.
+        raise RevenueSyncError("iiko не настроен на этом стенде — выручку взять негде.") from exc
+    except Exception as exc:  # noqa: BLE001 - любой сбой iiko = база не тронута
+        raise RevenueSyncError(f"iiko не ответил: {exc}") from exc
+
+    by_day = {d: v for d, v in by_day.items() if date_from <= d <= date_to}
+    if not by_day:
+        raise RevenueSyncError(
+            f"iiko вернул пустой отчёт за {date_from.strftime('%d.%m.%Y')}–"
+            f"{date_to.strftime('%d.%m.%Y')} — база налога не тронута."
+        )
+
+    records = [
+        RevenueRecord(
+            period_start=d,
+            period_end=d,
+            granularity="day",
+            department=department,
+            revenue_net=v,
+        )
+        for d, v in sorted(by_day.items())
+    ]
+    stale_days = (
+        await session.scalars(
+            select(IikoRevenuePeriod.period_start).where(
+                IikoRevenuePeriod.department == department,
+                IikoRevenuePeriod.granularity == "day",
+                IikoRevenuePeriod.period_start >= date_from,
+                IikoRevenuePeriod.period_start <= date_to,
+            )
+        )
+    ).all()
+    records.extend(
+        RevenueRecord(
+            period_start=d, period_end=d, granularity="day", department=department,
+            revenue_net=ZERO,
+        )
+        for d in sorted(set(stale_days) - set(by_day))
+    )
+
+    result = await sync_revenue_periods(session, records, sync_reason=sync_reason)
+    months: dict[str, Decimal] = {}
+    for d, v in by_day.items():
+        key = f"{d.year}-{d.month:02d}"
+        months[key] = months.get(key, ZERO) + v
+    return IikoRevenueSyncReport(
+        date_from=date_from,
+        date_to=date_to,
+        days=len(by_day),
+        total=sum(by_day.values(), ZERO),
+        result=result,
+        months=dict(sorted(months.items())),
     )

@@ -1,11 +1,18 @@
 """Заливка выручки iiko в базу налога (``iiko_revenue_period``).
 
-Источник по умолчанию — локальный кэш выгрузок ``revenue_by_direction`` (месячные JSON).
-Это осознанный первый шаг: месячной гранулярности для налога ДОСТАТОЧНО (все отчётные
-периоды УСН заканчиваются на границе месяца), а прод-контейнер с прямым доступом к iiko
-подключается отдельно. Целевой источник зафиксирован в реестре ``taxes.sources``.
+Два источника:
+
+* ``--from-iiko`` — живой OLAP iiko, подневно (то же, что ночная задача планировщика и
+  кнопка на странице «Налоги»). Запускается в прод-контейнере: iiko привязан к его IP.
+  Без ``--date-from`` окно считается само — с начала прошлого месяца плюс все месяцы
+  года без выручки;
+* по умолчанию — локальный кэш выгрузок ``revenue_by_direction`` (месячные JSON), которым
+  залиты январь–июнь 2026.
 
 Usage:
+    python -m app.scripts.sync_tax_revenue --from-iiko                         # dry-run
+    python -m app.scripts.sync_tax_revenue --from-iiko --apply
+    python -m app.scripts.sync_tax_revenue --from-iiko --date-from 2026-07-01 --apply
     python -m app.scripts.sync_tax_revenue                       # dry-run, весь кэш
     python -m app.scripts.sync_tax_revenue --apply               # записать
     python -m app.scripts.sync_tax_revenue --apply --year 2026   # только 2026
@@ -18,12 +25,16 @@ import argparse
 import asyncio
 import json
 import re
+from datetime import date
 from pathlib import Path
 
 from app.db.session import AsyncSessionLocal
 from app.services.taxes.repository import DEFAULT_DEPARTMENT
 from app.services.taxes.revenue_sync import (
+    RevenueSyncError,
     records_from_iiko_monthly,
+    revenue_sync_window,
+    sync_revenue_from_iiko,
     sync_revenue_periods,
 )
 
@@ -56,7 +67,42 @@ def _load_records(cache_dir: Path, year: int | None, department: str):
         yield records_from_iiko_monthly(rows, year=y, month=mth, department=department), y, mth
 
 
+async def _run_from_iiko(args: argparse.Namespace) -> None:
+    async with AsyncSessionLocal() as session:
+        date_from, date_to = await revenue_sync_window(
+            session, today=date.today(), department=args.department
+        )
+        if args.date_from:
+            date_from = date.fromisoformat(args.date_from)
+        if args.date_to:
+            date_to = date.fromisoformat(args.date_to)
+        print(f"Источник: iiko OLAP, {date_from.isoformat()} … {date_to.isoformat()}")
+        try:
+            report = await sync_revenue_from_iiko(
+                session,
+                date_from=date_from,
+                date_to=date_to,
+                department=args.department,
+                sync_reason="backfill",
+            )
+        except RevenueSyncError as exc:
+            raise SystemExit(f"Подкачка не удалась: {exc}") from exc
+        for month, total in report.months.items():
+            print(f"  {month}: выручка (со скидками) {total:,.2f}")
+        print(f"\nДней: {report.days}, сумма {report.total:,.2f}")
+        if args.apply:
+            await session.commit()
+            print(f"Записано: {report.result.as_dict()}")
+        else:
+            await session.rollback()
+            print(f"DRY-RUN (без записи): {report.result.as_dict()}")
+            print("Повторите с --apply, чтобы записать.")
+
+
 async def _run(args: argparse.Namespace) -> None:
+    if args.from_iiko:
+        await _run_from_iiko(args)
+        return
     cache_dir = Path(args.cache_dir)
     if not cache_dir.is_dir():
         raise SystemExit(f"Каталог кэша не найден: {cache_dir}")
@@ -95,6 +141,13 @@ def main() -> None:
     parser.add_argument("--department", default=DEFAULT_DEPARTMENT, help="Департамент iiko")
     parser.add_argument(
         "--cache-dir", default=str(DEFAULT_CACHE_DIR), help="Каталог выгрузок iiko"
+    )
+    parser.add_argument(
+        "--from-iiko", action="store_true", help="Брать выручку живым запросом к iiko"
+    )
+    parser.add_argument("--date-from", default=None, help="Начало окна, ГГГГ-ММ-ДД (--from-iiko)")
+    parser.add_argument(
+        "--date-to", default=None, help="Конец окна, ГГГГ-ММ-ДД (--from-iiko); по умолчанию вчера"
     )
     asyncio.run(_run(parser.parse_args()))
 

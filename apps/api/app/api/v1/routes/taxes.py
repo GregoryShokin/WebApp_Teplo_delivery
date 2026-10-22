@@ -60,6 +60,7 @@ from app.schemas.taxes import (
     TaxPaymentRead,
     TaxPromotionResultRead,
     TaxPromotionSummaryRead,
+    TaxRevenueSyncRead,
     TaxSourceRead,
     TaxSourcesRead,
     TaxStateRead,
@@ -90,6 +91,11 @@ from app.services.taxes.obligations import is_settled, list_payable_obligations
 from app.services.taxes.promote import promote_ready_intakes
 from app.services.taxes.reconcile import Reconciliation, build_reconciliation
 from app.services.taxes.repository import load_tax_inputs
+from app.services.taxes.revenue_sync import (
+    RevenueSyncError,
+    revenue_sync_window,
+    sync_revenue_from_iiko,
+)
 from app.services.taxes.sources import (
     load_source_registry,
     registry_to_payload,
@@ -710,6 +716,35 @@ async def ai_review_everything(
         verdict=report.verdict,
         findings=[AiAuditFindingRead.model_validate(f) for f in report.findings],
         documents=[AiDocumentReviewRead.model_validate(d) for d in report.documents],
+    )
+
+
+@router.post("/revenue/refresh", response_model=TaxRevenueSyncRead, dependencies=TAXES_MANAGE)
+async def refresh_revenue(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> TaxRevenueSyncRead:
+    """Подтянуть выручку из iiko в базу налога прямо сейчас.
+
+    То же, что ночная задача планировщика: окно — с начала прошлого месяца по вчера плюс
+    все месяцы года без выручки. Кнопка нужна, когда плашка «Расчёт неполный» висит днём и
+    ждать ночи незачем. Сбой iiko отдаётся 502 с причиной; база налога при этом не тронута.
+    """
+    date_from, date_to = await revenue_sync_window(session, today=date.today())
+    try:
+        report = await sync_revenue_from_iiko(
+            session, date_from=date_from, date_to=date_to, sync_reason="manual_sync"
+        )
+    except RevenueSyncError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await session.commit()
+    return TaxRevenueSyncRead(
+        date_from=report.date_from,
+        date_to=report.date_to,
+        days=report.days,
+        total=report.total,
+        months=report.months,
+        **report.result.as_dict(),
     )
 
 

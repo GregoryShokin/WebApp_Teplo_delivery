@@ -843,6 +843,48 @@ async def poll_tax_documents() -> None:
 
 @scheduler.scheduled_job(
     "cron",
+    hour=5,
+    minute=40,
+    id="sync_tax_revenue",
+    max_instances=1,
+    coalesce=True,
+)
+async def sync_tax_revenue() -> None:
+    """Модуль «Налоги»: подневная выручка iiko → база налога (``iiko_revenue_period``).
+
+    Окно — с начала прошлого месяца по вчера плюс все месяцы года, где выручки нет вовсе
+    (см. ``revenue_sync_window``), поэтому пропущенные месяцы догружаются сами. Денег не
+    двигает; повторный прогон идемпотентен, правки задним числом пишутся в журнал.
+    """
+    settings = get_settings()
+    if not settings.tax_revenue_sync_enabled:
+        return
+    from app.services.taxes.revenue_sync import (
+        RevenueSyncError,
+        revenue_sync_window,
+        sync_revenue_from_iiko,
+    )
+
+    async with AsyncSessionLocal() as session:
+        try:
+            date_from, date_to = await revenue_sync_window(session, today=date.today())
+            report = await sync_revenue_from_iiko(
+                session, date_from=date_from, date_to=date_to, sync_reason="daily_job"
+            )
+            await session.commit()
+        except RevenueSyncError as exc:
+            await session.rollback()
+            logger.warning("sync_tax_revenue: %s", exc)
+            return
+        except Exception:  # noqa: BLE001 - подкачка не должна ронять планировщик
+            await session.rollback()
+            logger.warning("sync_tax_revenue: проход упал", exc_info=True)
+            return
+    logger.info("sync_tax_revenue: %s", report.as_dict())
+
+
+@scheduler.scheduled_job(
+    "cron",
     hour=7,
     minute=0,
     id="send_scheduled_payments",

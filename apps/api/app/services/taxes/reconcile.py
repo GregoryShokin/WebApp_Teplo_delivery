@@ -23,9 +23,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tax import TaxBankDraft, TaxDocumentIntake, TaxPayment, TaxPayrollLedger
-from app.services.taxes.bank_facts import payroll_facts_without_turnover
+from app.services.taxes.bank_facts import _month_from_due, payroll_facts_without_turnover
 from app.services.taxes.engine import (
     PERIOD_SEQ,
+    TaxState,
     compute_tax_state,
     fixed_contribution_due,
     fmt_money,
@@ -37,7 +38,11 @@ from app.services.taxes.official_payroll import (
     months_without_turnover,
     official_month_accrual,
 )
-from app.services.taxes.repository import load_tax_inputs, year_config
+from app.services.taxes.repository import (
+    load_tax_inputs,
+    missing_revenue_months,
+    year_config,
+)
 
 ZERO = Decimal("0")
 # Допуск сверки: налог округляется до рубля, поэтому расхождение ≤ 1 ₽ — не сигнал.
@@ -719,6 +724,232 @@ async def _injury_line(
     )
 
 
+def _extra_line(
+    *,
+    state: TaxState,
+    documented: Decimal | None,
+    unpaid_documented: Decimal | None,
+    paid: Decimal | None,
+    due: date | None,
+    as_of: date,
+    wallet_balance: Decimal,
+) -> ReconLine:
+    """Строка допвзноса 1 % при полной выручке."""
+    remaining = state.extra_accrued - (paid or ZERO)
+    if documented is None and remaining > TOLERANCE:
+        # Квартал закрыт, начисление выросло, а платёжки бухгалтера на прирост ещё нет.
+        # Раньше это читалось как «Сходится» — молча прятало остаток к доплате.
+        return ReconLine(
+            label="Допвзнос 1%",
+            tax_kind="contrib_extra_1pct",
+            period_code="year",
+            due_date=None,
+            calculated=state.extra_accrued,
+            documented=None,
+            paid=paid,
+            verdict="due",
+            severity="info",
+            messages=[
+                f"Начислено нарастающим итогом {fmt_money(state.extra_accrued)} ₽, уплачено "
+                f"{fmt_money(paid or ZERO)} ₽ — остаток {fmt_money(remaining)} ₽.",
+                "Платёжку на прирост бухгалтер ещё не присылала. Крайний срок по закону — "
+                "1 июля следующего года, платим по её платёжке.",
+            ],
+            payable_amount=None,
+        )
+    verdict, severity, messages = _classify(
+        calculated=state.extra_accrued,
+        documented=unpaid_documented,
+        paid=paid,
+        due_date=due,
+        as_of=as_of,
+        # Бухгалтер выписывает платёжку на ПРИРОСТ за квартал, а начисление ведётся
+        # нарастающим итогом за год: 116 360 уплачено + 105 628 по платёжке = 221 988.
+        documented_is_increment=True,
+    )
+    # Приростная платёжка сверяется с ОСТАТКОМ к доплате — его и передаём как ожидание.
+    _extra_action = _action_for(verdict, documented=unpaid_documented, expected=remaining)
+    return _offset_by_ens(
+        ReconLine(
+            label="Допвзнос 1%",
+            tax_kind="contrib_extra_1pct",
+            period_code="year",
+            due_date=due,
+            calculated=state.extra_accrued,
+            documented=documented,
+            paid=paid,
+            verdict=verdict,
+            severity=severity,
+            messages=messages,
+            action=_extra_action[0],
+            action_why=_extra_action[1],
+            payable_amount=_payable(
+                verdict,
+                documented=unpaid_documented,
+                calculated=state.extra_accrued,
+                expected=remaining,
+            ),
+        ),
+        expected=remaining,
+        wallet_balance=wallet_balance,
+        unpaid_documented=unpaid_documented,
+    )
+
+
+def _months_phrase(months: list[tuple[int, int]]) -> str:
+    """«июль–сентябрь» для трёх и более месяцев подряд, иначе через запятую."""
+    runs: list[list[int]] = []
+    for _year, month in months:
+        if runs and runs[-1][-1] == month - 1:
+            runs[-1].append(month)
+        else:
+            runs.append([month])
+    parts = []
+    for run in runs:
+        names = [_MONTHS_RU_GENITIVE[m - 1] for m in run]
+        parts.append(f"{names[0]}–{names[-1]}" if len(names) >= 3 else ", ".join(names))
+    return ", ".join(parts)
+
+
+def _unpaid_document(documented: Decimal | None, paid: Decimal | None) -> Decimal | None:
+    """Платёжка бухгалтера, по которой ещё не платили, — иначе None."""
+    if documented is None or documented <= ZERO:
+        return None
+    if paid is not None and paid + TOLERANCE >= documented:
+        return None
+    return documented
+
+
+def _incomplete_revenue_line(
+    *,
+    label: str,
+    tax_kind: str,
+    period_code: str,
+    period_title: str,
+    due: date | None,
+    documented: Decimal | None,
+    paid: Decimal | None,
+    partial: Decimal,
+    missing: list[tuple[int, int]],
+    payable: Decimal | None,
+) -> ReconLine:
+    """Строка, которую нельзя сверить: за часть месяцев периода нет выручки.
+
+    Раньше такая строка проходила обычную классификацию с расчётом по НЕПОЛНОЙ базе: в
+    октябре 2026 УСН за III квартал «насчитался» нулём (выручка была только по июнь), и
+    платёжка бухгалтера на 455 351 ₽ получила вердикт «Платить можно — переплата
+    зачтётся». Переплаты не было — был недогруз базы. Честный ответ — «расчёт неполный»:
+    своей цифры нет, а платить можно только по документу бухгалтера.
+    """
+    months = _months_phrase(missing)
+    messages = [
+        f"Нет выручки за {months}: расчёт за {period_title} неполный, сверять платёжку "
+        f"не с чем.",
+        f"По загруженной выручке выходит {fmt_money(partial)} ₽ — это недогруз базы, "
+        f"а не налог.",
+    ]
+    if documented is not None:
+        messages.append(f"Платёжка бухгалтера — {fmt_money(documented)} ₽.")
+    action_why = (
+        "Выручка подтягивается из iiko каждую ночь; чтобы не ждать, нажмите «Подтянуть "
+        "выручку из iiko»."
+    )
+    if payable is not None:
+        action_why += (
+            " До загрузки платить можно только по платёжке бухгалтера — проверить её "
+            "сумму пока нечем."
+        )
+    return ReconLine(
+        label=label,
+        tax_kind=tax_kind,
+        period_code=period_code,
+        due_date=due,
+        calculated=None,
+        documented=documented,
+        paid=paid,
+        verdict="incomplete",
+        severity="warning",
+        messages=messages,
+        action=f"Расчёт неполный — нет выручки за {months}",
+        action_why=action_why,
+        payable_amount=payable,
+    )
+
+
+def _latest_closed_period(year: int, as_of: date) -> str | None:
+    """Последний закрывшийся к срезу отчётный период года (q1/h1/9m/year)."""
+    closed = None
+    for period_code in PERIOD_SEQ:
+        if period_end_date(year, period_code) > as_of:
+            break
+        closed = period_code
+    return closed
+
+
+async def _enp_line_by_document(
+    session: AsyncSession,
+    *,
+    year: int,
+    month: int,
+    due: date,
+    documented: Decimal,
+    as_of: date,
+) -> ReconLine:
+    """Зарплатный ЕНП за месяц, по которому есть платёжка, но нет оборотки.
+
+    Оборотка раскладывает ЕНП на НДФЛ и взносы, и раньше без неё месяц в сверку не
+    попадал вовсе: оставался прогнозом, а прогноз в «Активные платежи» не идёт. В октябре
+    2026 так пропал ЕНП за сентябрь (19 913,92 ₽, срок 28.10): платёжка Натальи пришла, а
+    оборотку за сентябрь она не прислала. Платить по платёжке можно и без оборотки —
+    состав платежа потом разнесёт выписка (``bank_facts``), а оборотка, когда придёт,
+    пересоберёт строку по начислениям.
+    """
+    period = f"{year}-{month:02d}"
+    month_name = _MONTHS_RU_GENITIVE[month - 1]
+    forecast = None
+    try:
+        forecast = await official_month_accrual(
+            session, year=year, month=month, cfg=year_config(year)
+        )
+    except Exception:  # noqa: BLE001 - нет конфига года: строка живёт по одной платёжке
+        forecast = None
+    calculated = forecast.enp_total if forecast is not None and forecast.enp_total > 0 else None
+
+    verdict, severity = _due_verdict(documented, due, as_of)
+    messages = [
+        f"Оборотки за {month_name} бухгалтер не присылала — платим по её платёжке ЕНП: "
+        f"{fmt_money(documented)} ₽, срок {due.strftime('%d.%m.%Y')}.",
+        (
+            f"«Расчёт» — прогноз по карточкам сотрудников: взносы "
+            f"{fmt_money(forecast.contributions)} ₽ + НДФЛ {fmt_money(forecast.ndfl)} ₽."
+            if calculated is not None
+            else "Прогноза по карточкам сотрудников нет — сверить сумму не с чем."
+        ),
+        "Состав платежа (взносы в вычет УСН, НДФЛ — нет) разнесёт выписка; оборотка, когда "
+        "придёт, пересоберёт строку по начислениям.",
+    ]
+    return ReconLine(
+        label=f"Зарплатный ЕНП за {month_name}",
+        tax_kind="enp_payroll",
+        period_code=period,
+        due_date=due,
+        calculated=calculated,
+        documented=documented,
+        paid=None,
+        verdict=verdict,
+        severity=severity,
+        messages=messages,
+        action=(
+            "Оплатите — идут пени" if verdict == "overdue" else "Оплатите по платёжке бухгалтера"
+        ),
+        action_why=(
+            f"Оборотки за {month_name} нет, но платёжка ЕНП пришла — её сумма и есть к "
+            f"уплате. Запросите оборотку, чтобы подтвердить состав."
+        ),
+        payable_amount=documented if verdict != "ok" else None,
+    )
+
+
 async def build_reconciliation(
     session: AsyncSession, *, as_of: date
 ) -> Reconciliation:
@@ -743,6 +974,23 @@ async def build_reconciliation(
         paid = await _paid_amount(
             session, year=year, kind="usn_advance", period_code=period_code
         )
+        missing = await missing_revenue_months(session, as_of=p_end)
+        if missing:
+            lines.append(
+                _incomplete_revenue_line(
+                    label=f"УСН, {PERIOD_TITLES[period_code]}",
+                    tax_kind="usn_advance",
+                    period_code=period_code,
+                    period_title=PERIOD_TITLES[period_code],
+                    due=due,
+                    documented=documented,
+                    paid=paid,
+                    partial=calculated,
+                    missing=missing,
+                    payable=_unpaid_document(documented, paid),
+                )
+            )
+            continue
         # Бухгалтер не берёт травматизм в вычет («копейки»), движок берёт — её платёжка
         # систематически больше нашего расчёта ровно на уплаченный травматизм. Это разная
         # методика, а не ошибка: держим её как допуск, чтобы сверка не краснела каждый квартал.
@@ -799,15 +1047,30 @@ async def build_reconciliation(
         )
 
     # ── Допвзнос 1% (годовой, начисление нарастающим итогом) ─────────────────
-    state = compute_tax_state(await load_tax_inputs(session, as_of=as_of))
-    documented, due = await _documented_amount(
-        session, tax_kind="contrib_extra_1pct", period_code="h1"
+    # Бухгалтер выписывает платёжку на прирост за ЗАКРЫТЫЙ квартал, поэтому и начисление,
+    # и документ берём на конец последнего закрывшегося периода. Раньше здесь стояли срез
+    # «на сегодня» и намертво вшитая платёжка за II квартал: пока выручка грузилась только
+    # по закрытым месяцам, это совпадало, а с подневной подкачкой платёжка за III квартал
+    # (99 457 ₽) не была бы видна вовсе, и сверка сочла бы её «нулевой».
+    extra_period = _latest_closed_period(year, as_of)
+    extra_as_of = period_end_date(year, extra_period) if extra_period else as_of
+    state = compute_tax_state(await load_tax_inputs(session, as_of=extra_as_of))
+    documented, due = (
+        await _documented_amount(
+            session, tax_kind="contrib_extra_1pct", period_code=extra_period
+        )
+        if extra_period
+        else (None, None)
     )
     paid = await _paid_amount(
         session, year=year, kind="contrib_extra_1pct", period_code=None
     )
-    paid_for_document = await _paid_amount(
-        session, year=year, kind="contrib_extra_1pct", period_code="h1"
+    paid_for_document = (
+        await _paid_amount(
+            session, year=year, kind="contrib_extra_1pct", period_code=extra_period
+        )
+        if extra_period
+        else None
     )
     # Платёжка на прирост за квартал остаётся в документах после исполнения. Сверяем с
     # текущим остатком только её неоплаченную часть; иначе сразу после списания полная
@@ -817,48 +1080,34 @@ async def build_reconciliation(
         if documented is not None
         else None
     )
-    verdict, severity, messages = _classify(
-        calculated=state.extra_accrued,
-        documented=unpaid_documented,
-        paid=paid,
-        due_date=due,
-        as_of=as_of,
-        # Бухгалтер выписывает платёжку на ПРИРОСТ за квартал, а начисление ведётся
-        # нарастающим итогом за год: 116 360 уплачено + 105 628 по платёжке = 221 988.
-        documented_is_increment=True,
-    )
-    # Приростная платёжка сверяется с ОСТАТКОМ к доплате — его и передаём как ожидание.
-    _extra_action = _action_for(
-        verdict, documented=unpaid_documented, expected=state.extra_accrued - (paid or ZERO)
-    )
-    lines.append(
-        _offset_by_ens(
-            ReconLine(
+    extra_missing = await missing_revenue_months(session, as_of=extra_as_of)
+    if extra_missing:
+        lines.append(
+            _incomplete_revenue_line(
                 label="Допвзнос 1%",
                 tax_kind="contrib_extra_1pct",
                 period_code="year",
-                due_date=due,
-                calculated=state.extra_accrued,
+                period_title=PERIOD_TITLES.get(extra_period or "", "период"),
+                due=due,
                 documented=documented,
                 paid=paid,
-                verdict=verdict,
-                severity=severity,
-                messages=messages,
-                # Приростная платёжка сверяется с ОСТАТКОМ к доплате — его и передаём как ожидание.
-                action=_extra_action[0],
-                action_why=_extra_action[1],
-                payable_amount=_payable(
-                    verdict,
-                    documented=unpaid_documented,
-                    calculated=state.extra_accrued,
-                    expected=state.extra_accrued - (paid or ZERO),
-                ),
-            ),
-            expected=state.extra_accrued - (paid or ZERO),
-            wallet_balance=wallet.balance,
-            unpaid_documented=unpaid_documented,
+                partial=state.extra_accrued,
+                missing=extra_missing,
+                payable=unpaid_documented if unpaid_documented else None,
+            )
         )
-    )
+    else:
+        lines.append(
+            _extra_line(
+                state=state,
+                documented=documented,
+                unpaid_documented=unpaid_documented,
+                paid=paid,
+                due=due,
+                as_of=as_of,
+                wallet_balance=wallet.balance,
+            )
+        )
 
     # ── Взносы ИП «за себя» и травматизм ─────────────────────────────────────
     # Вопрос владельца 27.07.2026: «травматизм начислен, но не уплачен — почему его нет в
@@ -878,6 +1127,19 @@ async def build_reconciliation(
     reconstructed = await payroll_facts_without_turnover(session, year=year)
     accruals.update(reconstructed)
     enp_docs = await _enp_payroll_documents(session)
+    # Месяцы, по которым платёжка ЕНП есть, а оборотки и уплаты нет: платим по документу.
+    doc_only: dict[int, tuple[date, Decimal]] = {}
+    for doc_due, doc_amount in enp_docs.items():
+        doc_year, doc_month = _month_from_due(doc_due)
+        if doc_year != year or doc_month in accruals or doc_amount <= ZERO:
+            continue
+        doc_only[doc_month] = (doc_due, doc_amount)
+    for month, (doc_due, doc_amount) in sorted(doc_only.items()):
+        lines.append(
+            await _enp_line_by_document(
+                session, year=year, month=month, due=doc_due, documented=doc_amount, as_of=as_of
+            )
+        )
     for month in sorted(accruals):
         contributions, ndfl = accruals[month]
         accrued = contributions + ndfl

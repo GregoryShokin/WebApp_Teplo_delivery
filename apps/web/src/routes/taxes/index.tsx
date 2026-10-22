@@ -75,6 +75,7 @@ import {
   getVatCriterion,
   promoteTaxDocuments,
   refreshTaxDocuments,
+  refreshTaxRevenue,
   reviewTaxDocument,
   setVatThreshold,
   type AiAuditReport,
@@ -217,6 +218,7 @@ const VERDICT_LABELS: Record<ReconVerdict, string> = {
   overdue: "Просрочено",
   due: "К уплате",
   no_data: "Нет данных",
+  incomplete: "Расчёт неполный",
 };
 
 const SEVERITY_ORDER: Record<ReconSeverity, number> = {
@@ -253,6 +255,8 @@ const VERDICT_HIGHLIGHT: Record<ReconVerdict, "documented" | "paid" | null> = {
   overdue: "paid",
   due: null,
   no_data: null,
+  // Расчёта нет вовсе (прочерк) — виновата не колонка, а недогруженная выручка.
+  incomplete: null,
 };
 
 /** Неизвестная severity с бэкенда не должна ломать сортировку (NaN) — уводим в конец. */
@@ -456,10 +460,12 @@ function NoticeList({
   items,
   tone,
   title,
+  action,
 }: {
   items: string[];
   tone: "warning" | "danger";
   title: string;
+  action?: ReactNode;
 }) {
   if (items.length === 0) {
     return null;
@@ -479,9 +485,41 @@ function NoticeList({
               <li key={item}>{item}</li>
             ))}
           </ul>
+          {action ? <div className="pt-2">{action}</div> : null}
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/** Подтянуть выручку из iiko сейчас, не дожидаясь ночной подкачки. */
+function RevenueRefreshButton() {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: refreshTaxRevenue,
+    onSuccess: (result) => {
+      const months = Object.entries(result.months)
+        .map(([month, total]) => `${periodTitle(month)} — ${formatMoney(total)}`)
+        .join("; ");
+      toast.success("Выручка из iiko подтянута", { description: months || undefined });
+      void queryClient.invalidateQueries({ queryKey: ["taxes"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось подтянуть выручку")),
+  });
+  return (
+    <Button
+      disabled={mutation.isPending}
+      onClick={() => mutation.mutate()}
+      size="sm"
+      variant="outline"
+    >
+      {mutation.isPending ? (
+        <Loader2 className="animate-spin" aria-hidden="true" />
+      ) : (
+        <RefreshCw aria-hidden="true" />
+      )}
+      Подтянуть выручку из iiko
+    </Button>
   );
 }
 
@@ -771,6 +809,7 @@ function ReconRow({ line }: { line: ReconLine }) {
 // ── вкладка «Сводка» ───────────────────────────────────────────────────────────
 
 function SummaryTab({ asOf }: { asOf: string }) {
+  const canManage = usePermissions().hasPermission("accounting.taxes.manage");
   const query = useQuery({
     queryKey: ["taxes", "overview", asOf],
     queryFn: () => getTaxOverview(asOf),
@@ -799,6 +838,7 @@ function SummaryTab({ asOf }: { asOf: string }) {
       {/* Блокирующие причины — ВЫШЕ вердикта сверки: иначе владелец сначала читает
           «расхождений нет», а уже потом узнаёт, что сравнивали с неполной цифрой. */}
       <NoticeList
+        action={isBlocked && canManage ? <RevenueRefreshButton /> : null}
         items={state.blocking}
         title="Расчёт неполный — верить цифрам и вердикту сверки нельзя"
         tone="danger"

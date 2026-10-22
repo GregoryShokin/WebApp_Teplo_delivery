@@ -1072,3 +1072,209 @@ async def test_injury_line_does_not_double_the_payable_window(
 
     injury = [o for o in obligations if o.kind == "contrib_injury"]
     assert [o.amount for o in injury] == [Decimal("100")]
+
+
+# ── Октябрь 2026: неполная выручка, 1 % за III квартал, ЕНП без оборотки ──────
+
+# Выручка III квартала подобрана так, чтобы 1 % сошёлся с платёжкой бухгалтера 99 457 ₽:
+# (22 498 800 + 9 945 700 − 300 000) × 1 % − 221 988 уплачено = 99 457.
+REVENUE_Q3 = {7: Decimal("3596783.00"), 8: Decimal("3282431.00"), 9: Decimal("3066486.00")}
+
+
+async def _seed_q3_revenue(session: AsyncSession) -> None:
+    for m, net in REVENUE_Q3.items():
+        session.add(
+            IikoRevenuePeriod(
+                id=uuid.uuid4(),
+                period_start=date(2026, m, 1),
+                period_end=date(2026, m, calendar.monthrange(2026, m)[1]),
+                granularity="month",
+                department=DEFAULT_DEPARTMENT,
+                revenue_net=net,
+                source="iiko_olap",
+            )
+        )
+    await session.flush()
+
+
+async def _seed_paid_first_half(session: AsyncSession) -> None:
+    """Уплачено по I и II кварталам: авансы УСН и оба прироста 1 %."""
+    session.add(_usn_paid("674624", "q1", date(2026, 4, 20), "287"))
+    session.add(_usn_paid("478376", "h1", date(2026, 7, 29), "301"))
+    extra_q1 = _tax_payment("contrib_extra_1pct", "116360", date(2026, 6, 9))
+    extra_q1.for_period = "q1"
+    extra_h1 = _tax_payment("contrib_extra_1pct", "105628", date(2026, 9, 22))
+    extra_h1.for_period = "h1"
+    session.add_all([extra_q1, extra_h1])
+    await session.flush()
+
+
+def _q3_documents() -> list[TaxDocumentIntake]:
+    received = datetime(2026, 10, 22, tzinfo=UTC)
+    return [
+        _payment_order_intake(
+            tax_kind="usn_advance", period="9m", amount="455351",
+            due=date(2026, 10, 28), received=received, filename="УСН 3 кв до 28.10.docx",
+        ),
+        _payment_order_intake(
+            tax_kind="contrib_extra_1pct", period="9m", amount="99457",
+            due=date(2026, 11, 26), received=received, filename="1% за 3 кв 2026.docx",
+        ),
+    ]
+
+
+async def test_usn_without_quarter_revenue_is_incomplete_not_overpayment(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Прод 22.10.2026: выручка только по июнь, расчёт III квартала «вышел» нулём, а
+    платёжка 455 351 получила «Платить можно — переплата зачтётся». Переплаты не было.
+
+    Честный вердикт — «расчёт неполный»: своей цифры нет (не ноль!), названы месяцы без
+    выручки, платить можно только по платёжке бухгалтера.
+    """
+    from app.services.taxes.obligations import list_payable_obligations
+
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        await _seed_deductions(session)
+        await _seed_paid_first_half(session)
+        session.add_all(_q3_documents())
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 10, 22))
+        obligations = await list_payable_obligations(session, today=date(2026, 10, 22))
+
+    line = _line(recon, "usn_advance", "9m")
+    assert line.verdict == "incomplete"
+    assert line.severity == "warning"
+    assert line.calculated is None  # не «0» — расчёта просто нет
+    assert line.documented == Decimal("455351")
+    assert line.payable_amount == Decimal("455351")
+    assert line.action == "Расчёт неполный — нет выручки за июль–сентябрь"
+    assert not any("переплата" in (m or "") for m in (*line.messages, line.action_why))
+    # Закрытые кварталы с полной выручкой сверяются как раньше.
+    assert _line(recon, "usn_advance", "h1").verdict != "incomplete"
+
+    # 1 % по той же причине неполный, но платёжку за III квартал видит и даёт оплатить.
+    extra = _line(recon, "contrib_extra_1pct", "year")
+    assert extra.verdict == "incomplete"
+    assert extra.documented == Decimal("99457")
+    assert extra.payable_amount == Decimal("99457")
+
+    payable = {(o.kind, o.for_period): o.amount for o in obligations if not o.is_projection}
+    assert payable[("usn_advance", "9m")] == Decimal("455351")
+    assert payable[("contrib_extra_1pct", "year")] == Decimal("99457")
+
+
+async def test_extra_1pct_reconciles_against_third_quarter_document(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Выручка III квартала загружена — 1 % сверяется с платёжкой ЗА III квартал.
+
+    Раньше сверка была вшита на платёжку за II квартал: с выручкой III квартала она сочла
+    бы уже оплаченную платёжку II квартала «нулевой» и запретила платить.
+    """
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        await _seed_q3_revenue(session)
+        await _seed_paid_first_half(session)
+        session.add_all(_q3_documents())
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 10, 22))
+
+    extra = _line(recon, "contrib_extra_1pct", "year")
+    assert extra.calculated == Decimal("321445.00")
+    assert extra.documented == Decimal("99457")
+    assert extra.paid == Decimal("221988")
+    assert extra.verdict == "due"
+    assert extra.severity == "info"
+    assert extra.payable_amount == Decimal("99457")
+    assert _line(recon, "usn_advance", "9m").verdict != "incomplete"
+
+
+async def test_extra_1pct_without_quarter_document_shows_remainder_unpayable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Квартал закрыт, начисление выросло, платёжки бухгалтера ещё нет: остаток виден
+    («К уплате»), но платить без её платёжки не предлагаем."""
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        await _seed_q3_revenue(session)
+        await _seed_paid_first_half(session)
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 10, 5))
+
+    extra = _line(recon, "contrib_extra_1pct", "year")
+    assert extra.verdict == "due"
+    assert extra.documented is None
+    assert extra.payable_amount is None
+    assert any("остаток 99\u00a0457,00" in m for m in extra.messages)
+    assert not recon.has_alerts
+
+
+async def test_enp_payment_order_without_turnover_is_payable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Прод 22.10.2026: платёжка «ЕНП до 28.10» на 19 913,92 пришла, оборотки за сентябрь нет.
+
+    Раньше месяц жил только прогнозом и в «Активные платежи» не попадал. Теперь это строка
+    сверки к уплате на сумму платёжки — и одна строка в окне, без прогнозного двойника.
+    """
+    from app.services.taxes.obligations import list_payable_obligations
+
+    async with async_session_factory() as session:
+        session.add(
+            _payment_order_intake(
+                tax_kind="enp_payroll", period="2026-10", amount="19913.92",
+                due=date(2026, 10, 28), received=datetime(2026, 10, 22, tzinfo=UTC),
+                filename="ЕНП до 28.10.docx",
+            )
+        )
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 10, 22))
+        obligations = await list_payable_obligations(session, today=date(2026, 10, 22))
+        overdue = await build_reconciliation(session, as_of=date(2026, 10, 29))
+
+    line = _line(recon, "enp_payroll", "2026-09")
+    assert line.label == "Зарплатный ЕНП за сентябрь"
+    assert line.documented == Decimal("19913.92")
+    assert line.paid is None
+    assert line.verdict == "due"
+    assert line.payable_amount == Decimal("19913.92")
+    assert any("Оборотки за сентябрь" in m for m in line.messages)
+
+    enp = [o for o in obligations if o.kind == "enp_payroll" and o.for_period == "2026-09"]
+    assert [(o.amount, o.is_projection) for o in enp] == [(Decimal("19913.92"), False)]
+
+    assert _line(overdue, "enp_payroll", "2026-09").verdict == "overdue"
+
+
+async def test_paid_enp_month_without_turnover_is_not_offered_again(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Деньги по сентябрьскому ЕНП ушли и разнесены выпиской — платёжка больше не к уплате."""
+    async with async_session_factory() as session:
+        session.add(
+            _payment_order_intake(
+                tax_kind="enp_payroll", period="2026-10", amount="19913.92",
+                due=date(2026, 10, 28), received=datetime(2026, 10, 22, tzinfo=UTC),
+                filename="ЕНП до 28.10.docx",
+            )
+        )
+        for kind, amount in (("contrib_employees", "13595.93"), ("ndfl", "6317.99")):
+            fact = _tax_payment(kind, amount, date(2026, 10, 27))
+            fact.for_period = "2026-09"
+            session.add(fact)
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 10, 29))
+
+    september = [
+        ln for ln in recon.lines if ln.tax_kind == "enp_payroll" and ln.period_code == "2026-09"
+    ]
+    assert len(september) == 1
+    assert september[0].verdict == "ok"
+    assert september[0].payable_amount is None

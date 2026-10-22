@@ -26,17 +26,22 @@ async def fetch_daily_revenue(
     session: AsyncSession,
     date_from: dt.date,
     date_to: dt.date,
+    *,
+    exclude_deleted: bool = False,
 ) -> dict[dt.date, Decimal]:
     if date_from > date_to:
         raise ValueError("date_from must be before or equal to date_to")
 
     await _load_source_credential_env(session)
-    return await anyio.to_thread.run_sync(_fetch_daily_revenue_sync, date_from, date_to)
+    return await anyio.to_thread.run_sync(
+        _fetch_daily_revenue_sync, date_from, date_to, exclude_deleted
+    )
 
 
 def _fetch_daily_revenue_sync(
     date_from: dt.date,
     date_to: dt.date,
+    exclude_deleted: bool = False,
 ) -> dict[dt.date, Decimal]:
     export_employees = _load_export_employees_module()
     export_employees.load_local_env()
@@ -46,13 +51,23 @@ def _fetch_daily_revenue_sync(
         client,
         IIKO_REVENUE_ENDPOINT,
         method="POST",
-        json_body=build_daily_revenue_olap_body(date_from, date_to),
+        json_body=build_daily_revenue_olap_body(
+            date_from, date_to, exclude_deleted=exclude_deleted
+        ),
     )
     return parse_daily_revenue_olap_payload(data)
 
 
-def build_daily_revenue_olap_body(date_from: dt.date, date_to: dt.date) -> dict[str, Any]:
-    return {
+def build_daily_revenue_olap_body(
+    date_from: dt.date, date_to: dt.date, *, exclude_deleted: bool = False
+) -> dict[str, Any]:
+    """Тело OLAP-запроса подневной выручки.
+
+    ``exclude_deleted`` — фильтры сохранённого отчёта P&L (``OrderDeleted`` и
+    ``DeletedWithWriteoff`` = NOT_DELETED): по нему залита налоговая база января–июня 2026,
+    и подкачка налоговой выручки обязана считать ту же величину.
+    """
+    body: dict[str, Any] = {
         "reportType": "SALES",
         "buildSummary": "false",
         "groupByRowFields": IIKO_REVENUE_GROUP_BY_ROW_FIELDS,
@@ -72,6 +87,10 @@ def build_daily_revenue_olap_body(date_from: dt.date, date_to: dt.date) -> dict[
             },
         },
     }
+    if exclude_deleted:
+        for field in ("OrderDeleted", "DeletedWithWriteoff"):
+            body["filters"][field] = {"filterType": "IncludeValues", "values": ["NOT_DELETED"]}
+    return body
 
 
 def parse_daily_revenue_olap_payload(data: bytes) -> dict[dt.date, Decimal]:

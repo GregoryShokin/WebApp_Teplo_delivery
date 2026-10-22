@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -17,7 +18,10 @@ from app.models.tax import IikoRevenuePeriod, IikoRevenueRevision
 from app.services.taxes.repository import DEFAULT_DEPARTMENT, sum_revenue
 from app.services.taxes.revenue_sync import (
     RevenueRecord,
+    RevenueSyncError,
     records_from_iiko_monthly,
+    revenue_sync_window,
+    sync_revenue_from_iiko,
     sync_revenue_periods,
 )
 
@@ -185,3 +189,146 @@ def test_records_from_iiko_monthly_sums_directions() -> None:
     assert rec.period_start == date(2026, 1, 1)
     assert rec.period_end == date(2026, 1, 31)
     assert rec.revenue_net == Decimal("63444.54") + Decimal("4032471.25")
+
+
+# ── Подкачка из iiko: окно, вытеснение, отказ на пустом ответе ──────────────────
+
+
+def _fake_fetch(by_day: dict[date, str], calls: list[tuple[date, date]] | None = None):
+    async def fetch(_session, date_from, date_to):
+        if calls is not None:
+            calls.append((date_from, date_to))
+        return {d: Decimal(v) for d, v in by_day.items()}
+
+    return fetch
+
+
+async def test_iiko_sync_writes_days_from_month_start(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Окно расширяется до 1-го числа: иначе дни вытеснили бы месячную строку, а пол-месяца
+    выручки пропало бы из базы."""
+    calls: list[tuple[date, date]] = []
+    async with async_session_factory() as session:
+        await sync_revenue_periods(session, [_month(2026, 7, "3596783.28")])
+        report = await sync_revenue_from_iiko(
+            session,
+            date_from=date(2026, 7, 15),
+            date_to=date(2026, 8, 2),
+            fetch=_fake_fetch(
+                {
+                    date(2026, 7, 1): "100000.00",
+                    date(2026, 7, 31): "120000.50",
+                    date(2026, 8, 1): "90000.00",
+                    date(2026, 8, 2): "95000.00",
+                },
+                calls,
+            ),
+        )
+        await session.commit()
+
+    assert calls == [(date(2026, 7, 1), date(2026, 8, 2))]
+    assert report.days == 4
+    assert report.months == {"2026-07": Decimal("220000.50"), "2026-08": Decimal("185000.00")}
+    assert report.result.superseded_rows == 1  # месячная строка июля ушла
+    async with async_session_factory() as session:
+        total, covered = await sum_revenue(session, start=date(2026, 7, 1), end=date(2026, 8, 2))
+    assert total == Decimal("405000.50")
+    assert covered == {(2026, 7), (2026, 8)}
+
+
+async def test_iiko_sync_refuses_empty_report(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Пустой ответ iiko — сбой, а не «выручки не было»: базу не трогаем."""
+    async with async_session_factory() as session:
+        await sync_revenue_periods(session, [_month(2026, 7, "3596783.28")])
+        await session.commit()
+
+    async with async_session_factory() as session:
+        with pytest.raises(RevenueSyncError, match="пустой отчёт"):
+            await sync_revenue_from_iiko(
+                session,
+                date_from=date(2026, 7, 1),
+                date_to=date(2026, 7, 31),
+                fetch=_fake_fetch({}),
+            )
+        await session.rollback()
+
+    async with async_session_factory() as session:
+        total, _ = await sum_revenue(session, start=date(2026, 7, 1), end=date(2026, 7, 31))
+    assert total == Decimal("3596783.28")
+
+
+async def test_iiko_sync_turns_system_exit_into_error(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """IikoClient без адреса сервера бросает SystemExit — он не должен ронять процесс."""
+    async def broken(_session, _date_from, _date_to):
+        raise SystemExit("IIKO_SERVER_BASE_URL is not set")
+
+    async with async_session_factory() as session:
+        with pytest.raises(RevenueSyncError, match="не настроен"):
+            await sync_revenue_from_iiko(
+                session, date_from=date(2026, 7, 1), date_to=date(2026, 7, 31), fetch=broken
+            )
+
+
+async def test_iiko_sync_zeroes_day_that_vanished_from_iiko(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """День был в базе, а в новом отчёте iiko его нет (заказы удалены) — обнуляем с журналом."""
+    async with async_session_factory() as session:
+        await sync_revenue_from_iiko(
+            session,
+            date_from=date(2026, 9, 1),
+            date_to=date(2026, 9, 2),
+            fetch=_fake_fetch({date(2026, 9, 1): "100", date(2026, 9, 2): "200"}),
+        )
+        await session.commit()
+
+    async with async_session_factory() as session:
+        report = await sync_revenue_from_iiko(
+            session,
+            date_from=date(2026, 9, 1),
+            date_to=date(2026, 9, 2),
+            fetch=_fake_fetch({date(2026, 9, 1): "100"}),
+            sync_reason="manual_sync",
+        )
+        await session.commit()
+
+    assert report.result.revisions == 1
+    async with async_session_factory() as session:
+        total, _ = await sum_revenue(session, start=date(2026, 9, 1), end=date(2026, 9, 30))
+        revision = (await session.scalars(select(IikoRevenueRevision))).one()
+    assert total == Decimal("100.00")
+    assert revision.revenue_net_new == Decimal("0.00")
+    assert revision.sync_reason == "manual_sync"
+
+
+async def test_sync_window_reaches_back_to_first_month_without_revenue(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Октябрь 2026: выручка залита только по июнь — ночной прогон догружает с 1 июля.
+
+    Ровно эта дыра дала УСН за III квартал = 0: июль–сентябрь никто не залил руками.
+    """
+    async with async_session_factory() as session:
+        await sync_revenue_periods(session, [_month(2026, m, "1000") for m in range(1, 7)])
+        await session.commit()
+        window = await revenue_sync_window(session, today=date(2026, 10, 22))
+    assert window == (date(2026, 7, 1), date(2026, 10, 21))
+
+
+async def test_sync_window_rereads_previous_month_when_nothing_is_missing(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Все месяцы на месте — окно с начала прошлого месяца: iiko правит закрытые дни."""
+    async with async_session_factory() as session:
+        await sync_revenue_periods(session, [_month(2026, m, "1000") for m in range(1, 11)])
+        await session.commit()
+        window = await revenue_sync_window(session, today=date(2026, 11, 5))
+        january = await revenue_sync_window(session, today=date(2027, 1, 1))
+    assert window == (date(2026, 10, 1), date(2026, 11, 4))
+    # 1 января: вчера — 31 декабря, ноябрь и декабрь без выручки — тянем с ноября.
+    assert january == (date(2026, 11, 1), date(2026, 12, 31))

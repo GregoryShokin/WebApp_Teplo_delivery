@@ -268,7 +268,8 @@ def compute_tax_state(inputs: TaxInputs) -> TaxState:
     if inputs.covered_months < inputs.expected_months:
         blocking.append(
             f"Выручка загружена не за весь период: {inputs.covered_months} мес. "
-            f"из {inputs.expected_months}. База занижена — обновите выручку из iiko."
+            f"из {inputs.expected_months}. База занижена — выручка подтягивается из iiko "
+            f"каждую ночь; чтобы не ждать, нажмите «Подтянуть выручку из iiko»."
         )
 
     # ── 2. Налог исчисленный — в полных рублях ───────────────────────────────

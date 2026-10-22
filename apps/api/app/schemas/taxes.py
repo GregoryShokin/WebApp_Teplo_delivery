@@ -105,6 +105,7 @@ class ReconLineRead(BaseModel):
     paid: Decimal | None = None
 
     # 'ok' | 'doc_mismatch' | 'payment_mismatch' | 'overdue' | 'due' | 'no_data'
+    # | 'incomplete' (за часть месяцев периода нет выручки — расчёту верить нельзя)
     verdict: str
     # 'ok' | 'info' | 'warning' | 'alert' — цвет строки на первом экране.
     severity: str
@@ -342,6 +343,22 @@ class TaxPromotionSummaryRead(BaseModel):
     updated: int
     skipped: int
     results: list[TaxPromotionResultRead]
+
+
+class TaxRevenueSyncRead(BaseModel):
+    """Итог подкачки выручки iiko в базу налога (кнопка «Подтянуть выручку из iiko»)."""
+
+    date_from: date
+    date_to: date
+    days: int
+    total: Decimal
+    # Выручка по месяцам окна: «2026-07» → сумма. Владелец сверяет глазами с iiko.
+    months: dict[str, Decimal]
+    inserted: int
+    updated: int
+    unchanged: int
+    superseded_rows: int
+    revisions: int
 
 
 # ── Реестр источников ────────────────────────────────────────────────────────

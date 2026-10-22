@@ -95,6 +95,22 @@ def expected_months(start: date, end: date) -> set[tuple[int, int]]:
     return months
 
 
+async def missing_revenue_months(
+    session: AsyncSession,
+    *,
+    as_of: date,
+    department: str = DEFAULT_DEPARTMENT,
+) -> list[tuple[int, int]]:
+    """Месяцы закрытых кварталов года, за которые выручки нет вовсе, — по порядку.
+
+    То же правило, что у плашки «Расчёт неполный» (``expected_months``), но со списком:
+    строке сверки нужно назвать, ЗА КАКИЕ месяцы нет базы, а не только сколько их.
+    """
+    jan1 = date(as_of.year, 1, 1)
+    _total, covered = await sum_revenue(session, start=jan1, end=as_of, department=department)
+    return sorted(expected_months(jan1, as_of) - covered)
+
+
 def month_bounds(year: int, month: int) -> tuple[date, date]:
     last_day = calendar.monthrange(year, month)[1]
     return date(year, month, 1), date(year, month, last_day)

@@ -140,6 +140,10 @@ class Settings(BaseSettings):
     # Фоновый забор налоговых документов планировщиком (в дополнение к кнопке «Проверить почту»).
     tax_document_poll_enabled: bool = True
     tax_document_poll_interval_minutes: int = 30
+    # Ночная подкачка выручки iiko в базу налога (services/taxes/revenue_sync). Без неё
+    # расчёт УСН стоит на той выручке, что залили руками: в октябре 2026 это был июнь, и
+    # III квартал считался нулём.
+    tax_revenue_sync_enabled: bool = True
 
     # Проекция налоговых фактов в журнал ДДС (services/taxes/dds_projection). Выключатель —
     # аварийный: контур пишет проводки в общий журнал, и при сомнении его надо гасить

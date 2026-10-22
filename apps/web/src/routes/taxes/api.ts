@@ -68,7 +68,9 @@ export type ReconVerdict =
   | "payment_mismatch"
   | "overdue"
   | "due"
-  | "no_data";
+  | "no_data"
+  /** За часть месяцев периода нет выручки — своей цифры у расчёта нет. */
+  | "incomplete";
 
 export type ReconSeverity = "ok" | "info" | "warning" | "alert";
 
@@ -414,6 +416,29 @@ export async function refreshTaxDocuments(): Promise<Record<string, number | str
     undefined,
     { timeout: 120_000 },
   );
+  return response.data;
+}
+
+/** Итог подкачки выручки iiko в базу налога: POST /taxes/revenue/refresh. */
+export type TaxRevenueSync = {
+  date_from: string;
+  date_to: string;
+  days: number;
+  total: Money;
+  /** «2026-07» → выручка месяца (со скидками). */
+  months: Record<string, Money>;
+  inserted: number;
+  updated: number;
+  unchanged: number;
+  superseded_rows: number;
+  revisions: number;
+};
+
+export async function refreshTaxRevenue(): Promise<TaxRevenueSync> {
+  // OLAP iiko за несколько месяцев отвечает дольше обычного запроса — таймаут как у почты.
+  const response = await api.post<TaxRevenueSync>(`${BASE}/revenue/refresh`, undefined, {
+    timeout: 120_000,
+  });
   return response.data;
 }
 
