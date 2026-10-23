@@ -1955,9 +1955,9 @@
     "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/taxes.py": {
-    "mtime": 1786099613.568565,
-    "ast_hash": "d91c1d8abd13389864322de3e05c1bca",
-    "semantic_hash": "d91c1d8abd13389864322de3e05c1bca"
+    "mtime": 1792705974.0468466,
+    "ast_hash": "6f9b7b4fee9021e8ea74c5865f4cf8c4",
+    "semantic_hash": "6f9b7b4fee9021e8ea74c5865f4cf8c4"
   },
   "apps/api/app/api/v1/routes/utilities.py": {
     "mtime": 1786099613.5688272,
@@ -2015,9 +2015,9 @@
     "semantic_hash": "0e291915482cdb0b6fe71bdd3e4d0998"
   },
   "apps/api/app/core/config.py": {
-    "mtime": 1791751578.0374534,
-    "ast_hash": "ccd6d05c20c4b2bd577b1cb140aa71f0",
-    "semantic_hash": ""
+    "mtime": 1792705951.3842103,
+    "ast_hash": "06e5412264776d487402660ac663f7ed",
+    "semantic_hash": "06e5412264776d487402660ac663f7ed"
   },
   "apps/api/app/core/security.py": {
     "mtime": 1779900108.5229187,
@@ -2325,9 +2325,9 @@
     "semantic_hash": "e15657468114890ca3afbfe4130f5db6"
   },
   "apps/api/app/scheduler.py": {
-    "mtime": 1787122915.735448,
-    "ast_hash": "2e6aad3123acb6e4a85309a23c35bbaf",
-    "semantic_hash": "2e6aad3123acb6e4a85309a23c35bbaf"
+    "mtime": 1792705961.1644943,
+    "ast_hash": "ea682e64b9faac8a403c6db648bd5c2b",
+    "semantic_hash": "ea682e64b9faac8a403c6db648bd5c2b"
   },
   "apps/api/app/scheduler_runner.py": {
     "mtime": 1785331831.8649855,
@@ -2405,9 +2405,9 @@
     "semantic_hash": "b49570817726cb437fda495afdefb8ec"
   },
   "apps/api/app/schemas/taxes.py": {
-    "mtime": 1785439300.0634685,
-    "ast_hash": "ae6947d9749a3c75499a385706c47a52",
-    "semantic_hash": "ae6947d9749a3c75499a385706c47a52"
+    "mtime": 1792706124.4372613,
+    "ast_hash": "cdbf0b90831b0d1875ca4b16c1b76d1f",
+    "semantic_hash": "cdbf0b90831b0d1875ca4b16c1b76d1f"
   },
   "apps/api/app/schemas/types.py": {
     "mtime": 1787232873.7972898,
@@ -2550,9 +2550,9 @@
     "semantic_hash": "a279c5a03ea73c47eb388735d6ef231b"
   },
   "apps/api/app/scripts/sync_tax_revenue.py": {
-    "mtime": 1785173434.892723,
-    "ast_hash": "da1614cc612453838b903d339b68ce0f",
-    "semantic_hash": "da1614cc612453838b903d339b68ce0f"
+    "mtime": 1792705996.2562199,
+    "ast_hash": "6b3fbdf45fc3e6321c51b7b4b530ed8a",
+    "semantic_hash": "6b3fbdf45fc3e6321c51b7b4b530ed8a"
   },
   "apps/api/app/scripts/writeoff_pre_accounting.py": {
     "mtime": 1786188800.4916005,
@@ -3030,9 +3030,9 @@
     "semantic_hash": "62a15a0cc713f7d0164c8185e491d29f"
   },
   "apps/api/app/services/iiko_revenue.py": {
-    "mtime": 1784910386.2754447,
-    "ast_hash": "1cf0b3282ae768897049e0ad082bed30",
-    "semantic_hash": "1cf0b3282ae768897049e0ad082bed30"
+    "mtime": 1792705888.305158,
+    "ast_hash": "e92345dbd4dca450d4064b519a3e2b22",
+    "semantic_hash": "e92345dbd4dca450d4064b519a3e2b22"
   },
   "apps/api/app/services/iiko_sync.py": {
     "mtime": 1785346279.9925544,
@@ -3505,9 +3505,9 @@
     "semantic_hash": "cbe753f8f23ee286842b1539c7527c86"
   },
   "apps/api/app/services/taxes/engine.py": {
-    "mtime": 1785173434.897318,
-    "ast_hash": "34d3c590bac8b824b03bd742d51aa094",
-    "semantic_hash": "34d3c590bac8b824b03bd742d51aa094"
+    "mtime": 1792706010.276177,
+    "ast_hash": "f255d8775c6954742e0edcabdbd99337",
+    "semantic_hash": "f255d8775c6954742e0edcabdbd99337"
   },
   "apps/api/app/services/taxes/enp_split.py": {
     "mtime": 1785173434.8976796,
@@ -3540,24 +3540,24 @@
     "semantic_hash": "0578d9dda59d931f32341ac3bd70aaeb"
   },
   "apps/api/app/services/taxes/reconcile.py": {
-    "mtime": 1790073911.0533137,
-    "ast_hash": "98cb7de551731ca0d48afd0fb2ebec07",
-    "semantic_hash": ""
+    "mtime": 1792706164.6380062,
+    "ast_hash": "ad13789e9264ca4f687ad7329cafd9ce",
+    "semantic_hash": "ad13789e9264ca4f687ad7329cafd9ce"
   },
   "apps/api/app/services/taxes/repository.py": {
-    "mtime": 1785173434.900394,
-    "ast_hash": "ec9fe337f5d9a88dd0f8bf3d9843a00b",
-    "semantic_hash": "ec9fe337f5d9a88dd0f8bf3d9843a00b"
+    "mtime": 1792706016.620774,
+    "ast_hash": "3ded0886ac236d7ea0d56befa39633ea",
+    "semantic_hash": "3ded0886ac236d7ea0d56befa39633ea"
   },
   "apps/api/app/services/taxes/revenue_sync.py": {
-    "mtime": 1785173434.9005978,
-    "ast_hash": "c894a64186e6b78a97dde6fcfd8d5912",
-    "semantic_hash": "c894a64186e6b78a97dde6fcfd8d5912"
+    "mtime": 1792705939.742465,
+    "ast_hash": "4e51992781f0d508b41c8fec15fa5c6a",
+    "semantic_hash": "4e51992781f0d508b41c8fec15fa5c6a"
   },
   "apps/api/app/services/taxes/sources.py": {
-    "mtime": 1785173434.900809,
-    "ast_hash": "2b452bb516502930114b19f53425e7ec",
-    "semantic_hash": "2b452bb516502930114b19f53425e7ec"
+    "mtime": 1792706003.76806,
+    "ast_hash": "ee90ffbc2634a918675080b7013f802b",
+    "semantic_hash": "ee90ffbc2634a918675080b7013f802b"
   },
   "apps/api/app/services/taxes/vat_monitor.py": {
     "mtime": 1785173434.901163,
@@ -5205,9 +5205,9 @@
     "semantic_hash": "548967c45c9326915a3db1e76b59051f"
   },
   "apps/api/tests/test_taxes_reconcile.py": {
-    "mtime": 1790073911.0551536,
-    "ast_hash": "3c146033aa708f4c84eb699d9030d987",
-    "semantic_hash": ""
+    "mtime": 1792706332.5187352,
+    "ast_hash": "40d66fb5b8d22a5735643f915405dffb",
+    "semantic_hash": "40d66fb5b8d22a5735643f915405dffb"
   },
   "apps/api/tests/test_taxes_repository.py": {
     "mtime": 1785173434.908314,
@@ -5215,9 +5215,9 @@
     "semantic_hash": "817a08d75ecf3edc6a28cae803f313d8"
   },
   "apps/api/tests/test_taxes_revenue_sync.py": {
-    "mtime": 1785173434.9083753,
-    "ast_hash": "23b459cb04eb8423575ce904a5bcbd47",
-    "semantic_hash": "23b459cb04eb8423575ce904a5bcbd47"
+    "mtime": 1792706272.6643384,
+    "ast_hash": "fa1fe7df14ceb638e11a33ccb9712cc8",
+    "semantic_hash": "fa1fe7df14ceb638e11a33ccb9712cc8"
   },
   "apps/api/tests/test_taxes_vat_monitor.py": {
     "mtime": 1785173434.9084322,
@@ -6265,14 +6265,14 @@
     "semantic_hash": "407a3785e3974e6acd3ebd8b2dd845e2"
   },
   "apps/web/src/routes/taxes/api.ts": {
-    "mtime": 1787144056.0606778,
-    "ast_hash": "967ed05d7e0286a11ae5d85cb428fd65",
-    "semantic_hash": "967ed05d7e0286a11ae5d85cb428fd65"
+    "mtime": 1792706380.9545927,
+    "ast_hash": "fd46a4ddf3a7e3e44286ddebcd17c0ee",
+    "semantic_hash": "fd46a4ddf3a7e3e44286ddebcd17c0ee"
   },
   "apps/web/src/routes/taxes/index.tsx": {
-    "mtime": 1787144056.0610626,
-    "ast_hash": "e2c76fa8e7abf2b5511d283fc68f25fb",
-    "semantic_hash": "e2c76fa8e7abf2b5511d283fc68f25fb"
+    "mtime": 1792706380.9550738,
+    "ast_hash": "689a75c73d63182f57c4fc5bb2ed152f",
+    "semantic_hash": "689a75c73d63182f57c4fc5bb2ed152f"
   },
   "apps/web/src/routes/warehouse/BarterTab.tsx": {
     "mtime": 1784562714.847346,
