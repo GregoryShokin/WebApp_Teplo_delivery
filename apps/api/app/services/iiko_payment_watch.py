@@ -454,11 +454,14 @@ def _rule1_eligible(push: IikoInvoicePaymentPush, now: datetime) -> bool:
 
     Неподтверждённую свежую строку (окно ``VERIFY_MAX_AGE``) ведёт сверка — она сама
     переотправит платёж; вмешаться здесь значило бы завести случай на то, что ещё лечится само.
-    Исчерпавшую переотправки сверка уже отдала в ручной случай — второй не нужен."""
-    if push.verified_at is not None:
+    Строку, на которой сверка исчерпала переотправки, сторож берёт сразу: сверка её больше не
+    смотрит, а её ручной случай закрывает следующая же отправка зеркала, которую никто не
+    проверяет (06.08.2026 накладные 31, 34, 36 и 06.10 — 515321, 515328, 515333: случай жил пять
+    минут, оплаты в iiko так и не появились, их провели руками)."""
+    if push.verified_at is not None or push.resend_count >= MAX_RESENDS:
         return True
     created = push.created_at if push.created_at.tzinfo else push.created_at.replace(tzinfo=UTC)
-    return created < now - VERIFY_MAX_AGE and push.resend_count < MAX_RESENDS
+    return created < now - VERIFY_MAX_AGE
 
 
 async def _edit_of(document: IikoDocument | None, source: IikoWatchSource) -> _Edit:
@@ -740,10 +743,18 @@ async def _check_correction_pair(
         else:
             # Тепло оплату исходной не ставило (так у «АЛЬЯНС ЮГ»: отправка не прошла) —
             # «переехала» было бы домыслом, говорим только то, что видно в iiko.
+            original_gone = original is not None and (
+                not original.found or original.status == _DELETED
+            )
+            original_words = (
+                f"Исходная накладная {original_number} удалена в iiko"
+                if original_gone
+                else f"У исходной накладной {original_number} оплаты нет"
+            )
             text = (
-                f"У исходной накладной {original_number} оплаты нет, а новая"
-                f" «{correction_number}» оплачена ({paid_words}). По схеме исправления оплата"
-                " стоит на исходной, а «(испр.)» остаётся без оплаты."
+                f"{original_words}, а новая «{correction_number}» оплачена ({paid_words})."
+                " По схеме исправления оплата стоит на исходной, а «(испр.)» остаётся без"
+                " оплаты."
             )
         clause, _after = _edit_clause(edit, None)
         deviations.append(

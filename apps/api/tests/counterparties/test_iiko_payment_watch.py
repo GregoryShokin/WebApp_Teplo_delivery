@@ -335,6 +335,30 @@ async def test_fresh_unconfirmed_payment_is_left_to_verify(async_session_factory
     assert await _drift_cases(async_session_factory) == []
 
 
+async def test_payment_verify_gave_up_on_is_watched_at_once(async_session_factory):
+    """Сверка исчерпала переотправки — дальше строку не смотрит, а её ручной случай закрывает
+    следующая же отправка зеркала (515321, 06.10.2026: случай прожил пять минут). Сторож берёт
+    такую строку сразу, без ожидания окна сверки, и его случай отправка зеркала не закрывает."""
+    iiko = FakeIiko(incoming_docs={"X321": _doc("X321", "515321")})
+    async with async_session_factory() as session:
+        _, inv = await _cheque(session, number="515321", external_id="X321", amount="2950.00")
+        push = await _push(
+            session,
+            inv,
+            external_id="X321",
+            amount="2950.00",
+            verified=False,
+            created_age=timedelta(hours=5),
+        )
+        push.resend_count = 2
+        await session.commit()
+        result = await watch_iiko_payments(session, source=iiko)
+
+    assert result["opened"] == 1
+    [case] = await _drift_cases(async_session_factory)
+    assert "Подтверждения проводки не было" in case.payload["deviations"][0]["text"]
+
+
 async def test_rolled_back_or_manual_payments_are_not_judged(async_session_factory):
     """Оплату у нас откатили — её отсутствие в iiko норма. Ручное подтверждение — не оплата
     Тепло: сумму его Тепло не ставило, судить нечего."""
@@ -576,6 +600,24 @@ async def test_paid_correction_without_teplo_payment_on_original_is_not_called_m
     [dev] = case.payload["deviations"]
     assert dev["code"] == DEV_CORRECTION_PAID
     assert "переехала" not in dev["text"] and "оплаты нет" in dev["text"]
+
+
+async def test_paid_correction_next_to_deleted_original_says_so(async_session_factory):
+    """АЛЬЯНС ЮГ и Ч-46: исходную удалили в iiko, жива одна оплаченная «(испр.)»."""
+    iiko = _pair_iiko(
+        "Ч-128",
+        x_paid=None,
+        y_paid="50.00",
+        return_doc=_doc("R-Ч-128", "0001", links_to="X-Ч-128"),
+    )
+    iiko.incoming_docs["X-Ч-128"] = _doc("X-Ч-128", "Ч-128", status="DELETED")
+    async with async_session_factory() as session:
+        await _corrected_cheque(session, number="Ч-128", amount="100.00", with_push=False)
+        await watch_iiko_payments(session, source=iiko)
+
+    [case] = await _drift_cases(async_session_factory)
+    [dev] = case.payload["deviations"]
+    assert dev["text"].startswith("Исходная накладная Ч-128 удалена в iiko")
 
 
 async def test_sweep_does_not_close_drift_case(async_session_factory):
