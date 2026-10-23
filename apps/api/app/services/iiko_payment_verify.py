@@ -186,6 +186,16 @@ async def verify_mirrored_payments(session: AsyncSession, *, limit: int = 200) -
         was_rate_limited = (row.error or "").startswith(RATE_LIMITED_ERROR_PREFIX)
         invoice = await session.get(SupplierInvoice, row.invoice_id)
         number = (invoice.number or "") if invoice is not None else ""
+        if (
+            invoice is not None
+            and invoice.iiko_correction_new_external_id
+            and row.external_id == invoice.iiko_correction_new_external_id
+        ):
+            # Оплата «(испр.)» зачётом (цепочка исправления): в iiko она лежит под номером новой
+            # накладной, а наш номер — номер исходной; иначе её «подтвердила» бы оплата исходной.
+            from app.services.warehouse_invoice_push import _correction_number
+
+            number = _correction_number(invoice.number) or ""
         if number and _covered(payments, number, row.amount):
             row.verified_at = now
             if was_rate_limited:

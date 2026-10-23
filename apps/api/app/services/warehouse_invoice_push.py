@@ -707,6 +707,35 @@ def _cloud_create_and_post_return(organization_id: str, body: dict) -> _CloudPus
     return _CloudPushOutcome(document_id, True, None)
 
 
+def _cloud_original_items(organization_id: str, document_id: str) -> list[dict] | None:
+    """Строки исходной X прямо из iiko — сторно ложится ровно на её сумму (решение владельца
+    23.10.2026: «сторно… ровно на ту же сумму»).
+
+    Снимок Тепла (``iiko_return_lines``) хранит количество и цену, а сумму строки сага собирала
+    заново и промахивалась на копейки: возврат 0004 = 3 254,04 при исходной Ч-117 3 253,91,
+    0003 = 609,87 при Ч-123 609,88. Копейки потом всплывают кредитом поставщика. Строки из самой
+    X переносят её суммы один в один. ``None`` — iiko не отдала документ (сеть, лимит, нет
+    креды): сага берёт снимок, как раньше, чтобы исправление не встало."""
+    status, response = get_invoice("payable", organization_id, document_id)
+    if status != 200 or not isinstance(response, dict):
+        return None
+    rows: list[dict] = []
+    for index, item in enumerate(response.get("items") or [], start=1):
+        if not isinstance(item, dict) or not item.get("product") or item.get("sum") is None:
+            return None
+        rows.append(
+            {
+                "num": index,
+                "product": item["product"],
+                "store": item.get("store"),
+                "amount": float(item.get("amount") or 0),
+                "price": float(item.get("price") or 0),
+                "sum": float(item["sum"]),
+            }
+        )
+    return rows or None
+
+
 def _correction_number(base: str | None) -> str | None:
     """Номер для НОВОЙ (правильной) приходной Y: помечаем «(испр.)», чтобы в бэк-офисе iiko её
     было видно отдельно от тумбстоненного оригинала. None (нет номера) → iiko занумерует сам."""
@@ -729,18 +758,21 @@ async def _tombstone_exists(session: AsyncSession, source: str, external_id: str
 async def book_correction_in_iiko(
     session: AsyncSession, invoice_id: uuid.UUID
 ) -> SupplierInvoice:
-    """Отразить коррекцию ОПЛАЧЕННОЙ накладной в iiko полным разворотом (два документа):
+    """Отразить коррекцию ОПЛАЧЕННОЙ накладной в iiko цепочкой (решение владельца 23.10.2026):
 
-    1. **Возврат** ВСЕХ старых товаров (``returned_invoice`` со ссылкой на ``incomingInvoiceId``
-       оригинала X) → снимает старый приход со склада и создаёт долг поставщика (дебиторку).
-    2. **Новая приходная** Y на правильные товары (``incoming_invoice`` create→post) БЕЗ оплаты;
+    1. **Сторно** — возврат ВСЕХ старых товаров (``returned_invoice`` со ссылкой на
+       ``incomingInvoiceId`` оригинала X) ровно на сумму X: строки берутся из самой X в iiko
+       (:func:`_cloud_original_items`). Снимает старый приход со склада, оплата X уходит в кредит
+       поставщика.
+    2. **Новая приходная** Y на правильные товары (``incoming_invoice`` create→post);
        ``external_id`` накладной перецепляется X→Y, старый X закрывается тумбстоном (иначе реверс-синк
        воскресил бы оплаченный+возвращённый оригинал как новую накладную).
-
-    Итог: чистый баланс поставщика = верная дебиторка (старая сумма − новая); переплата покрыта у
-    нас (``SupplierPrepayment``). Y остаётся «не оплачена» НАМЕРЕННО: оплатить её зачётом
-    (``add_payment``) нельзя — settle-дебет уезжает в баланс поставщика и завышает его (проверено на
-    живом API 11.07: зачёт давал +полная-сумма вместо +разница). Сага резюмируемая по чек-пойнтам
+    3–4. **Оплата Y** зачётом из этого кредита и **расход разницы** чека актом услуг — в
+       :mod:`app.services.iiko_correction_chain`, под настройкой ``iiko_correction_offset_enabled``.
+       Пока она выключена, Y остаётся без оплаты, как было с 11.07: тогда зачёт со счёта
+       «Задолженность перед поставщиками» сдвинул баланс поставщика на всю сумму, и оплату
+       сняли с контура. Счёт «Авансы поставщиков» в той же пробе баланс не сдвинул — на нём шаг 3
+       и построен, но его проводки ещё надо подтвердить пробой. Сага резюмируемая по чек-пойнтам
     (``iiko_return_external_id`` — шаг 1, ``iiko_correction_new_external_id`` + перецеп
     ``external_id`` — шаг 2): не-фатально, при сбое статус/ошибка садятся в накладную, ретрай
     (``retry-iiko-return``) продолжит с последнего успешного шага. См.
@@ -816,9 +848,16 @@ async def book_correction_in_iiko(
 
     await _load_source_credential_env(session)
 
-    # --- ШАГ 1: возврат ВСЕХ старых товаров (ссылка на оригинал X) → дебиторка поставщику ---
+    # --- ШАГ 1: сторно — возврат ВСЕХ старых товаров (ссылка на оригинал X) ровно на сумму X ---
     if return_doc is None:
-        items = [
+        original_items = (
+            await anyio.to_thread.run_sync(
+                lambda: _cloud_original_items(get_organization_id(), original_external_id)
+            )
+            if original_external_id
+            else None
+        )
+        snapshot_items = [
             {
                 "num": idx,
                 "product": line["product"],
@@ -829,6 +868,10 @@ async def book_correction_in_iiko(
             }
             for idx, line in enumerate(return_lines, start=1)
         ]
+        if original_items:
+            items = [{**item, "store": item.get("store") or store_guid} for item in original_items]
+        else:
+            items = snapshot_items
         return_body = build_returned_invoice_body(
             counteragent=partner_guid,
             date=date_naive,
@@ -911,19 +954,34 @@ async def book_correction_in_iiko(
             )[:500]
             await session.commit()
             return invoice
-        # Шаг 2 успешен → контур завершён. Y остаётся НЕОПЛАЧЕННОЙ намеренно: возврат создал долг
-        # поставщика на всю старую сумму, новая приходная — на правильную; чистый баланс = дебиторка
-        # (старая − новая). Оплачивать Y зачётом НЕЛЬЗЯ — settle-дебет завышает баланс поставщика
-        # (проверено на живом API). Переплата покрыта у нас (SupplierPrepayment).
+        # Шаг 2 успешен. Дальше (решение владельца 23.10.2026) на Y ставится оплата — зачётом из
+        # кредита, который дало сторно, а разница чека уходит расходом своей статьи: шаги 3–4 в
+        # iiko_correction_chain. Пока настройка выключена, Y остаётся без оплаты, как было, и
+        # кредит «старая − новая» висит у поставщика.
         invoice.iiko_return_status = "booked"
         invoice.iiko_return_lines = []
         invoice.iiko_return_error = None
         await session.commit()
-        return invoice
+        return await _complete_correction_payment(session, invoice_id)
 
-    # Ретрай, где шаг 2 уже сделан ранее (new_doc есть): остаётся зафиксировать завершение контура.
+    # Ретрай, где шаг 2 уже сделан ранее (new_doc есть): зафиксировать шаги 1–2 и довести 3–4.
     invoice.iiko_return_status = "booked"
     invoice.iiko_return_lines = []
     invoice.iiko_return_error = None
     await session.commit()
+    return await _complete_correction_payment(session, invoice_id)
+
+
+async def _complete_correction_payment(
+    session: AsyncSession, invoice_id: uuid.UUID
+) -> SupplierInvoice:
+    """Шаги 3–4 цепочки исправления (оплата «(испр.)» зачётом, расход разницы чека).
+
+    Выключено настройкой ``iiko_correction_offset_enabled`` — тогда ничего не шлёт. Сбой не
+    роняет исправление: статус ``failed`` с причиной, ретрай продолжит с невыполненного шага."""
+    from app.services.iiko_correction_chain import complete_correction_payment
+
+    await complete_correction_payment(session, invoice_id)
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    assert invoice is not None
     return invoice

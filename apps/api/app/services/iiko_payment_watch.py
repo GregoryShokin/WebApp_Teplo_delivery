@@ -77,6 +77,7 @@ DEV_ORIGINAL_PAYMENT_REMOVED = "original_payment_removed"  # пара: опла�
 DEV_CORRECTION_PAID = "correction_paid"  # пара: «X (испр.)» оплатили
 DEV_RETURN_MISSING = "return_missing"  # пара: возврата X нет / не проведён / не на X
 DEV_CORRECTION_DELETED = "correction_deleted"  # пара: «X (испр.)» удалена в iiko
+DEV_CORRECTION_OFFSET_REMOVED = "correction_offset_removed"  # пара: зачёт Тепла на «(испр.)» снят
 
 # Оплату можно передвинуть в бэк-офисе на любую дату, поэтому проводки читаем с большим запасом
 # в обе стороны от дат наших накладных: узкое окно приняло бы передвинутую оплату за снятую.
@@ -651,6 +652,10 @@ async def _check_correction_pair(
     # После исправления external_id накладной указывает на «(испр.)», а исходную X помнят строки
     # журнала — Тепло ставило оплату именно на неё — и ссылка возврата.
     original_pushes = [p for p in pushes if p.external_id != correction_id]
+    # Оплаты, которые Тепло само поставило на «(испр.)» — зачёт из кредита сторно (цепочка
+    # исправления, iiko_correction_chain). Есть они — пара живёт по новой схеме: «(испр.)»
+    # оплачена ровно этим зачётом; нет — по старой: «(испр.)» без оплаты.
+    offset_pushes = [p for p in pushes if p.external_id == correction_id]
     try:
         returned = (
             await anyio.to_thread.run_sync(lambda: source.returned(return_id))
@@ -719,8 +724,46 @@ async def _check_correction_pair(
     #    13.10 задвоение сняли руками, у Ч-116 и Ч-123 — оплатой исходной. Эти два состояния
     #    называем разными словами: человеку важно, задвоилась оплата или переехала.
     correction_paid = ledger.payments(correction_number, correction_counteragents)
-    if correction_paid:
-        paid_total = _total(correction_paid)
+    offset_expected = sum((p.amount for p in offset_pushes), Decimal("0"))
+    paid_on_correction = _total(correction_paid)
+    if offset_expected > 0 and paid_on_correction < offset_expected - AMOUNT_TOLERANCE:
+        deviations.append(
+            await _removed_payment_deviation(
+                code=DEV_CORRECTION_OFFSET_REMOVED,
+                title="Новая накладная",
+                pushes=offset_pushes,
+                document=correction,
+                number=correction_number,
+                expected=offset_expected,
+                found=paid_on_correction,
+                source=source,
+            )
+        )
+    elif offset_expected > 0 and paid_on_correction > offset_expected + AMOUNT_TOLERANCE:
+        extra = (paid_on_correction - offset_expected).quantize(Decimal("0.01"))
+        edit = await _edit_of(correction, source)
+        clause, _after = _edit_clause(edit, None)
+        deviations.append(
+            {
+                "code": DEV_CORRECTION_PAID,
+                "document_id": correction_id,
+                "document_number": correction_number,
+                "amount": str(extra),
+                "original_paid": True,
+                "modified_at": _iso(edit.at),
+                "modified_by_id": edit.by_id,
+                "modified_by": edit.by_name,
+                "text": (
+                    f"Оплата задвоилась: «{correction_number}» Тепло уже оплатило зачётом из"
+                    f" уплаченного ({_rub(offset_expected)}), а в iiko на ней ещё {_rub(extra)}."
+                )
+                + clause,
+            }
+        )
+    elif offset_expected > 0:
+        report.seen_push_ids.update(p.id for p in offset_pushes)
+    elif correction_paid:
+        paid_total = paid_on_correction
         edit = await _edit_of(correction, source)
         dates = ", ".join(
             sorted({p.paid_on.strftime("%d.%m.%Y") for p in correction_paid if p.paid_on})
