@@ -3165,9 +3165,9 @@
     "semantic_hash": "c8089443fe37980638739c77ba93de16"
   },
   "apps/api/app/services/payroll_calculator.py": {
-    "mtime": 1785665783.6361496,
-    "ast_hash": "46691bf70e3a9b9fe713f150891ac68b",
-    "semantic_hash": "46691bf70e3a9b9fe713f150891ac68b"
+    "mtime": 1792755339.7372582,
+    "ast_hash": "a145fec64057d053276162e94971d49b",
+    "semantic_hash": "a145fec64057d053276162e94971d49b"
   },
   "apps/api/app/services/payroll_config.py": {
     "mtime": 1783327453.752723,
@@ -4885,9 +4885,9 @@
     "semantic_hash": "b6334b2c1361d286daae34de60530e79"
   },
   "apps/api/tests/test_payroll.py": {
-    "mtime": 1792069476.2900555,
-    "ast_hash": "d13870157f3e0dcace8c9365d20c1ccc",
-    "semantic_hash": "d13870157f3e0dcace8c9365d20c1ccc"
+    "mtime": 1792755434.6607268,
+    "ast_hash": "9d54245e9b5498d7378a62263a5548b6",
+    "semantic_hash": "9d54245e9b5498d7378a62263a5548b6"
   },
   "apps/api/tests/test_payroll_admin.py": {
     "mtime": 1792058555.2233794,
