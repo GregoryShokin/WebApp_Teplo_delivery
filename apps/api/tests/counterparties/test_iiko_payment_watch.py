@@ -485,7 +485,22 @@ async def test_pair_flags_removed_original_and_paid_correction(async_session_fac
     paid = codes[DEV_CORRECTION_PAID]
     assert paid["document_number"] == "Ч-116 (испр.)" and paid["amount"] == "2223.59"
     assert "14.08.2026" in paid["text"]
+    assert paid["original_paid"] is False and "Оплата переехала" in paid["text"]
     assert case.payload["amount"] == "2583.56"
+
+
+async def test_pair_flags_double_payment(async_session_factory):
+    """Состояние «Местного закупа» на 06.10.2026: X оплачена, возврат проведён, и «(испр.)»
+    тоже оплатили — оплата задвоилась. Одна строка, и она прямо называет задвоение."""
+    iiko = _pair_iiko("Ч-117", x_paid="3253.91", y_paid="2968.94")
+    async with async_session_factory() as session:
+        await _corrected_cheque(session, number="Ч-117", amount="3253.91")
+        await watch_iiko_payments(session, source=iiko)
+
+    [case] = await _drift_cases(async_session_factory)
+    [dev] = case.payload["deviations"]
+    assert dev["code"] == DEV_CORRECTION_PAID and dev["original_paid"] is True
+    assert "Оплата задвоилась" in dev["text"] and "3 253,91 ₽" in dev["text"]
 
 
 @pytest.mark.parametrize(
@@ -545,6 +560,22 @@ async def test_pair_without_teplo_payment_does_not_claim_removal(async_session_f
         result = await watch_iiko_payments(session, source=iiko)
 
     assert result["opened"] == 0
+
+
+async def test_paid_correction_without_teplo_payment_on_original_is_not_called_moved(
+    async_session_factory,
+):
+    """Тепло оплату исходной не ставило, а «(испр.)» оплачена — видно, но без домысла
+    «переехала»: что оплата когда-то стояла на исходной, мы не знаем (АЛЬЯНС ЮГ)."""
+    iiko = _pair_iiko("Ч-127", x_paid=None, y_paid="50.00")
+    async with async_session_factory() as session:
+        await _corrected_cheque(session, number="Ч-127", amount="100.00", with_push=False)
+        await watch_iiko_payments(session, source=iiko)
+
+    [case] = await _drift_cases(async_session_factory)
+    [dev] = case.payload["deviations"]
+    assert dev["code"] == DEV_CORRECTION_PAID
+    assert "переехала" not in dev["text"] and "оплаты нет" in dev["text"]
 
 
 async def test_sweep_does_not_close_drift_case(async_session_factory):

@@ -690,9 +690,10 @@ async def _check_correction_pair(
 
     # 1. Исходная X оплачена — судим только оплату, которую ставило Тепло: если Тепло её не
     #    ставило вовсе, это «оплата оригинала так и не дошла» (дозор sweep_unsettled), не пропажа.
+    original_found = _total(ledger.payments(original_number, original_counteragents))
     if original_pushes:
         expected = sum((p.amount for p in original_pushes), Decimal("0"))
-        found = _total(ledger.payments(original_number, original_counteragents))
+        found = original_found
         if _paid_in_full(found, expected, original):
             report.seen_push_ids.update(p.id for p in original_pushes)
         else:
@@ -710,6 +711,10 @@ async def _check_correction_pair(
             )
 
     # 2. «(испр.)» без оплаты: возврат уже погасил исходную, оплата новой задваивает расчёт.
+    #    Человек видит неоплаченную «(испр.)» долгом и оплачивает её — так у «Местного закупа»
+    #    к 06.10.2026 у всех трёх пар стояли оплаты и X, и «(испр.)» при проведённом возврате;
+    #    13.10 задвоение сняли руками, у Ч-116 и Ч-123 — оплатой исходной. Эти два состояния
+    #    называем разными словами: человеку важно, задвоилась оплата или переехала.
     correction_paid = ledger.payments(correction_number, correction_counteragents)
     if correction_paid:
         paid_total = _total(correction_paid)
@@ -717,11 +722,29 @@ async def _check_correction_pair(
         dates = ", ".join(
             sorted({p.paid_on.strftime("%d.%m.%Y") for p in correction_paid if p.paid_on})
         )
-        text = (
-            f"Новая накладная «{correction_number}» оплачена в iiko на {_rub(paid_total)}"
-            f"{f' (дата оплаты {dates})' if dates else ''}, а по схеме исправления она остаётся"
-            " без оплаты: исходную уже оплатили, а возврат погасил её приход."
-        )
+        paid_words = f"{_rub(paid_total)}{f', дата оплаты {dates}' if dates else ''}"
+        original_paid = original_found > 0
+        if original_paid:
+            text = (
+                f"Оплата задвоилась: в iiko оплачены и исходная накладная {original_number}"
+                f" ({_rub(original_found)}), и новая «{correction_number}» ({paid_words}),"
+                " а возврат уже погасил приход исходной. По схеме исправления «(испр.)»"
+                " остаётся без оплаты."
+            )
+        elif original_pushes:
+            text = (
+                f"Оплата переехала: у исходной накладной {original_number} её нет, а новая"
+                f" «{correction_number}» оплачена ({paid_words}). По схеме исправления оплата"
+                " стоит на исходной, а «(испр.)» остаётся без оплаты."
+            )
+        else:
+            # Тепло оплату исходной не ставило (так у «АЛЬЯНС ЮГ»: отправка не прошла) —
+            # «переехала» было бы домыслом, говорим только то, что видно в iiko.
+            text = (
+                f"У исходной накладной {original_number} оплаты нет, а новая"
+                f" «{correction_number}» оплачена ({paid_words}). По схеме исправления оплата"
+                " стоит на исходной, а «(испр.)» остаётся без оплаты."
+            )
         clause, _after = _edit_clause(edit, None)
         deviations.append(
             {
@@ -729,6 +752,8 @@ async def _check_correction_pair(
                 "document_id": correction_id,
                 "document_number": correction_number,
                 "amount": str(paid_total.quantize(Decimal("0.01"))),
+                # True — задвоение (оплачены обе), False — оплата переехала на «(испр.)».
+                "original_paid": original_paid,
                 "payments": [
                     {
                         "amount": str(p.amount),
