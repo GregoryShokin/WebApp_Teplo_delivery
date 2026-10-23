@@ -2910,9 +2910,9 @@
     "semantic_hash": "cf3a9f89c33ec0964712166d861b7cb7"
   },
   "apps/api/app/services/email_invoice_ingest.py": {
-    "mtime": 1792069476.2132752,
-    "ast_hash": "48e91d2ddb3db3255f9488780164c238",
-    "semantic_hash": "48e91d2ddb3db3255f9488780164c238"
+    "mtime": 1792745771.2067993,
+    "ast_hash": "de93af25112adefdf0831eb3c63266ad",
+    "semantic_hash": "de93af25112adefdf0831eb3c63266ad"
   },
   "apps/api/app/services/employee_assignments.py": {
     "mtime": 1780926254.528712,
@@ -3495,9 +3495,9 @@
     "semantic_hash": "531f731ba3068603c4bbf6ba24fae1ce"
   },
   "apps/api/app/services/taxes/document_ingest.py": {
-    "mtime": 1790070440.5723372,
-    "ast_hash": "4171e360df0d5c78f94194f2af786032",
-    "semantic_hash": ""
+    "mtime": 1792745709.2475193,
+    "ast_hash": "ed3b8d80eaa0fe9d2fe7770cdcdd352c",
+    "semantic_hash": "ed3b8d80eaa0fe9d2fe7770cdcdd352c"
   },
   "apps/api/app/services/taxes/document_parser.py": {
     "mtime": 1787151618.3515213,
@@ -3865,9 +3865,9 @@
     "semantic_hash": "bd64d36d22e4027af1730542c2cfb983"
   },
   "apps/api/tests/counterparties/test_email_invoice_skips_tax_agent.py": {
-    "mtime": 1785182247.161081,
-    "ast_hash": "0bc8d4ec48c4bf4259f9a214101589aa",
-    "semantic_hash": "0bc8d4ec48c4bf4259f9a214101589aa"
+    "mtime": 1792745787.0113416,
+    "ast_hash": "5b274de488f389d716d616a27111f403",
+    "semantic_hash": "5b274de488f389d716d616a27111f403"
   },
   "apps/api/tests/counterparties/test_email_package_and_free_payment.py": {
     "mtime": 1790689084.8000975,
@@ -5160,9 +5160,9 @@
     "semantic_hash": "5fb12533e4e527ad817615c7e788c331"
   },
   "apps/api/tests/test_taxes_document_ingest.py": {
-    "mtime": 1790070440.5726106,
-    "ast_hash": "c72f7c8fb6ebee0e0c74af7843c990fc",
-    "semantic_hash": ""
+    "mtime": 1792745675.8601859,
+    "ast_hash": "0024c2e810dbffa5c1ee9f320f833245",
+    "semantic_hash": "0024c2e810dbffa5c1ee9f320f833245"
   },
   "apps/api/tests/test_taxes_document_parser.py": {
     "mtime": 1787151618.3528507,
