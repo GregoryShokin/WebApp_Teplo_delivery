@@ -517,6 +517,26 @@ async def _apply_iiko(
             status=LineStatus.OK if amount is not None else LineStatus.NO_DATA,
         )
 
+    # Продажи без цеха iiko синк кладёт в «итого», но ни к одному направлению не относит.
+    # Выручка от этого не теряется, а разрез по направлениям врёт на эту сумму — владелец
+    # должен знать, откуда она и что сделать, а не узнавать по расхождению колонок.
+    unmapped = await iiko_source.month_unmapped_revenue(session, month_start)
+    if unmapped is not None:
+        places = ", ".join(f"«{place}»" for place in unmapped.places) or "не указано"
+        report.warnings.append(
+            Warning(
+                code="iiko_revenue_without_direction",
+                line_code="revenue_net_chernikova",
+                message=(
+                    f"Выручка {rubles(unmapped.amount)} ₽ пришла из iiko без цеха "
+                    f"(место приготовления: {places}). В выручку она вошла, но ни к одному "
+                    "направлению не отнесена. Привяжите позиции к месту приготовления в iiko "
+                    "или попросите добавить это место в карту направлений"
+                ),
+                amount=unmapped.amount,
+            )
+        )
+
     workup_items = await iiko_source.month_workup_items(session, month_start)
     _add_component(
         lines,

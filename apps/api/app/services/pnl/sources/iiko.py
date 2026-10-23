@@ -242,6 +242,42 @@ async def month_by_direction(
     return {direction: amount for direction, amount in rows}
 
 
+@dataclass(slots=True)
+class UnmappedRevenue:
+    """Выручка месяца, которую iiko отдал без цеха: в «итого» она есть, в разрезе — нет."""
+
+    amount: Decimal
+    places: list[str]
+
+
+async def month_unmapped_revenue(
+    session: AsyncSession, month_start: date
+) -> UnmappedRevenue | None:
+    """Выручка со скидками без цеха за месяц и места приготовления, откуда она пришла.
+
+    Места синк кладёт в ``source_ref`` факта после метки ``UNMAPPED_PLACES_MARK`` — отдельной
+    колонки под них у зеркала нет. ``None`` — такой выручки в месяце нет.
+    """
+    from app.services.pnl.iiko_sync import (
+        METRIC_REVENUE_NET,
+        UNMAPPED_DIRECTION,
+        UNMAPPED_PLACES_MARK,
+    )
+
+    fact = await session.scalar(
+        select(PnlIikoFact).where(
+            PnlIikoFact.period_month == month_start,
+            PnlIikoFact.metric_code == METRIC_REVENUE_NET,
+            PnlIikoFact.direction == UNMAPPED_DIRECTION,
+        )
+    )
+    if fact is None or fact.amount == 0:
+        return None
+    _, _, listed = (fact.source_ref or "").partition(UNMAPPED_PLACES_MARK)
+    places = [item.strip() for item in listed.split(",") if item.strip()]
+    return UnmappedRevenue(amount=fact.amount, places=places)
+
+
 async def synced_at(session: AsyncSession, month_start: date) -> datetime | None:
     """Когда зеркало последний раз обновлялось за этот месяц.
 

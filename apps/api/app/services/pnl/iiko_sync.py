@@ -71,9 +71,17 @@ DIRECTION_BY_COOKING_PLACE = {
     "спец": "rolls",
 }
 
+#: Направление строк пресета, чьё место приготовления не нашлось в карте выше (или пустое).
+UNMAPPED_DIRECTION = "unmapped"
+#: Метка в ``source_ref`` факта «без цеха»: за ней перечислены места приготовления, чтобы
+#: отчёт мог назвать их владельцу. Отдельной колонки под это у зеркала нет.
+UNMAPPED_PLACES_MARK = "; без цеха: "
+
 METRIC_REVENUE_GROSS = "revenue_gross"
 METRIC_REVENUE_NET = "revenue_net"
 METRIC_FOOD_COST = "food_cost"
+#: Метрики пресета выручки — у них есть разрез по направлениям.
+REVENUE_PRESET_METRICS = (METRIC_REVENUE_GROSS, METRIC_REVENUE_NET, METRIC_FOOD_COST)
 METRIC_COURIER_SALARY = "courier_salary"
 METRIC_PARTNER_COMMISSION = "partner_commission"
 
@@ -97,14 +105,14 @@ def month_bounds_exclusive(month: dt.date) -> tuple[dt.date, dt.date]:
 
 
 def map_direction(cooking_place: str | None) -> str:
-    """Место приготовления → направление ОПиУ. Незнакомое НЕ сваливаем в «итого» молча."""
+    """Место приготовления → направление ОПиУ. Незнакомое — ``unmapped``, а не чужой цех."""
     text = (cooking_place or "").strip().casefold()
     if not text:
-        return "unmapped"
+        return UNMAPPED_DIRECTION
     for marker, direction in DIRECTION_BY_COOKING_PLACE.items():
         if marker in text:
             return direction
-    return "unmapped"
+    return UNMAPPED_DIRECTION
 
 
 def _number(value: Any) -> Decimal:
@@ -196,15 +204,19 @@ def aggregate_partner_rows(
 
 
 def aggregate_revenue_rows(rows: list[dict[str, Any]]) -> SyncResult:
-    """Свернуть строки пресета выручки в метрики по направлениям и «итого»."""
+    """Свернуть строки пресета выручки в метрики по направлениям и «итого».
+
+    Строка, чьё место приготовления не отнесено ни к одному направлению, идёт в «итого» и в
+    отдельное направление ``unmapped``. Раньше она отбрасывалась целиком: продажи без цеха
+    (новый цех, позиция без места приготовления) исчезали из выручки ОПиУ молча, хотя в
+    налоговой базе оставались. Решение владельца 23.10.2026: в «итого» и с предупреждением.
+    """
     result = SyncResult(month=dt.date.today())
     for row in rows:
         result.rows_seen += 1
         direction = map_direction(_field(row, "CookingPlace"))
-        if direction == "unmapped":
-            place = str(_field(row, "CookingPlace") or "(пусто)")
-            result.unmapped_directions.add(place)
-            continue
+        if direction == UNMAPPED_DIRECTION:
+            result.unmapped_directions.add(str(_field(row, "CookingPlace") or "(пусто)"))
         gross = _number(_field(row, "DishSumInt"))
         net = _number(_field(row, "DishDiscountSumInt", "sumAfterDiscountWithoutVAT"))
         cost = _number(_field(row, "ProductCostBase.ProductCost"))
@@ -316,6 +328,17 @@ async def sync_month(session: AsyncSession, month: dt.date) -> SyncResult:
     revenue_rows = await _fetch_preset(REVENUE_PRESET_ID, start, end_exclusive)
     result = aggregate_revenue_rows(revenue_rows)
     result.month = start
+    if result.unmapped_directions:
+        places = ", ".join(sorted(result.unmapped_directions))
+        unmapped_net = result.facts.get((METRIC_REVENUE_NET, UNMAPPED_DIRECTION), Decimal("0.00"))
+        result.changed.append(
+            f"Выручка без цеха ({places}): {unmapped_net} ₽ — в «итого» учтена, "
+            "к направлению не отнесена"
+        )
+        for metric in REVENUE_PRESET_METRICS:
+            result.fact_source_ref[(metric, UNMAPPED_DIRECTION)] = (
+                f"{REVENUE_PRESET_ID}{UNMAPPED_PLACES_MARK}{places}"
+            )
 
     courier_rows = await _fetch_preset(PNL_PRESET_ID, start, end_exclusive)
     result.facts[(METRIC_COURIER_SALARY, "total")] = courier_salary_from_rows(courier_rows)
@@ -377,6 +400,27 @@ async def sync_month(session: AsyncSession, month: dt.date) -> SyncResult:
         existing.amount = amount
         existing.rows_count = rows_count
         existing.source_ref = source_ref
+
+    # Направление, которого в свежем пресете больше нет, вычищаем: иначе оно залипает со
+    # старой суммой — например, «без цеха» после того, как позицию привязали к цеху в iiko.
+    # Только когда пресет вообще ответил строками: пустой ответ — не повод стирать разрез.
+    if result.rows_seen:
+        stale = (
+            await session.scalars(
+                select(PnlIikoFact).where(
+                    PnlIikoFact.period_month == start,
+                    PnlIikoFact.metric_code.in_(REVENUE_PRESET_METRICS),
+                    PnlIikoFact.direction != "total",
+                )
+            )
+        ).all()
+        for fact in stale:
+            if (fact.metric_code, fact.direction) not in result.facts:
+                result.changed.append(
+                    f"{fact.metric_code}/{fact.direction}: было {fact.amount}, направления "
+                    "больше нет в пресете"
+                )
+                await session.delete(fact)
 
     await session.execute(
         delete(PnlPartnerCommissionFact).where(PnlPartnerCommissionFact.period_month == start)
