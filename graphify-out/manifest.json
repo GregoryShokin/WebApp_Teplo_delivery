@@ -3265,9 +3265,9 @@
     "semantic_hash": "ca0a9aa9fde7b1de2ac5da7ec96cc79a"
   },
   "apps/api/app/services/pnl/iiko_sync.py": {
-    "mtime": 1786131084.7733648,
-    "ast_hash": "49c662641a7fe7a196baf24e35ae1857",
-    "semantic_hash": "49c662641a7fe7a196baf24e35ae1857"
+    "mtime": 1792741426.230088,
+    "ast_hash": "289c44a09d48d1aca28681f92378feef",
+    "semantic_hash": "289c44a09d48d1aca28681f92378feef"
   },
   "apps/api/app/services/pnl/ledgers.py": {
     "mtime": 1790332375.1314847,
@@ -3280,9 +3280,9 @@
     "semantic_hash": "6a6e3f5ca69f62012cc72a81fb579af0"
   },
   "apps/api/app/services/pnl/projector.py": {
-    "mtime": 1790347841.5617707,
-    "ast_hash": "db5e14067ce8fb192a402181ae4f4b25",
-    "semantic_hash": "db5e14067ce8fb192a402181ae4f4b25"
+    "mtime": 1792741439.5269082,
+    "ast_hash": "d7ff4421bdfa822c3ae8a28c776695f0",
+    "semantic_hash": "d7ff4421bdfa822c3ae8a28c776695f0"
   },
   "apps/api/app/services/pnl/revision_products.py": {
     "mtime": 1786099613.5780025,
@@ -3315,9 +3315,9 @@
     "semantic_hash": "d622f60b5f449a28477f7639f1ddb3f3"
   },
   "apps/api/app/services/pnl/sources/iiko.py": {
-    "mtime": 1786099613.5794044,
-    "ast_hash": "3f27621921cd6a101d201b4fd52aaf96",
-    "semantic_hash": "3f27621921cd6a101d201b4fd52aaf96"
+    "mtime": 1792741439.5265162,
+    "ast_hash": "aa808dc75caba29bfeef3147c56cbbe3",
+    "semantic_hash": "aa808dc75caba29bfeef3147c56cbbe3"
   },
   "apps/api/app/services/pnl/sources/inventory.py": {
     "mtime": 1786099613.5796335,
@@ -8273,5 +8273,10 @@
     "mtime": 1792065216.283453,
     "ast_hash": "eb214c0bdff34899b11888bb58fef0a7",
     "semantic_hash": "eb214c0bdff34899b11888bb58fef0a7"
+  },
+  "apps/api/tests/test_pnl_unmapped_direction.py": {
+    "mtime": 1792741479.3227417,
+    "ast_hash": "70866cf7b71799acb6039364237363ce",
+    "semantic_hash": "70866cf7b71799acb6039364237363ce"
   }
 }
