@@ -1735,6 +1735,7 @@ async def list_owner_review_cases(
         "unconfirmed_cheque",
         "payer_wallet_unresolved",
         "iiko_payment_unsettled",
+        "iiko_payment_drift",
         "iiko_cash_payout_unsettled",
         "card_refund_after_cheque",
         "cheque_refund_missing",
@@ -1749,6 +1750,9 @@ async def list_owner_review_cases(
         "unconfirmed_cheque",
         "payer_wallet_unresolved",
         "iiko_payment_unsettled",
+        # Оплата, которую Тепло поставило в iiko, потом пропала там, или исправление чека
+        # разошлось со схемой (сторож iiko_payment_watch): раньше это не видел никто.
+        "iiko_payment_drift",
         # Выдача аванса/депозита не отразилась изъятием в iiko: касса iiko разошлась с ДДС,
         # а раньше об этом знал только warning в логах контейнера.
         "iiko_cash_payout_unsettled",

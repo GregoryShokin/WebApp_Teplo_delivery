@@ -696,6 +696,32 @@ async def verify_iiko_invoice_payments() -> None:
 
 @scheduler.scheduled_job(
     "interval",
+    minutes=60,
+    id="watch_iiko_invoice_payments",
+    max_instances=1,
+    coalesce=True,
+)
+async def watch_iiko_invoice_payments() -> None:
+    """Сторож оплат: поставленная Тепло оплата всё ещё стоит в iiko, исправления — по схеме.
+
+    Сверка выше подтверждает проводку один раз; оплату же в бэк-офисе могут снять позже — так
+    13.10.2026 пропали оплаты чеков «Местного закупа», подтверждённые в августе. Сторож
+    перепроверяет все отправки без окна по возрасту и пары исправления чека и заводит случаи
+    owner-review. В iiko ничего не пишет."""
+    from app.services.iiko_payment_watch import watch_iiko_payments
+
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await watch_iiko_payments(session)
+        except Exception:  # noqa: BLE001 — недоступный OLAP не должен ронять планировщик
+            logger.warning("watch_iiko_invoice_payments: сторож не отработал", exc_info=True)
+            return
+    if result.get("opened") or result.get("resolved") or result.get("unavailable"):
+        logger.info("watch_iiko_invoice_payments: %s", result)
+
+
+@scheduler.scheduled_job(
+    "interval",
     minutes=30,
     id="verify_iiko_cash_payouts",
     max_instances=1,

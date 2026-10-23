@@ -42,6 +42,7 @@ import {
   SUPPLIER_REFUND_ARTICLE_CODE,
   compactText,
   formatDate,
+  formatDateTime,
   formatDdsMoney,
   refundTwinWarning,
   refundTwinsQuery,
@@ -86,6 +87,7 @@ export function OwnerReviewTab({ canClassify }: { canClassify: boolean }) {
               Не определён банк-счёт плательщика
             </SelectItem>
             <SelectItem value="iiko_payment_unsettled">Оплата в iiko не проведена</SelectItem>
+            <SelectItem value="iiko_payment_drift">Оплата в iiko изменилась после Тепла</SelectItem>
             <SelectItem value="iiko_cash_payout_unsettled">
               Выдача не отражена в кассе iiko
             </SelectItem>
@@ -212,7 +214,7 @@ function OwnerReviewCard({
     mutationFn: () => dismissOwnerReviewCase(item.id),
     onSuccess: async () => {
       await invalidate();
-      toast.success("Кейс отложен");
+      toast.success(item.kind === "iiko_payment_drift" ? "Отмечено: разобрано" : "Кейс отложен");
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отложить кейс")),
   });
@@ -309,6 +311,13 @@ function OwnerReviewCard({
   // общая карточка показала бы пустые поля и сырой payload — рисуем своё.
   const isDepositDraftFailed = item.kind === "deposit_bank_draft_failed";
   const isCashPayoutUnsettled = item.kind === "iiko_cash_payout_unsettled";
+  // Сторож оплат: Тепло ставило оплату в iiko, а теперь iiko с ней не сходится (оплату сняли,
+  // «(испр.)» оплатили, возврата нет). Строки отклонений — в payload.deviations.
+  const isIikoDrift = item.kind === "iiko_payment_drift";
+  const driftDeviations =
+    isIikoDrift && Array.isArray(item.payload?.deviations)
+      ? (item.payload.deviations as Array<{ code: string; text: string; detected_at?: string }>)
+      : [];
   const iikoRetriable = isIikoUnsettled && item.payload?.retriable === true;
   const isMultiInvoiceResidual =
     isIikoUnsettled && item.payload?.reason_code === "multi_invoice_residual";
@@ -326,6 +335,11 @@ function OwnerReviewCard({
             <Badge variant="outline">{caseKindLabel(item.kind)}</Badge>
             {isIikoUnsettled && item.payload?.reason_code ? (
               <Badge variant="secondary">{iikoReasonLabel(String(item.payload.reason_code))}</Badge>
+            ) : null}
+            {isIikoDrift && item.payload?.reason_code ? (
+              <Badge variant="secondary">
+                {driftReasonLabel(String(item.payload.reason_code))}
+              </Badge>
             ) : null}
             {operation ? <DirectionBadge direction={operation.direction} /> : null}
           </div>
@@ -355,6 +369,35 @@ function OwnerReviewCard({
               <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm">
                 {payloadText("reason")}
               </div>
+            </div>
+          </>
+        ) : isIikoDrift ? (
+          <>
+            <div className="grid gap-3 md:grid-cols-3">
+              <ReviewField label="Поставщик" value={payloadText("supplier_name")} />
+              <ReviewField label="Накладная" value={payloadText("invoice_number")} />
+              <ReviewField
+                label="Дата"
+                value={item.payload?.issued_at ? formatDate(String(item.payload.issued_at)) : "—"}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Что разошлось</Label>
+              <ul className="grid gap-2">
+                {driftDeviations.map((deviation) => (
+                  <li
+                    className="rounded-md border bg-muted/20 px-3 py-2 text-sm"
+                    key={`${deviation.code}:${deviation.text}`}
+                  >
+                    <div>{deviation.text}</div>
+                    {deviation.detected_at ? (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        Тепло заметило: {formatDateTime(deviation.detected_at)}
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
             </div>
           </>
         ) : isIikoUnsettled ? (
@@ -573,6 +616,12 @@ function OwnerReviewCard({
               ? "Причина известна и повтор безопасен: настройте тип проводки в iiko и проведите выдачу заново."
               : "Прошла проводка или нет — по ответу iiko не видно, поэтому автоматически её не повторяем: сверьтесь в бэк-офисе iiko и проведите вручную, если изъятия там нет."}
           </div>
+        ) : isIikoDrift ? (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+            Тепло ставило оплату в iiko, а теперь iiko с ней не сходится. Само Тепло в iiko ничего
+            не исправляет — сверьте документ в бэк-офисе iiko. Случай закроется сам, когда iiko
+            снова совпадёт со схемой; если всё так и должно быть, отметьте «Разобрано».
+          </div>
         ) : item.kind === "iiko_payment_unsettled" ? (
           <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
             {isMultiInvoiceResidual
@@ -649,8 +698,12 @@ function OwnerReviewCard({
             {/* Для iiko-кейсов «Отложить» бесполезна: свип пере-создаст реально недошедшую оплату,
                 а неразобранное расхождение нельзя скрывать. Валидны действия выше по причине. */}
             {isIikoUnsettled ? null : (
-              <Button disabled={isBusy} onClick={() => dismissMutation.mutate()} variant="ghost">
-                Отложить
+              <Button
+                disabled={isBusy}
+                onClick={() => dismissMutation.mutate()}
+                variant={isIikoDrift ? "outline" : "ghost"}
+              >
+                {isIikoDrift ? "Разобрано" : "Отложить"}
               </Button>
             )}
           </div>
@@ -692,6 +745,9 @@ function caseKindLabel(kind: string) {
   if (kind === "iiko_payment_unsettled") {
     return "Оплата в iiko не проведена";
   }
+  if (kind === "iiko_payment_drift") {
+    return "Оплата в iiko изменилась после Тепла";
+  }
   if (kind === "iiko_cash_payout_unsettled") {
     return "Выдача не отражена в кассе iiko";
   }
@@ -730,6 +786,18 @@ function iikoReasonLabel(code: string) {
       return "iiko отклонил";
     case "orphaned_pending":
       return "Осиротевший пуш";
+    default:
+      return code;
+  }
+}
+
+// Ярлык правила сторожа оплат (payload.reason_code случая iiko_payment_drift) для бейджа.
+function driftReasonLabel(code: string) {
+  switch (code) {
+    case "payment_removed_in_iiko":
+      return "Оплату сняли в iiko";
+    case "correction_pair_mismatch":
+      return "Исправление чека не по схеме";
     default:
       return code;
   }

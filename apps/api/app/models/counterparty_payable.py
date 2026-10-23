@@ -1106,6 +1106,11 @@ class IikoInvoicePaymentPush(Base):
     resend_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    # Сторож оплат (iiko_payment_watch): когда он последний раз видел эту оплату в учёте iiko.
+    # ``verified_at`` ставится один раз и больше не меняется, а оплату в iiko могут снять руками
+    # спустя недели — так 13.10.2026 пропали оплаты чеков, подтверждённые ещё в конце августа.
+    # По этой отметке случай пропажи называет окно «была — нет».
+    iiko_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     request_payload: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )

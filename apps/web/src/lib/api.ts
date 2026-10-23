@@ -2467,6 +2467,7 @@ export type OwnerReviewKind =
   | "unconfirmed_cheque"
   | "payer_wallet_unresolved"
   | "iiko_payment_unsettled"
+  | "iiko_payment_drift"
   | "iiko_cash_payout_unsettled"
   | "card_refund_after_cheque"
   | "cheque_refund_missing"
