@@ -11,8 +11,12 @@ TRANSACTIONS не отдаётся, а номера накладных повт�
 
 Что делаем с неподтверждённым: даём iiko ``VERIFY_GRACE`` на проведение, затем несколько раз
 перепроверяем и только после этого переотправляем платёж (снимаем ``ok`` и done-маркер, чтобы
-зеркалящий джоб взял накладную снова). Переотправок не больше ``MAX_RESENDS`` — дальше кейс в
-owner-review, иначе при системном сбое iiko мы бы долбили его вечно и рисковали задвоить оплату.
+зеркалящий джоб взял накладную снова). Переотправок не больше ``MAX_RESENDS``, и последнюю сверка
+проверяет так же, как первую: не легла и она — кейс в owner-review, БЕЗ новой отправки, а строка
+помечается ``GAVE_UP_RESEND_COUNT``. До 25.10.2026 кейс заводился в момент последней
+переотправки, она же его и закрывала через пять минут («mirrored_ok»), не будучи проверенной:
+06.08 (накладные 31, 34, 36) и 06.10 (515321, 515328, 515333) в iiko не легла ни одна отправка, а
+кейс прожил пять минут, и оплаты потом провели руками.
 
 Сюда же приходят пуши, которым iiko отказала по лимиту частоты (429, префикс
 ``RATE_LIMITED_ERROR_PREFIX``). Отказ не доказывает, что платёж не прошёл, поэтому авто-повтор у
@@ -46,6 +50,10 @@ VERIFY_MAX_AGE = timedelta(days=30)
 VERIFY_ATTEMPTS_BEFORE_RESEND = 3
 # Столько переотправок допускаем, дальше — ручной разбор (страховка от задвоения).
 MAX_RESENDS = 2
+# Сверка сдалась: последняя переотправка тоже не легла, случай заведён. Строку больше не судит
+# ни сверка, ни зеркало (повтор задвоил бы платёж, если он всё-таки дошёл), её держит сторож
+# оплат (iiko_payment_watch) — он и закроет случай, когда проводка найдётся.
+GAVE_UP_RESEND_COUNT = MAX_RESENDS + 1
 # Запас по датам для OLAP: проводка датируется датой накладной, а не датой отправки.
 OLAP_LOOKBACK = timedelta(days=14)
 # Разные копейки округления между нашей суммой и суммой проводки терпим.
@@ -162,7 +170,8 @@ async def verify_mirrored_payments(session: AsyncSession, *, limit: int = 200) -
                 IikoInvoicePaymentPush.verified_at.is_(None),
                 IikoInvoicePaymentPush.created_at <= now - VERIFY_GRACE,
                 IikoInvoicePaymentPush.created_at >= now - VERIFY_MAX_AGE,
-                IikoInvoicePaymentPush.resend_count < MAX_RESENDS,
+                # Последнюю переотправку тоже проверяем; сдавшуюся строку — уже нет.
+                IikoInvoicePaymentPush.resend_count <= MAX_RESENDS,
                 # Накладная перестала быть оплаченной (оплату откатили) — отсутствие проводки в
                 # iiko теперь НОРМА, а не потеря: переотправлять платёж нельзя, он вернул бы
                 # ошибочную оплату. Такие пуши просто оставляем как есть.
@@ -211,6 +220,33 @@ async def verify_mirrored_payments(session: AsyncSession, *, limit: int = 200) -
             result["pending"] += 1
             continue
 
+        if row.resend_count >= MAX_RESENDS:
+            # Не легла и последняя переотправка. Слать ещё раз нельзя (страховка от задвоения), а
+            # снимать ok и done-маркер — тем более: зеркало переслало бы платёж и закрыло кейс
+            # своей же непроверенной отправкой. Кейс заводим, строку помечаем «сверка сдалась».
+            from app.services.counterparty_iiko_payment import _open_iiko_payment_case
+
+            row.resend_count = GAVE_UP_RESEND_COUNT
+            row.verify_attempts = 0
+            await _open_iiko_payment_case(
+                session,
+                invoice_id=row.invoice_id,
+                external_id=row.external_id,
+                amount=row.amount,
+                reason=(
+                    "iiko принимает add_payment, но проводка в учёте не появляется — "
+                    f"не легли и {MAX_RESENDS} автоматические переотправки, нужен ручной разбор"
+                ),
+                reason_code="payment_not_in_iiko_ledger",
+            )
+            result["manual"] += 1
+            logger.warning(
+                "iiko payment verify: проводка по %s не найдена и после %s переотправок — кейс",
+                row.idempotency_key,
+                MAX_RESENDS,
+            )
+            continue
+
         # Проводки нет и после нескольких проверок — платёж до учёта iiko не дошёл. Снимаем ok
         # (для заглушенных лимитом — снимаем кап), чтобы зеркалящий джоб отправил его заново.
         row.status = "error"
@@ -231,21 +267,6 @@ async def verify_mirrored_payments(session: AsyncSession, *, limit: int = 200) -
             row.resend_count,
             MAX_RESENDS,
         )
-        if row.resend_count >= MAX_RESENDS:
-            from app.services.counterparty_iiko_payment import _open_iiko_payment_case
-
-            await _open_iiko_payment_case(
-                session,
-                invoice_id=row.invoice_id,
-                external_id=row.external_id,
-                amount=row.amount,
-                reason=(
-                    "iiko принимает add_payment, но проводка в учёте не появляется — "
-                    f"исчерпаны {MAX_RESENDS} автоматические переотправки, нужен ручной разбор"
-                ),
-                reason_code="payment_not_in_iiko_ledger",
-            )
-            result["manual"] += 1
 
     await session.commit()
     return result

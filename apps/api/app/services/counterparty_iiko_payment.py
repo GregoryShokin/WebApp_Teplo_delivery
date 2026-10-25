@@ -1566,7 +1566,12 @@ async def sweep_unsettled_iiko_payments(
     for case in pending:
         # Ок-пуши честных долей не доказывают, что разобрано расхождение всего банк-платежа.
         # Такой кейс закрывает только человек после сверки; иначе свип молча спрятал бы остаток.
-        if (case.payload or {}).get("reason_code") == "multi_invoice_residual":
+        # «Проводка не появляется» (сверка сдалась) — тоже: ok-строка журнала там и есть то, чему
+        # учёт iiko не верит. Её закрывает найденная проводка (сторож оплат) или человек.
+        if (case.payload or {}).get("reason_code") in (
+            "multi_invoice_residual",
+            "payment_not_in_iiko_ledger",
+        ):
             continue
         inv_id_raw = (case.payload or {}).get("invoice_id")
         if not inv_id_raw:

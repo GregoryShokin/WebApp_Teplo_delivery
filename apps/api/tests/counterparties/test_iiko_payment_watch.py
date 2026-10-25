@@ -712,3 +712,40 @@ async def test_case_closes_when_payment_rolled_back_or_cheque_corrected(async_se
         for c in await _drift_cases(async_session_factory)
     }
     assert reasons == {"Ч-213": "no_longer_watched", "Ч-214": "rule_changed"}
+
+
+async def test_found_payment_closes_case_verify_gave_up_on(async_session_factory):
+    """Сверка сдалась и завела «проводка не появляется»; человек провёл оплату в бэк-офисе —
+    сторож её видит и закрывает случай своим доказательством, а не следующей отправкой."""
+    from app.services.counterparty_iiko_payment import _open_iiko_payment_case
+    from app.services.iiko_payment_verify import GAVE_UP_RESEND_COUNT
+
+    iiko = FakeIiko(payments=[_paid("515321", "2950.00")])
+    async with async_session_factory() as session:
+        _, inv = await _cheque(session, number="515321", external_id="X321", amount="2950.00")
+        push = await _push(
+            session,
+            inv,
+            external_id="X321",
+            amount="2950.00",
+            verified=False,
+            created_age=timedelta(hours=6),
+        )
+        push.resend_count = GAVE_UP_RESEND_COUNT
+        await session.commit()
+        await _open_iiko_payment_case(
+            session,
+            invoice_id=inv.id,
+            external_id="X321",
+            amount=Decimal("2950.00"),
+            reason="проводка не появляется",
+            reason_code="payment_not_in_iiko_ledger",
+        )
+        result = await watch_iiko_payments(session, source=iiko)
+        case = await session.scalar(
+            select(ReconciliationCase).where(ReconciliationCase.kind == "iiko_payment_unsettled")
+        )
+
+    assert result["resolved"] == 1
+    assert case.status == "resolved"
+    assert case.resolution_payload == {"reason": "found_in_iiko_ledger"}

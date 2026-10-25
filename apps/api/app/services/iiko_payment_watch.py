@@ -1147,6 +1147,26 @@ async def apply_payment_drift(
         ).all()
         for push in pushes:
             push.iiko_seen_at = now
+        # Сверка сдалась и завела «проводка не появляется», а проводка нашлась (человек провёл
+        # оплату в бэк-офисе, iiko доехала) — случай закрывает её же доказательство, а не
+        # следующая отправка: так до 25.10.2026 его закрывала непроверенная переотправка.
+        seen_invoices = {str(push.invoice_id) for push in pushes if push.invoice_id is not None}
+        ledger_cases = (
+            await session.scalars(
+                select(ReconciliationCase).where(
+                    ReconciliationCase.kind == "iiko_payment_unsettled",
+                    ReconciliationCase.status == "pending",
+                    ReconciliationCase.payload["reason_code"].astext
+                    == "payment_not_in_iiko_ledger",
+                    ReconciliationCase.payload["invoice_id"].astext.in_(seen_invoices),
+                )
+            )
+        ).all()
+        for case in ledger_cases:
+            case.status = "resolved"
+            case.resolved_at = now
+            case.resolution_payload = {"reason": "found_in_iiko_ledger"}
+            result["resolved"] += 1
     await session.commit()
     return result
 

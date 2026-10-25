@@ -21,6 +21,7 @@ from app.services.counterparty_iiko_payment import (
     RATE_LIMITED_ERROR_PREFIX,
 )
 from app.services.iiko_payment_verify import (
+    GAVE_UP_RESEND_COUNT,
     MAX_RESENDS,
     VERIFY_ATTEMPTS_BEFORE_RESEND,
     VERIFY_GRACE,
@@ -216,11 +217,13 @@ async def test_verify_resends_after_threshold_and_clears_done_marker(
 
 
 @pytest.mark.asyncio
-async def test_verify_opens_case_after_last_resend(
+async def test_verify_last_resend_is_still_checked(
     async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Последняя допустимая переотправка → кейс в owner-review, дальше только руками."""
+    """Предпоследняя проверка ещё переотправляет, и кейса пока нет: последнюю переотправку сверка
+    проверит так же, как первую. До 25.10.2026 кейс заводился здесь, а последняя отправка его же
+    закрывала через пять минут, не будучи проверенной (06.08 — накладные 31, 34, 36)."""
     async with async_session_factory() as session:
         invoice = await _paid_invoice(session, number="45", amount="1500.00")
         row = await _push_row(
@@ -235,12 +238,64 @@ async def test_verify_opens_case_after_last_resend(
         result = await verify_mirrored_payments(session)
 
         await session.refresh(row)
-        assert result["manual"] == 1
+        assert (result["resent"], result["manual"]) == (1, 0)
         assert row.resend_count == MAX_RESENDS
+        assert await session.scalar(select(ReconciliationCase.id)) is None
+
+
+@pytest.mark.asyncio
+async def test_verify_gives_up_after_checked_last_resend_without_another_send(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Не легла и последняя переотправка: кейс в owner-review, новой отправки нет (ok и
+    done-маркер на месте — зеркало её не возьмёт), строка помечена «сверка сдалась», и дозор
+    «оплата не дошла» этот кейс не закрывает — ok-строка и есть то, чему учёт iiko не верит."""
+    from app.services.counterparty_iiko_payment import sweep_unsettled_iiko_payments
+
+    async with async_session_factory() as session:
+        invoice = await _paid_invoice(session, number="45", amount="1500.00")
+        row = await _push_row(
+            session,
+            invoice,
+            amount="1500.00",
+            verify_attempts=VERIFY_ATTEMPTS_BEFORE_RESEND - 1,
+            resend_count=MAX_RESENDS,
+        )
+        session.add(
+            IikoInvoicePaymentPush(
+                idempotency_key=f"kassa_goods_done:{invoice.id}",
+                invoice_id=invoice.id,
+                external_id=invoice.external_id or "",
+                amount=Decimal("0"),
+                account_to="-",
+                status="ok",
+            )
+        )
+        await session.commit()
+        _patch_olap(monkeypatch, [])
+
+        result = await verify_mirrored_payments(session)
+        await sweep_unsettled_iiko_payments(session)
+
+        await session.refresh(row)
+        assert (result["resent"], result["manual"]) == (0, 1)
+        assert row.status == "ok" and row.resend_count == GAVE_UP_RESEND_COUNT
+        done = await session.scalar(
+            select(IikoInvoicePaymentPush.id).where(
+                IikoInvoicePaymentPush.idempotency_key == f"kassa_goods_done:{invoice.id}"
+            )
+        )
+        assert done is not None  # зеркало накладную не возьмёт — третьей отправки нет
         case = await session.scalar(
             select(ReconciliationCase).where(ReconciliationCase.kind == "iiko_payment_unsettled")
         )
-        assert case is not None
+        assert case is not None and case.status == "pending"
+        assert case.payload["reason_code"] == "payment_not_in_iiko_ledger"
+
+        # Следующий проход сверки строку уже не судит.
+        again = await verify_mirrored_payments(session)
+        assert again["checked"] == 0
 
 
 @pytest.mark.asyncio
@@ -265,7 +320,7 @@ async def test_verify_skips_fresh_and_exhausted_rows(
         fresh.created_at = datetime.now(UTC) - FRESH_AGE
         exhausted_invoice = await _paid_invoice(session, number="47", amount="800.00")
         exhausted = await _push_row(
-            session, exhausted_invoice, amount="800.00", resend_count=MAX_RESENDS
+            session, exhausted_invoice, amount="800.00", resend_count=GAVE_UP_RESEND_COUNT
         )
         _patch_olap(monkeypatch, [])
 
