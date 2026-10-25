@@ -42,6 +42,7 @@ from app.models.pnl import (
     PnlWorkupReview,
 )
 from app.services.iiko_cloud_client import iiko_cloud_call
+from app.services.iiko_cloud_datetime import INVENTORY, encode_iiko_wall_time
 from app.services.iiko_location import get_organization_id
 
 _MSK = ZoneInfo("Europe/Moscow")
@@ -66,22 +67,20 @@ class WorkupReviewError(ValueError):
 
 
 def format_iiko_datetime(moment: datetime) -> str:
-    """ISO-8601 с точкой перед миллисекундами — формат, который принимает Cloud."""
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=_MSK)
-    base = moment.strftime("%Y-%m-%dT%H:%M:%S")
-    millis = f"{moment.microsecond // 1000:03d}"
-    offset = moment.strftime("%z")
-    offset = f"{offset[:3]}:{offset[3:]}" if offset else "+03:00"
-    return f"{base}.{millis}{offset}"
+    """Дата акта списания для Cloud — тем же кодировщиком Inventory API, что у накладных.
+
+    ISO-8601 с точкой перед миллисекундами и московским offset; сдвиг, который iiko делает с
+    присланными цифрами, учтён (iiko_cloud_datetime) — его поведение уже менялось 22.10.2026."""
+    return encode_iiko_wall_time(moment, INVENTORY)
 
 
 def writeoff_moment(day: date) -> datetime:
     """Момент акта — ПОЛДЕНЬ выбранного дня, а не «сейчас».
 
-    iiko сдвигает присланное время на −3 часа (проверено на живом API: отправили 22:07+03:00,
-    получили обратно 19:07+03:00). Акт, созданный вечером, уехал бы на предыдущие сутки, а на
-    границе месяца — в предыдущий месяц, где ему делать нечего. Полдень безопасен при любом
+    Как iiko читает присланное время, менялось: 05.08.2026 он сдвигал его на −3 часа
+    (отправили 22:07+03:00, получили обратно 19:07+03:00), с 22.10 читает честно. Акт, созданный
+    вечером, при таком сдвиге уехал бы на предыдущие сутки, а на границе месяца — в предыдущий
+    месяц, где ему делать нечего. Полдень переживает любой такой сдвиг до 12 часов при любом
     часе подтверждения.
     """
     return datetime.combine(day, time(12, 0), tzinfo=_MSK)

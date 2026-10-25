@@ -24,13 +24,14 @@ payable → ``incoming_invoice`` (``counteragent`` = поставщик), receiv
 
 from __future__ import annotations
 
+import logging
 import time as time_module
 import urllib.error
 import urllib.request
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
@@ -48,6 +49,13 @@ from app.models import (
     SupplierInvoiceTombstone,
 )
 from app.services.iiko_cloud_client import iiko_auth_token, iiko_opener
+from app.services.iiko_cloud_datetime import (
+    INVENTORY,
+    encode_iiko_wall_time,
+    iiko_shift,
+    missed_wall_time,
+    stored_wall_time,
+)
 from app.services.iiko_invoice_cloud import (
     CloudInvoiceDoc,
     CloudInvoiceLine,
@@ -67,9 +75,12 @@ from app.services.iiko_location import get_organization_id
 from app.services.iiko_returned_cloud import (
     build_returned_invoice_body,
     create_returned_invoice,
+    get_returned_invoice,
     post_returned_invoice,
 )
 from app.services.warehouse_invoices import SUPPLIER_PAYMENT_ARTICLE_NAME
+
+logger = logging.getLogger(__name__)
 
 STORE_SETTING_KEY = "iiko.default_store_guid"
 IIKO_SOURCE = "iiko"
@@ -297,11 +308,10 @@ async def prepare_push(session: AsyncSession, invoice: SupplierInvoice) -> Prepa
     # После починки ввода (``as_moscow``) инстант стал правильным — и наивные цифры UTC уехали бы
     # в iiko на три часа назад. Переводим в МСК явно.
     dt = _to_moscow_wall_clock(dt)
-    # Дату прихода шлём ПОЛДНЕМ, а не полуночью. iiko кладёт наши документы на три часа раньше
-    # присланного (сверено 20.08.2026: его собственный ``dateCreated`` совпадает с нашим
-    # ``created_at`` до секунды, а наш ``date`` приходит на три часа раньше набранного). Полночь
-    # минус три часа = предыдущий день — так документы и оказывались в iiko вчерашним числом.
-    # Полдень тот же сдвиг переживает, оставаясь в своих сутках.
+    # Дату прихода шлём ПОЛДНЕМ, а не полуночью. Как iiko читает присланное время, менялось
+    # (20.08.2026 он клал документы на три часа раньше присланного, и полночь уезжала во вчера;
+    # с 22.10 читает честно — см. iiko_cloud_datetime). Полдень переживает любой такой сдвиг до
+    # 12 часов, оставаясь в своих сутках, даже пока сдвиг ещё не выучен.
     incoming_date = (
         datetime.combine(dt.date(), time(12, 0)) if invoice.direction == "payable" else None
     )
@@ -352,24 +362,17 @@ def _post_document(
     return _RATE_LIMIT_MESSAGE if _is_rate_limited(pstatus, presp) else message
 
 
-def _probe_key(body: dict) -> tuple[str, str] | None:
-    """``(номер, день)`` для поиска своего документа в iiko, либо None — искать нечем.
+def _probe_key(body: dict) -> tuple[str, date] | None:
+    """``(номер, день присланных цифр)`` для поиска своего документа в iiko, либо None.
 
     Номер у наших накладных сквозной, дата документа известна: этой пары хватает, чтобы отличить
     «``create`` не дошёл» от «дошёл, а ответ потерялся». Без номера (iiko нумерует сама) отличить
-    нечем — и тогда повторять ``create`` нельзя вовсе."""
+    нечем — и тогда повторять ``create`` нельзя вовсе. День — по присланным цифрам, а не по
+    догадке, куда iiko их сдвинет: сдвиг уже менялся (iiko_cloud_datetime), поэтому
+    :func:`_document_id_by_number` ищет в соседних сутках тоже."""
     number = str(body.get("number") or "")
-    raw_date = str(body.get("date") or "")
-    try:
-        # Форматтер добавляет московский offset к цифрам времени, потому что сам Cloud затем
-        # ошибочно вычитает его. Около полуночи дата payload уже следующая, а list искать надо
-        # по фактическому московскому дню документа. UTC-дата компенсированного значения как
-        # раз равна исходной дате стенного времени.
-        encoded = datetime.fromisoformat(raw_date)
-        day = encoded.astimezone(UTC).date().isoformat()
-    except ValueError:
-        day = raw_date[:10]
-    return (number, day) if number and len(day) == 10 else None
+    sent = stored_wall_time(str(body.get("date") or ""))
+    return (number, sent.date()) if number and sent is not None else None
 
 
 def _document_id_by_number(
@@ -384,9 +387,13 @@ def _document_id_by_number(
     if probe is None:
         return None, False
     number, day = probe
+    # Сутки до и после: сдвиг iiko до 14 часов уносит документ максимум в соседний день.
+    date_from = (day - timedelta(days=1)).isoformat()
+    date_to = (day + timedelta(days=1)).isoformat()
     status, resp = _call_with_rate_limit_retry(
         lambda: list_invoices(
-            direction, organization_id, date_from=day, date_to=day, token=token, opener=opener
+            direction, organization_id, date_from=date_from, date_to=date_to,
+            token=token, opener=opener,
         )
     )
     if not (200 <= status < 300) or not isinstance(resp, list):
@@ -397,6 +404,95 @@ def _document_id_by_number(
         if str(item.get("number") or "") == number and item.get("documentId"):
             return str(item["documentId"]), bool(item.get("processed"))
     return None, False
+
+
+def _settle_document_date(
+    direction: str,
+    organization_id: str,
+    document_id: str,
+    body: dict,
+    *,
+    token: str,
+    opener: urllib.request.OpenerDirector | None,
+) -> None:
+    """До ``post``: прочитать документ и, если iiko положила его не на время Тепла, переписать.
+
+    Как iiko читает присланное время, менялось без предупреждения: 22.10.2026 Inventory API
+    перестал вычитать offset, прежняя компенсация Тепла увела накладные на 3 часа вперёд,
+    515385 от 23.10 22:04 — на 24.10 (iiko_cloud_datetime). Поэтому формату не доверяемся:
+    сразу после ``create``/``update``, пока документ ``NEW`` и без оплат, читаем его ``get``.
+
+    - Лёг туда, куда целили (присланные цифры + сдвиг, с которым тело собрано), — ничего.
+    - Иначе сдвиг выучивается из факта, даты тела кодируются заново, документ уходит ``update``;
+      следующие документы процесса идут уже с новым сдвигом.
+    - Не прочитался, расхождение не объясняется сдвигом (кто-то успел поправить руками) или
+      ``update`` не прошёл — документ проводится как есть, расхождение пишется в журнал: дата не
+      повод держать приход вне склада.
+
+    Целевое время восстанавливается из присланных цифр и текущего сдвига, поэтому одновременная
+    отправка двух документов ровно в момент смены поведения iiko может оставить один из них не
+    исправленным — тогда о нём скажет журнал."""
+    sent = body.get("date")
+    used = iiko_shift(INVENTORY)
+    status, resp = _call_with_rate_limit_retry(
+        lambda: get_invoice(direction, organization_id, document_id, token=token, opener=opener)
+    )
+    stored = resp.get("date") if 200 <= status < 300 and isinstance(resp, dict) else None
+    wanted = missed_wall_time(INVENTORY, sent=sent, stored=stored, used=used)
+    if wanted is None:
+        return
+    if iiko_shift(INVENTORY) == used:
+        logger.warning(
+            "iiko: документ %s лёг на %s вместо %s, сдвиг этого не объясняет — дату не трогаю",
+            document_id, stored, wanted,
+        )
+        return
+    fixed = dict(body, documentId=document_id)
+    for key in ("date", "incomingDate"):
+        sent_wall = stored_wall_time(body.get(key))
+        if sent_wall is not None:
+            fixed[key] = encode_iiko_wall_time(sent_wall + used, INVENTORY)
+    ustatus, uresp = _call_with_rate_limit_retry(
+        lambda: update_invoice(direction, fixed, token=token, opener=opener)
+    )
+    if not (200 <= ustatus < 300):
+        logger.warning(
+            "iiko: документ %s остался на %s вместо %s — правка даты не прошла: %s",
+            document_id, stored, wanted, business_error_message(uresp) or f"HTTP {ustatus}",
+        )
+        return
+    status, resp = _call_with_rate_limit_retry(
+        lambda: get_invoice(direction, organization_id, document_id, token=token, opener=opener)
+    )
+    restored = resp.get("date") if 200 <= status < 300 and isinstance(resp, dict) else None
+    restored_wall = stored_wall_time(restored)
+    if restored_wall is None or restored_wall.replace(microsecond=0) != wanted:
+        logger.warning(
+            "iiko: документ %s после правки даты стоит на %s вместо %s",
+            document_id, restored, wanted,
+        )
+
+
+def _settle_return_date(
+    organization_id: str, document_id: str, body: dict, *, token: str, opener
+) -> None:
+    """После ``create`` возвратной: сверить её дату чтением и выучить сдвиг, если iiko сменила его.
+
+    Та же проверка, что :func:`_settle_document_date`, но без переписывания: ``update`` возвратной
+    требует номер, который iiko присваивает сама, и живьём не проверен, поэтому возврат,
+    положенный iiko не туда, остаётся как есть и называется в журнале. Выученный сдвиг сразу
+    исправляет следующую за возвратом «(испр.)» той же саги."""
+    used = iiko_shift(INVENTORY)
+    status, resp = _call_with_rate_limit_retry(
+        lambda: get_returned_invoice(organization_id, document_id, token=token, opener=opener)
+    )
+    stored = resp.get("date") if 200 <= status < 300 and isinstance(resp, dict) else None
+    wanted = missed_wall_time(INVENTORY, sent=body.get("date"), stored=stored, used=used)
+    if wanted is not None:
+        logger.warning(
+            "iiko: возвратная %s легла на %s вместо %s — поправить дату в бэк-офисе",
+            document_id, stored, wanted,
+        )
 
 
 def _cloud_create_and_post(
@@ -445,6 +541,9 @@ def _cloud_create_and_post(
             return _CloudPushOutcome(None, False, _RATE_LIMIT_MESSAGE)
         time_module.sleep(delay)
 
+    _settle_document_date(
+        direction, organization_id, document_id, body, token=token, opener=opener
+    )
     error = _post_document(
         direction, organization_id, document_id, token=token, opener=opener
     )
@@ -512,6 +611,9 @@ def _cloud_update_and_post(
         return _CloudPushOutcome(
             document_id, False, business_error_message(resp) or f"update HTTP {status}"
         )
+    _settle_document_date(
+        direction, organization_id, document_id, body, token=token, opener=opener
+    )
     error = _post_document(
         direction, organization_id, document_id, token=token, opener=opener
     )
@@ -695,6 +797,7 @@ def _cloud_create_and_post_return(organization_id: str, body: dict) -> _CloudPus
     document_id = extract_document_id(resp)
     if not document_id:
         return _CloudPushOutcome(None, False, "create: iiko не вернул documentId")
+    _settle_return_date(organization_id, document_id, body, token=token, opener=opener)
     pstatus, presp = _call_with_rate_limit_retry(
         lambda: post_returned_invoice(organization_id, document_id, token=token, opener=opener)
     )

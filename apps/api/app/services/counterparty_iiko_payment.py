@@ -400,9 +400,13 @@ def format_iiko_payment_date(dt: datetime) -> str:
     """ISO 8601 с ДЕСЯТИЧНОЙ ЗАПЯТОЙ перед мс и offset — формат, который принимает iiko.
 
     Пример: ``2026-06-26T14:05:09,000+03:00``. Точка (``.000``) iiko НЕ принимает — нужна запятая.
+
+    Время всегда переводится в МСК: до 21.10.2026 ``add_payment`` offset не читал и клал цифры как
+    московские (оплата Ч-187, присланная 09:12+00:00, легла на 09:12 вместо 12:12), с 22.10 читает
+    честно (Ч-195: 10:08+00:00 → 13:08). Московские цифры с ``+03:00`` ложатся верно при обоих
+    поведениях. Наивное время считаем московским.
     """
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=_MSK)
+    dt = dt.replace(tzinfo=_MSK) if dt.tzinfo is None else dt.astimezone(_MSK)
     base = dt.strftime("%Y-%m-%dT%H:%M:%S")
     millis = f"{dt.microsecond // 1000:03d}"
     offset = dt.strftime("%z")  # +0300

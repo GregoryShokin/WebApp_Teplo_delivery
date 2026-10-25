@@ -6,8 +6,10 @@ c БД (резолвинг строк, гейт идемпотентности, 
 
 Контракт (проверен на живом API 09.07, спека ``/api-docs/docs``):
 - эндпоинты ``.../{incoming,outgoing}_invoice/{get,create,update,post,unpost,cancel,list}``;
-- даты ISO-8601 С ТОЧКОЙ и московским offset. iiko Cloud ошибочно вычитает offset из цифр
-  времени, поэтому перед отправкой добавляем те же +03:00 (см. ``format_iiko_invoice_datetime``);
+- даты ISO-8601 С ТОЧКОЙ и московским offset. Как iiko читает присланное время, менялось без
+  предупреждения (до 21.10.2026 вычитал offset из цифр, с 22.10 читает честно), поэтому дату
+  кодирует :func:`app.services.iiko_cloud_datetime.encode_iiko_wall_time` с наблюдаемым сдвигом,
+  а отправка сверяет её чтением ``get`` (см. :mod:`warehouse_invoice_push`);
 - read-only поля (``status, productArticle, priceWithoutVat, sumWithoutVat, producer``) НЕ слать —
   ``create``/``update`` отвергают их 400; статусом рулят ``post``/``unpost``/``cancel``;
 - ``create`` возвращает ``documentId`` в теле ответа (легаси export-lookup больше не нужен);
@@ -21,13 +23,12 @@ from __future__ import annotations
 
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import datetime
 
 from app.services.iiko_cloud_client import iiko_cloud_call
+from app.services.iiko_cloud_datetime import INVENTORY, encode_iiko_wall_time
 from app.services.iiko_location import get_organization_id
 
-_MSK = ZoneInfo("Europe/Moscow")
 ZERO_GUID = "00000000-0000-0000-0000-000000000000"
 
 # Направления накладной (SupplierInvoice.direction) → Cloud-ресурс.
@@ -39,25 +40,6 @@ def endpoint(direction: str, op: str) -> str:
     """``('payable','create') -> /api/inventory/v1/incoming_invoice/create``."""
     kind = "incoming_invoice" if direction == _PAYABLE else "outgoing_invoice"
     return f"/api/inventory/v1/{kind}/{op}"
-
-
-def format_iiko_invoice_datetime(dt: datetime) -> str:
-    """Закодировать московское стенное время для дефектного datetime-контракта iiko Cloud.
-
-    iiko не просто сохраняет присланное ``11:19+03:00``: оно вычитает offset и возвращает
-    ``08:19+03:00``. Чтобы в бэк-офисе осталось набранное оператором ``11:19``, передаём
-    ``14:19+03:00``. Наивное время считаем московским; aware-время сначала переводим в МСК.
-
-    Это не обычная конвертация часового пояса, а компенсация подтверждённого поведения Cloud.
-    Offset в payload остаётся московским. При смене контракта iiko эту компенсацию надо убрать.
-    """
-    dt = dt.replace(tzinfo=_MSK) if dt.tzinfo is None else dt.astimezone(_MSK)
-    dt += dt.utcoffset() or timedelta()
-    base = dt.strftime("%Y-%m-%dT%H:%M:%S")
-    millis = f"{dt.microsecond // 1000:03d}"
-    offset = dt.strftime("%z")  # +0300
-    offset = f"{offset[:3]}:{offset[3:]}" if offset else "+03:00"
-    return f"{base}.{millis}{offset}"
 
 
 @dataclass
@@ -144,7 +126,7 @@ def build_invoice_body(doc: CloudInvoiceDoc) -> dict:
     body: dict = {
         "organizationId": doc.organization_id,
         "counteragent": doc.counteragent,
-        "date": format_iiko_invoice_datetime(doc.date),
+        "date": encode_iiko_wall_time(doc.date, INVENTORY),
     }
     if doc.document_id is not None:
         body["documentId"] = doc.document_id
@@ -154,7 +136,7 @@ def build_invoice_body(doc: CloudInvoiceDoc) -> dict:
         body["defaultStore"] = doc.default_store
     if doc.direction == _PAYABLE:
         if doc.incoming_date is not None:
-            body["incomingDate"] = format_iiko_invoice_datetime(doc.incoming_date)
+            body["incomingDate"] = encode_iiko_wall_time(doc.incoming_date, INVENTORY)
         body["items"] = [line.to_incoming() for line in doc.lines]
     else:
         body["items"] = [line.to_outgoing() for line in doc.lines]

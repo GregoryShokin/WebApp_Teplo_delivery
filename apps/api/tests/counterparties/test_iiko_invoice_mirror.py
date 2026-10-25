@@ -8,7 +8,7 @@ amount), идемпотентность, пропуск не-iiko/без-чер�
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -461,6 +461,13 @@ def test_format_payment_date_uses_decimal_comma() -> None:
     dt = datetime(2026, 6, 26, 14, 5, 9, 123000, tzinfo=ZoneInfo("Europe/Moscow"))
     s = mod.format_iiko_payment_date(dt)
     assert s == "2026-06-26T14:05:09,123+03:00"
+
+
+def test_format_payment_date_sends_moscow_digits_for_utc_moment() -> None:
+    """До 21.10.2026 add_payment не читал offset: Ч-187, присланная 09:12+00:00, легла на 09:12
+    вместо 12:12. Московские цифры с +03:00 ложатся верно и тогда, и сейчас."""
+    dt = datetime(2026, 10, 19, 9, 12, tzinfo=UTC)
+    assert mod.format_iiko_payment_date(dt) == "2026-10-19T12:12:00,000+03:00"
 
 
 def test_account_id_for_wallet_maps_bank_to_acquiring() -> None:

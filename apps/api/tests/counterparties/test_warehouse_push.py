@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -16,6 +16,7 @@ from cp_helpers import make_counterparty
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import InvoiceLineItem, SupplierInvoice
+from app.services import iiko_cloud_datetime as icd
 from app.services import warehouse_invoice_push as wip
 from app.services.iiko_invoice_cloud import build_invoice_body
 from app.services.warehouse_invoice_push import (
@@ -91,9 +92,9 @@ async def test_prepare_push_builds_incoming_cloud_body(
         body = build_invoice_body(prepared.doc)
         assert body["counteragent"] == "SUP-GUID-1"      # Cloud-поле партнёра (не <supplier>)
         assert body["defaultStore"] == "ST-1"
-        # 14:30 UTC = 17:30 МСК; шлём 20:30+03, потому что Cloud сам отнимет три часа.
-        assert body["date"] == "2026-06-15T20:30:00.000+03:00"
-        assert body["incomingDate"] == "2026-06-15T15:00:00.000+03:00"
+        # 14:30 UTC = 17:30 МСК; с 22.10.2026 Cloud читает время честно — шлём как есть.
+        assert body["date"] == "2026-06-15T17:30:00.000+03:00"
+        assert body["incomingDate"] == "2026-06-15T12:00:00.000+03:00"
         assert [it["product"] for it in body["items"]] == ["PROD-A"]
         # read-only полей нет
         assert READ_ONLY_FIELDS.isdisjoint(body.keys())
@@ -399,18 +400,40 @@ def _no_pauses(monkeypatch: pytest.MonkeyPatch, attempts: int = 3) -> None:
 def _patch_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(wip, "iiko_opener", lambda: None)
     monkeypatch.setattr(wip, "iiko_auth_token", lambda opener: "TOKEN")
+    # Сверка даты после create читает документ; пустой ответ — «сверить нечем», без сети.
+    monkeypatch.setattr(wip, "get_invoice", lambda *a, **kw: (200, {}))
 
 
 _RATE_LIMITED = (429, {"error": "TOO_MANY_REQUESTS"})
 _CREATE_BODY = {"number": "W-10", "date": "2026-06-15T14:30:00.000+03:00"}
 
 
-def test_probe_key_uses_business_day_when_timezone_compensation_crosses_midnight() -> None:
-    # Желаемые 23:30 МСК кодируются как 02:30+03 следующих суток; iiko после своего −03
-    # положит документ обратно на 24-е, и list должен искать именно там.
+def test_probe_key_takes_the_day_of_sent_digits() -> None:
+    # Прежний ключ угадывал, куда iiko сдвинет цифры, и после 22.10.2026 искал бы 515385
+    # (23.10 22:04) не в тех сутках. Теперь день — по присланным цифрам, а соседние сутки
+    # покрывает окно list.
     assert wip._probe_key(
-        {"number": "W-11", "date": "2026-08-25T02:30:00.000+03:00"}
-    ) == ("W-11", "2026-08-24")
+        {"number": "W-11", "date": "2026-10-23T22:04:00.000+03:00"}
+    ) == ("W-11", date(2026, 10, 23))
+
+
+def test_number_lookup_searches_neighbour_days(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Сдвиг iiko до 14 часов уносит документ максимум в соседние сутки — их и смотрим."""
+    _no_pauses(monkeypatch)
+    windows: list[tuple[str, str]] = []
+
+    def fake_list(direction, org, *, date_from, date_to, token, opener):
+        windows.append((date_from, date_to))
+        return 200, [{"number": "W-11", "documentId": "DOC-11", "processed": True}]
+
+    monkeypatch.setattr(wip, "list_invoices", fake_list)
+
+    found = wip._document_id_by_number(
+        "payable", "ORG", {"number": "W-11", "date": "2026-10-23T22:04:00.000+03:00"},
+        token="t", opener=None,
+    )
+    assert found == ("DOC-11", True)
+    assert windows == [("2026-10-22", "2026-10-24")]
 
 
 def test_post_document_accepts_processed_after_rate_limit(
@@ -706,3 +729,168 @@ async def test_prepare_push_sends_moscow_wall_clock_and_midday_incoming(
         assert prepared.doc is not None
         assert prepared.doc.date == datetime(2026, 8, 20, 15, 16)  # МСК, без зоны
         assert prepared.doc.incoming_date == datetime(2026, 8, 20, 12, 0)  # полдень тех же суток
+
+
+# ── сверка даты документа чтением (прод-баг 22.10.2026) ──────────────────────────────────────────
+
+
+_TEPLO_BODY = {
+    "number": "Ч-195",
+    "date": "2026-10-23T13:08:00.000+03:00",
+    "incomingDate": "2026-10-23T12:00:00.000+03:00",
+}
+
+
+def _record_cloud(
+    monkeypatch: pytest.MonkeyPatch, stored_dates: list[str]
+) -> list[tuple[str, object]]:
+    """Подменить Cloud: create/update/post пишутся в журнал, get отдаёт даты из очереди."""
+    _no_pauses(monkeypatch)
+    _patch_transport(monkeypatch)
+    # Выученный в тесте сдвиг не должен утечь в соседние тесты.
+    monkeypatch.setattr(icd, "_learned", {})
+    calls: list[tuple[str, object]] = []
+    dates = iter(stored_dates)
+    monkeypatch.setattr(
+        wip, "create_invoice",
+        lambda direction, body, **kw: calls.append(("create", body)) or (200, {"documentId": "D"}),
+    )
+    monkeypatch.setattr(
+        wip, "update_invoice",
+        lambda direction, body, **kw: calls.append(("update", body)) or (200, {}),
+    )
+    monkeypatch.setattr(
+        wip, "get_invoice",
+        lambda *a, **kw: calls.append(("get", None)) or (200, {"date": next(dates)}),
+    )
+    monkeypatch.setattr(
+        wip, "post_invoice", lambda *a, **kw: calls.append(("post", None)) or (200, {})
+    )
+    return calls
+
+
+def test_create_leaves_document_alone_when_iiko_kept_teplo_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Сегодняшнее поведение iiko: прислали 13:08 — лежит 13:08. Лишних правок нет."""
+    calls = _record_cloud(monkeypatch, ["2026-10-23T13:08:00.000+03:00"])
+
+    outcome = wip._cloud_create_and_post("payable", "ORG", dict(_TEPLO_BODY))
+
+    assert (outcome.document_id, outcome.posted) == ("D", True)
+    assert [name for name, _ in calls] == ["create", "get", "post"]
+
+
+def test_create_rewrites_date_before_post_when_iiko_changed_its_reading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """iiko снова сменила разбор времени (вычла три часа, как до 21.10.2026): документ, пока он
+    NEW и без оплат, переписывается на время Тепла, а сдвиг запоминается для следующих."""
+    calls = _record_cloud(
+        monkeypatch, ["2026-10-23T10:08:00.000+03:00", "2026-10-23T13:08:00.000+03:00"]
+    )
+
+    outcome = wip._cloud_create_and_post("payable", "ORG", dict(_TEPLO_BODY))
+
+    assert (outcome.document_id, outcome.posted, outcome.error) == ("D", True, None)
+    assert [name for name, _ in calls] == ["create", "get", "update", "get", "post"]
+    fixed = calls[2][1]
+    assert fixed["documentId"] == "D"
+    assert fixed["date"] == "2026-10-23T16:08:00.000+03:00"
+    assert fixed["incomingDate"] == "2026-10-23T15:00:00.000+03:00"
+    assert fixed["number"] == "Ч-195"
+    assert icd.iiko_shift(icd.INVENTORY) == timedelta(hours=-3)
+    # Следующий документ процесса уходит уже с выученным сдвигом.
+    assert icd.encode_iiko_wall_time(datetime(2026, 10, 23, 22, 4)) == (
+        "2026-10-24T01:04:00.000+03:00"
+    )
+
+
+def test_create_does_not_touch_date_moved_by_something_else(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Расхождение не кратно 15 минутам — это не смена поведения iiko, а чужая правка: учиться и
+    переписывать нечего, документ проводится как есть."""
+    calls = _record_cloud(monkeypatch, ["2026-10-23T13:20:00.000+03:00"])
+
+    outcome = wip._cloud_create_and_post("payable", "ORG", dict(_TEPLO_BODY))
+
+    assert outcome.posted is True
+    assert [name for name, _ in calls] == ["create", "get", "post"]
+    assert icd.iiko_shift(icd.INVENTORY) == timedelta(0)
+
+
+def test_create_still_posts_when_date_cannot_be_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    """get не ответил — сверить нечем; приход всё равно проводится, дата не повод держать его."""
+    calls = _record_cloud(monkeypatch, [])
+    monkeypatch.setattr(
+        wip, "get_invoice", lambda *a, **kw: calls.append(("get", None)) or (500, {"message": "x"})
+    )
+
+    outcome = wip._cloud_create_and_post("payable", "ORG", dict(_TEPLO_BODY))
+
+    assert outcome.posted is True
+    assert [name for name, _ in calls] == ["create", "get", "post"]
+
+
+def test_update_path_settles_date_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Переотправка существующего документа (update → post) сверяет дату так же, как create."""
+    calls = _record_cloud(
+        monkeypatch, ["2026-10-23T10:08:00.000+03:00", "2026-10-23T13:08:00.000+03:00"]
+    )
+
+    outcome = wip._cloud_update_and_post(
+        "payable", "ORG", dict(_TEPLO_BODY, documentId="D"), document_id="D"
+    )
+
+    assert outcome.posted is True
+    assert [name for name, _ in calls] == ["update", "get", "update", "get", "post"]
+    assert calls[2][1]["date"] == "2026-10-23T16:08:00.000+03:00"
+
+
+def test_return_learns_shift_without_rewriting(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Возвратную iiko положила не туда: update возврата живьём не проверен, поэтому её не
+    переписываем, но сдвиг выучен — «(испр.)» той же саги уйдёт уже верно."""
+    _no_pauses(monkeypatch)
+    _patch_transport(monkeypatch)
+    monkeypatch.setattr(icd, "_learned", {})
+    calls: list[str] = []
+    monkeypatch.setattr(
+        wip, "create_returned_invoice",
+        lambda body, **kw: calls.append("create") or (200, {"documentId": "R"}),
+    )
+    monkeypatch.setattr(
+        wip, "get_returned_invoice",
+        lambda *a, **kw: calls.append("get") or (200, {"date": "2026-10-23T10:08:00.000+03:00"}),
+    )
+    monkeypatch.setattr(
+        wip, "post_returned_invoice", lambda *a, **kw: calls.append("post") or (200, {})
+    )
+
+    outcome = wip._cloud_create_and_post_return(
+        "ORG", {"date": "2026-10-23T13:08:00.000+03:00", "items": []}
+    )
+
+    assert (outcome.document_id, outcome.posted) == ("R", True)
+    assert calls == ["create", "get", "post"]
+    assert icd.iiko_shift(icd.INVENTORY) == timedelta(hours=-3)
+
+
+async def test_prepare_push_keeps_late_evening_invoice_in_its_day(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Замок 515385: накладная 23.10.2026 22:04 МСК уходит в iiko 23-м числом, а не 24-м."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(
+            session, name="Поставщик", inn="7710000052", iiko_guid="SUP-GUID-3"
+        )
+        invoice = await _invoice_with_lines(session, cp.id, store_guid="ST-1", staff_second=False)
+        invoice.issued_at = datetime(2026, 10, 23, 19, 4, tzinfo=UTC)  # 22:04 МСК
+        await session.commit()
+
+        prepared = await prepare_push(session, invoice)
+
+        assert prepared.doc is not None
+        body = build_invoice_body(prepared.doc)
+        assert body["date"] == "2026-10-23T22:04:00.000+03:00"
+        assert body["incomingDate"] == "2026-10-23T12:00:00.000+03:00"

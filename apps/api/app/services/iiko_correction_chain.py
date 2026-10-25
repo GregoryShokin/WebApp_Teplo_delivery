@@ -80,6 +80,7 @@ OFFSET_ALREADY_PAID_LIMIT = 3
 KOPECK = Decimal("0.01")
 _SERVICE_CREATE = "/api/finance/v1/incoming_service/create"
 _SERVICE_POST = "/api/finance/v1/incoming_service/post"
+_SERVICE_GET = "/api/finance/v1/incoming_service/get"
 
 
 @dataclass(frozen=True)
@@ -273,8 +274,32 @@ class LiveCorrectionIiko:
         document_id = extract_document_id(response)
         if not document_id:
             return None, False, "create: iiko не вернул documentId"
+        self._settle_act_date(document_id, body)
         posted, error = self.post_service_act(document_id)
         return document_id, posted, error
+
+    def _settle_act_date(self, document_id: str, body: dict) -> None:
+        """Сверить дату акта чтением и выучить сдвиг Finance API, если iiko сменила его.
+
+        Finance API на 25.10.2026 ещё вычитает offset из цифр (проба PROBE-A), Inventory API с
+        22.10 — уже нет (iiko_cloud_datetime): поведение меняется, поэтому акт сверяется так же,
+        как накладные. Переписывать акт не берёмся — ``update`` акта живьём не проверен: промах
+        называется в журнале, а следующий акт процесса идёт с выученным сдвигом."""
+        from app.services.iiko_cloud_datetime import FINANCE, iiko_shift, missed_wall_time
+        from app.services.iiko_location import get_organization_id
+
+        used = iiko_shift(FINANCE)
+        status, response = self._cloud(
+            _SERVICE_GET, {"organizationId": get_organization_id(), "documentId": document_id}
+        )
+        readable = 200 <= status < 300 and isinstance(response, dict)
+        stored = response.get("date") if readable else None
+        wanted = missed_wall_time(FINANCE, sent=body.get("date"), stored=stored, used=used)
+        if wanted is not None:
+            logger.warning(
+                "iiko: акт %s лёг на %s вместо %s — поправить дату в бэк-офисе",
+                document_id, stored, wanted,
+            )
 
     def post_service_act(self, document_id: str) -> tuple[bool, str | None]:
         from app.services.iiko_invoice_cloud import business_error_message
@@ -472,7 +497,7 @@ async def complete_correction_payment(
     ``iiko_correction_act_external_id``."""
     from app.core.config import get_settings
     from app.services.counterparty_iiko_payment import push_invoice_payment_to_iiko
-    from app.services.iiko_invoice_cloud import format_iiko_invoice_datetime
+    from app.services.iiko_cloud_datetime import FINANCE, encode_iiko_wall_time
     from app.services.iiko_location import get_organization_id
 
     settings = get_settings()
@@ -619,7 +644,8 @@ async def complete_correction_payment(
         body = {
             "organizationId": get_organization_id(),
             "counteragent": correction.counteragent_id,
-            "date": format_iiko_invoice_datetime(moment),
+            # Акт — Finance API: свой сдвиг, не тот, что у накладных (iiko_cloud_datetime).
+            "date": encode_iiko_wall_time(moment, FINANCE),
             "number": f"{number} (испр.) расход",
             "comment": (
                 f"Исправление чека №{number}: часть, перенесённая из товара в расход, — из уже"

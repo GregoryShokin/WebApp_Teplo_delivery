@@ -93,12 +93,12 @@ def _run(args: argparse.Namespace) -> None:
         _call_add_payment,
         build_add_payment_payload,
     )
+    from app.services.iiko_cloud_datetime import FINANCE, encode_iiko_wall_time
     from app.services.iiko_invoice_cloud import (
         CloudInvoiceDoc,
         CloudInvoiceLine,
         build_invoice_body,
         extract_document_id,
-        format_iiko_invoice_datetime,
     )
     from app.services.iiko_location import get_organization_id
     from app.services.iiko_returned_cloud import build_returned_invoice_body
@@ -208,7 +208,7 @@ def _run(args: argparse.Namespace) -> None:
             {
                 "organizationId": org,
                 "counteragent": args.counteragent,
-                "date": format_iiko_invoice_datetime(now),
+                "date": encode_iiko_wall_time(now, FINANCE),
                 "number": f"PROBE-A-{stamp}",
                 "items": [
                     {
