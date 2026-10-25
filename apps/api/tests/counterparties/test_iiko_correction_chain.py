@@ -133,6 +133,10 @@ class FakeChainIiko:
     payments: list[LedgerPayment] = field(default_factory=list)
     acts: list[dict] = field(default_factory=list)
     act_posted: bool = True
+    # Что iiko отдаёт проводками оплаты «(испр.)» после зачёта: по умолчанию — зачёт лёг.
+    legs: list[tuple[str | None, Decimal]] = field(
+        default_factory=lambda: [("ACC-ADVANCES", Decimal("2968.94"))]
+    )
 
     def incoming(self, document_id):
         return self.docs.get(document_id, IikoDocument(document_id, found=False))
@@ -153,8 +157,11 @@ class FakeChainIiko:
     def post_service_act(self, document_id):
         return True, None
 
+    def payment_legs(self, document_id):
+        return list(self.legs)
 
-def _doc(document_id, number, total, *, links_to=None):
+
+def _doc(document_id, number, total, *, links_to=None, modified_at=None):
     return IikoDocument(
         document_id=document_id,
         found=True,
@@ -163,6 +170,7 @@ def _doc(document_id, number, total, *, links_to=None):
         counteragent_id=SUPPLIER,
         incoming_invoice_id=links_to,
         total=Decimal(total),
+        modified_at=modified_at,
     )
 
 
@@ -204,6 +212,7 @@ async def _ch117_invoice(session):
     inv.iiko_correction_new_external_id = "Y117"
     inv.iiko_return_external_id = "R117"
     inv.iiko_return_status = "booked"
+    inv.iiko_correction_pay_status = "pending"  # сага поставила шаги 3–4 в очередь
     for order, (name, amount) in enumerate(
         ((GOODS, "2968.94"), (FOOD, "1369.88"), (POINTS, "243.94"))
     ):
@@ -330,7 +339,7 @@ async def test_chain_rerun_does_not_pay_or_book_twice(
         inv_id = await _ch117_invoice(session)
         await complete_correction_payment(session, inv_id, iiko=iiko, enabled=True)
         again = await complete_correction_payment(session, inv_id, iiko=iiko, enabled=True)
-    assert again == "done"
+    assert again == "not_queued"  # доведённая цепочка из очереди вышла
     assert len(add_payment_calls) == 1 and len(iiko.acts) == 1
 
 
@@ -377,7 +386,8 @@ async def test_chain_waits_for_service_item_then_books_the_act(
         inv_id = await _ch117_invoice(session)
         first = await complete_correction_payment(session, inv_id, iiko=iiko, enabled=True)
         inv = await session.get(SupplierInvoice, inv_id)
-        assert first == "blocked" and "услуга" in inv.iiko_return_error
+        assert first == "waiting" and "услуга" in inv.iiko_return_error
+        assert inv.iiko_correction_pay_status == "pending"  # ждёт настройки, не остановлена
         assert len(add_payment_calls) == 1 and iiko.acts == []
 
         monkeypatch.setattr(get_settings(), "iiko_correction_service_product_id", "SVC-FOOD")
@@ -460,11 +470,27 @@ async def test_saga_hands_over_to_chain_after_new_invoice(async_session_factory,
     monkeypatch.setattr(
         "app.services.iiko_correction_chain.complete_correction_payment", fake_chain
     )
+    monkeypatch.setattr(get_settings(), "iiko_correction_offset_enabled", True)
     _wire_contour_mocks(monkeypatch, {})
     async with async_session_factory() as session:
         inv_id = await _setup_pending_contour_invoice(session, number=f"H{uuid.uuid4().hex[:4]}")
         await book_correction_in_iiko(session, inv_id)
+        queued = await session.get(SupplierInvoice, inv_id)
     assert seen == [inv_id]
+    assert queued.iiko_correction_pay_status == "pending"  # доведёт фоновый проход
+
+
+async def test_saga_leaves_correction_alone_when_chain_is_off(async_session_factory, monkeypatch):
+    """Настройка выключена — сага ведёт себя как до цепочки: в очередь не ставит, не платит."""
+    from test_adjust_paid_invoice import _setup_pending_contour_invoice, _wire_contour_mocks
+
+    monkeypatch.setattr(get_settings(), "iiko_correction_offset_enabled", False)
+    _wire_contour_mocks(monkeypatch, {})
+    async with async_session_factory() as session:
+        inv_id = await _setup_pending_contour_invoice(session, number=f"O{uuid.uuid4().hex[:4]}")
+        await book_correction_in_iiko(session, inv_id)
+        inv = await session.get(SupplierInvoice, inv_id)
+    assert inv.iiko_return_status == "booked" and inv.iiko_correction_pay_status is None
 
 
 # --- сверка и сторож знают новую схему ---------------------------------------------------------
@@ -550,3 +576,95 @@ async def test_watch_follows_new_scheme_when_teplo_paid_correction(
     else:
         [case] = cases
         assert [d["code"] for d in case.payload["deviations"]] == [code]
+
+
+# --- уроки пробы 25.10.2026 на живой iiko --------------------------------------------------------
+
+
+async def test_offset_waits_until_correction_settles(
+    async_session_factory, add_payment_calls, service_product
+):
+    """«(испр.)» только что проведена — зачёт не шлём: через 2 секунды iiko ответила «already
+    paid» и ничего не провела. Ждём следующего прохода."""
+    from datetime import timedelta
+
+    iiko = _ch117_iiko()
+    iiko.docs["Y117"] = _doc(
+        "Y117", "Ч-117 (испр.)", "2968.94", modified_at=datetime.now(UTC) - timedelta(seconds=5)
+    )
+    async with async_session_factory() as session:
+        inv_id = await _ch117_invoice(session)
+        outcome = await complete_correction_payment(session, inv_id, iiko=iiko, enabled=True)
+        inv = await session.get(SupplierInvoice, inv_id)
+    assert outcome == "waiting"
+    assert add_payment_calls == [] and inv.iiko_correction_pay_status == "pending"
+
+
+async def test_already_paid_on_offset_is_not_success(async_session_factory, monkeypatch):
+    """«already paid» на зачёт — проводки нет, это не оплата: строку журнала — в ошибку,
+    следующий проход шлёт снова; трижды подряд — стоп с причиной."""
+    calls: list[dict] = []
+    answers = [(400, {"message": "already paid"})] * 3
+
+    def fake(payload):
+        calls.append(payload)
+        return answers.pop(0) if answers else (201, {"accountingTransactionId": "T"})
+
+    monkeypatch.setattr(cip, "_call_add_payment", fake)
+
+    async def no_creds(session):
+        return None
+
+    monkeypatch.setattr("app.services.iiko_sync._load_source_credential_env", no_creds)
+    monkeypatch.setattr(get_settings(), "iiko_correction_service_product_id", "SVC-FOOD")
+    iiko = _ch117_iiko()
+    async with async_session_factory() as session:
+        inv_id = await _ch117_invoice(session)
+        first = await complete_correction_payment(session, inv_id, iiko=iiko, enabled=True)
+        row = await session.scalar(
+            select(IikoInvoicePaymentPush).where(
+                IikoInvoicePaymentPush.idempotency_key == f"{OFFSET_KEY_PREFIX}{inv_id}"
+            )
+        )
+        assert first == "waiting" and row.status == "error" and iiko.acts == []
+        second = await complete_correction_payment(session, inv_id, iiko=iiko, enabled=True)
+        third = await complete_correction_payment(session, inv_id, iiko=iiko, enabled=True)
+        inv = await session.get(SupplierInvoice, inv_id)
+    assert (second, third) == ("waiting", "blocked")
+    assert len(calls) == 3 and "already paid" in inv.iiko_return_error
+    assert inv.iiko_correction_pay_status == "blocked"
+
+
+async def test_offset_without_posting_in_iiko_stops(
+    async_session_factory, add_payment_calls, service_product
+):
+    """iiko ответила 201, а проводки зачёта у документа нет — ответ записи не доказывает
+    проводку: стоп без повторной отправки и без акта."""
+    iiko = _ch117_iiko()
+    iiko.legs = []
+    async with async_session_factory() as session:
+        inv_id = await _ch117_invoice(session)
+        outcome = await complete_correction_payment(session, inv_id, iiko=iiko, enabled=True)
+        inv = await session.get(SupplierInvoice, inv_id)
+    assert outcome == "blocked" and "проводки" in inv.iiko_return_error
+    assert len(add_payment_calls) == 1 and iiko.acts == []
+
+
+async def test_background_pass_completes_only_queued_corrections(
+    async_session_factory, add_payment_calls, service_product
+):
+    """Фоновый проход доводит то, что поставила в очередь сама сага. Старую пару (до цепочки)
+    не трогает — её доводят по слову человека."""
+    from app.services.iiko_correction_chain import complete_pending_corrections
+
+    iiko = _ch117_iiko()
+    async with async_session_factory() as session:
+        inv_id = await _ch117_invoice(session)
+        counts = await complete_pending_corrections(session, iiko=iiko, enabled=True)
+        inv = await session.get(SupplierInvoice, inv_id)
+        assert counts == {"done": 1} and inv.iiko_correction_pay_status == "done"
+
+        inv.iiko_correction_pay_status = None  # старая пара: в очередь её никто не ставил
+        await session.commit()
+        again = await complete_pending_corrections(session, iiko=iiko, enabled=True)
+    assert again == {} and len(add_payment_calls) == 1

@@ -660,6 +660,14 @@ async def push_iiko_invoice_payments() -> None:
         kassa = await mirror_paid_kassa_invoices(session)
     if kassa.get("ok") or kassa.get("error"):
         logger.info("push_iiko_kassa_payments: %s", kassa)
+    # Исправления оплаченных из очереди: оплата «(испр.)» зачётом и расход разницы чека. Не в
+    # момент исправления, а проходом позже — сразу после проведения iiko отвергает зачёт.
+    from app.services.iiko_correction_chain import complete_pending_corrections
+
+    async with AsyncSessionLocal() as session:
+        corrections = await complete_pending_corrections(session)
+    if corrections:
+        logger.info("complete_pending_corrections: %s", corrections)
     # Дозор: свести в единый видимый список owner-review причины «оплачено у нас — в iiko нет»,
     # которые джобы выше не видят (мимо-черновика/коррекция/кап), и закрыть восстановленные кейсы.
     async with AsyncSessionLocal() as session:

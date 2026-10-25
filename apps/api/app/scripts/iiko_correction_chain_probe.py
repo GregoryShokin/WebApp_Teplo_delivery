@@ -15,6 +15,11 @@
 
 Без ``--execute`` только печатает, что завела бы, и ничего не пишет.
 
+Проба 25.10.2026 (КВАРЦ, документы PROBE-*-1025-125054): зачёт лёг «Авансы поставщиков»[поставщик]
+→ «Задолженность»[поставщик], акт — «Задолженность»[поставщик] → «Затраты на персонал»; общий счёт
+с поставщиком не сдвинулся. Оплата через 2 секунды после проведения получила «already paid» без
+проводки — поэтому перед оплатами здесь выдержка ``SETTLE_SECONDS``.
+
     python -m app.scripts.iiko_correction_chain_probe --counteragent <GUID> --product <GUID> \\
         --store <GUID> [--service <GUID>] [--execute]
 """
@@ -35,6 +40,8 @@ from app.services.iiko_sync import _load_source_credential_env
 _MSK = ZoneInfo("Europe/Moscow")
 # Пауза между вызовами Cloud: он режет частые запросы (429).
 _PAUSE = 1.0
+# Выдержка между проведением накладной и оплатой: раньше iiko отвечает «already paid».
+SETTLE_SECONDS = 150
 
 
 def _parse() -> argparse.Namespace:
@@ -42,6 +49,7 @@ def _parse() -> argparse.Namespace:
     parser.add_argument("--counteragent", required=True, help="GUID тестового поставщика iiko")
     parser.add_argument("--product", required=True, help="GUID товара для строк накладных")
     parser.add_argument("--store", required=True, help="GUID склада")
+    parser.add_argument("--unit", required=True, help="GUID основной единицы товара")
     parser.add_argument("--service", default=None, help="GUID услуги для акта разницы")
     parser.add_argument("--execute", action="store_true", help="на самом деле писать в iiko")
     return parser.parse_args()
@@ -129,6 +137,7 @@ def _run(args: argparse.Namespace) -> None:
                         amount=1.0,
                         price=price,
                         sum=price,
+                        amount_unit=args.unit,
                     )
                 ],
             )
@@ -139,6 +148,8 @@ def _run(args: argparse.Namespace) -> None:
         document_id = extract_document_id(response)
         if not document_id:
             raise SystemExit(f"{kind}/create: HTTP {status} {response}")
+        # Сразу в вывод: при сбое на середине список для уборки в бэк-офисе уже полный.
+        print(f"СОЗДАН {kind} {body.get('number')} {document_id}", flush=True)
         print(
             f"{kind}/post:",
             _call(
@@ -148,7 +159,7 @@ def _run(args: argparse.Namespace) -> None:
         return document_id
 
     x = create_and_post("incoming_invoice", invoice(f"PROBE-X-{stamp}", 3.0))
-    time.sleep(_PAUSE)
+    time.sleep(SETTLE_SECONDS)
     print(
         "оплата X:",
         _call_add_payment(
@@ -181,7 +192,7 @@ def _run(args: argparse.Namespace) -> None:
         ),
     )
     y = create_and_post("incoming_invoice", invoice(f"PROBE-Y-{stamp}", 2.0))
-    time.sleep(_PAUSE)
+    time.sleep(SETTLE_SECONDS)
     print(
         "зачёт Y:",
         _call_add_payment(
@@ -215,6 +226,8 @@ def _run(args: argparse.Namespace) -> None:
         act = extract_document_id(response)
         print("акт create:", status, response)
         if act:
+            print(f"СОЗДАН incoming_service PROBE-A-{stamp} {act}", flush=True)
+        if act:
             print(
                 "акт post:",
                 _call(
@@ -225,6 +238,18 @@ def _run(args: argparse.Namespace) -> None:
     for label, doc in (("исходная", x), ("сторно", r), ("«(испр.)»", y), ("акт", act)):
         if doc:
             print(f"\n{label} {doc}:", *_legs(doc, accounts), sep="\n  ")
+    # Счёт с поставщиком целиком: проводки дня по «Задолженности» и «Авансам» с его GUID
+    # (``account-posting/list`` 25.10 отвечал 502 — читаем ``account_transactions/list``).
+    day = now.date().isoformat()
+    for name in ("Задолженность перед поставщиками", "Авансы поставщиков"):
+        status, response = _call(
+            "/api/finance/v1/account_transactions/list",
+            {"organizationId": org, "accountId": by_name.get(name), "from": day, "to": day},
+        )
+        items = response.get("items") if isinstance(response, dict) else None
+        mine = [i for i in items or [] if i.get("counteragent") == args.counteragent]
+        total = sum((Decimal(str(i.get("sum") or 0)) for i in mine), Decimal("0"))
+        print(f"\n«{name}» по поставщику за {day}: HTTP {status}, строк {len(mine)}, сумма {total}")
 
 
 async def main() -> None:

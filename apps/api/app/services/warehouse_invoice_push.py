@@ -977,11 +977,21 @@ async def _complete_correction_payment(
 ) -> SupplierInvoice:
     """Шаги 3–4 цепочки исправления (оплата «(испр.)» зачётом, расход разницы чека).
 
-    Выключено настройкой ``iiko_correction_offset_enabled`` — тогда ничего не шлёт. Сбой не
-    роняет исправление: статус ``failed`` с причиной, ретрай продолжит с невыполненного шага."""
-    from app.services.iiko_correction_chain import complete_correction_payment
+    Выключено настройкой ``iiko_correction_offset_enabled`` — тогда ничего не шлёт. Включено —
+    исправление встаёт в очередь, а доводит его фоновый проход: зачёт сразу после проведения
+    «(испр.)» iiko отвергает «already paid» (проба 25.10.2026). Сбой не роняет исправление:
+    причина садится в накладную, ретрай продолжит с невыполненного шага."""
+    from app.core.config import get_settings
+    from app.services.iiko_correction_chain import (
+        complete_correction_payment,
+        queue_correction_payment,
+    )
 
-    await complete_correction_payment(session, invoice_id)
     invoice = await session.get(SupplierInvoice, invoice_id)
     assert invoice is not None
+    if get_settings().iiko_correction_offset_enabled:
+        await queue_correction_payment(session, invoice)
+        await complete_correction_payment(session, invoice_id)
+        invoice = await session.get(SupplierInvoice, invoice_id)
+        assert invoice is not None
     return invoice

@@ -550,6 +550,11 @@ class SupplierInvoice(Base):
     # кредит поставщика расходом своей статьи без денег. id акта — чек-пойнт, чтобы ретрай не
     # завёл второй. Шаг 3 (зачёт оплаты «(испр.)») держит строка журнала ``correction_offset:``.
     iiko_correction_act_external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Очередь шагов 3–4: ``pending`` — сага поставила исправление в очередь, фоновый проход
+    # доводит его (зачёт нельзя ставить сразу после проведения «(испр.)»: проба 25.10.2026 —
+    # «already paid» без проводки); ``done`` — доведено; ``blocked`` — стоп с причиной в
+    # ``iiko_return_error``. NULL — цепочка не запускалась (выключена или пара старше неё).
+    iiko_correction_pay_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
     # Снимок ВСЕХ старых товаров (для возврата), ждущий проводки/ретрая; очищается при успехе.
     # Список {product, quantity, price, name}. Склад/дату оркестратор добавляет при пуше.
     iiko_return_lines: Mapped[list[dict[str, Any]]] = mapped_column(

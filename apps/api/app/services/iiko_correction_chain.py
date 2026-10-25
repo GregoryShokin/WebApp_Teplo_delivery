@@ -15,18 +15,22 @@
    в кредит: поставщик должен нам всю уплаченную сумму.
 2. **Новая «X (испр.)»** на правильные товары: «Задолженность»[поставщик] → склад на сумму Y.
 3. **Оплата «(испр.)» зачётом** (здесь): ``add_payment`` на Y со счёта «Авансы поставщиков» на
-   min(X, Y) — тот же кредит, что дало сторно, без денег. Счёт «Задолженность перед
-   поставщиками» для зачёта не годится: проба 11.07.2026 сдвинула им баланс поставщика на всю
-   сумму накладной; «Авансы поставщиков» сдвинул на ноль — то есть документ стал оплаченным, а
-   общий счёт с поставщиком не изменился. Проводки этого зачёта на живой iiko ещё не прочитаны
-   (тестовые документы 11.07 удалены) — поэтому шаг выключен настройкой
-   ``iiko_correction_offset_enabled``, пока владелец не скажет включить после пробы на копейках.
+   min(X, Y) — тот же кредит, что дало сторно, без денег. Проба 25.10.2026 на 3 ₽ (КВАРЦ)
+   прочитала проводку: «Авансы поставщиков»[поставщик] → «Задолженность»[поставщик] — контрагент
+   стоит на обеих сторонах, документ оплачен, общий счёт с поставщиком не сдвинулся (там же
+   «Задолженность» +2, «Авансы» −2). Счёт «Задолженность перед поставщиками» для зачёта не
+   годится: проба 11.07.2026 сдвинула им баланс поставщика на всю сумму накладной. Сразу после
+   проведения «(испр.)» iiko отвечает «already paid» и ничего не проводит (та же проба: через
+   2 секунды — отказ, через минуты — 201), поэтому зачёт ставит фоновый проход из очереди
+   (``iiko_correction_pay_status = pending``), не раньше ``OFFSET_SETTLE_DELAY`` после проведения,
+   а после 201 читает проводку по GUID документа.
 4. **Разница чека — расходом своей статьи** (здесь): остаток кредита X − Y у чека Кассы — это
    строки, которые исправление перенесло из товара в расход (питание персонала и т. п.).
    Изъятием его не провести: деньги уже ушли оплатой X, а изъятие списало бы их второй раз; типа
    изъятия «со счёта поставщика» в iiko нет, внесения (``addPayIn``) нет. Проводит его акт
    приёма услуг от того же поставщика (``/api/finance/v1/incoming_service``): строка на счёт
-   статьи («Затраты на персонал») — «Задолженность»[поставщик] закрывается расходом. Нужна
+   статьи («Затраты на персонал») — «Задолженность»[поставщик] закрывается расходом (проба
+   25.10.2026: «Задолженность»[поставщик] → «Затраты на персонал» 1 ₽). Нужна
    номенклатура-услуга (``iiko_correction_service_product_id``), её заводят один раз.
 
 Деньги не трогаются ни на одном шаге: оплата X с эквайринга и изъятия по расходным статьям чека
@@ -41,7 +45,7 @@ import logging
 import time as time_module
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
@@ -57,6 +61,7 @@ from app.models import (
     InvoiceLineItem,
     SupplierInvoice,
 )
+from app.services.counterparty_iiko_payment import _is_already_paid
 from app.services.iiko_payment_watch import IikoDocument, LedgerPayment
 
 logger = logging.getLogger(__name__)
@@ -66,6 +71,11 @@ _MSK = ZoneInfo("Europe/Moscow")
 ADVANCES_ACCOUNT_NAME = "Авансы поставщиков"
 # Ключ строки журнала отправок для оплаты «(испр.)» зачётом — держит идемпотентность шага 3.
 OFFSET_KEY_PREFIX = "correction_offset:"
+# Сколько «(испр.)» должна пролежать проведённой, прежде чем на неё ставить зачёт: проба
+# 25.10.2026 — через 2 секунды после проведения iiko ответила «already paid», через минуты — 201.
+OFFSET_SETTLE_DELAY = timedelta(minutes=2)
+# Столько раз подряд «already paid» на зачёт — и стоп: значит, «(испр.)» правда кто-то оплатил.
+OFFSET_ALREADY_PAID_LIMIT = 3
 # Расхождение в копейку терпим (округление строк), больше — уже не та сумма.
 KOPECK = Decimal("0.01")
 _SERVICE_CREATE = "/api/finance/v1/incoming_service/create"
@@ -215,6 +225,10 @@ class CorrectionIiko(Protocol):
 
     def post_service_act(self, document_id: str) -> tuple[bool, str | None]: ...
 
+    def payment_legs(self, document_id: str) -> list[tuple[str | None, Decimal]]:
+        """Проводки оплаты документа: (счёт-источник, сумма) — чтение по GUID."""
+        ...
+
 
 class LiveCorrectionIiko:
     """Живая iiko для шагов 3–4: чтение — как у сторожа оплат, запись — акт услуг Cloud."""
@@ -277,6 +291,24 @@ class LiveCorrectionIiko:
             return True, None
         return False, message
 
+    def payment_legs(self, document_id: str) -> list[tuple[str | None, Decimal]]:
+        """Проводки ``INVOICE_PAYMENT`` документа (``/api/finance/v1/document_transactions``)."""
+        from app.services.iiko_location import get_organization_id
+
+        status, rows = self._cloud(
+            "/api/finance/v1/document_transactions/list",
+            {"organizationId": get_organization_id(), "documentId": document_id},
+        )
+        if status != 200 or not isinstance(rows, list):
+            from app.services.iiko_payment_watch import IikoWatchUnavailable
+
+            raise IikoWatchUnavailable(f"проводки документа: HTTP {status}")
+        return [
+            ((row.get("from") or {}).get("account"), Decimal(str(row.get("sum") or 0)))
+            for row in rows
+            if row.get("type") == "INVOICE_PAYMENT"
+        ]
+
 
 def _document_moment(invoice: SupplierInvoice) -> datetime:
     """Дата документа: проводки исправления ложатся тем же днём, что исходная."""
@@ -290,8 +322,41 @@ def _document_moment(invoice: SupplierInvoice) -> datetime:
 async def _fail(session: AsyncSession, invoice: SupplierInvoice, message: str) -> str:
     invoice.iiko_return_status = "failed"
     invoice.iiko_return_error = message[:500]
+    invoice.iiko_correction_pay_status = "blocked"
     await session.commit()
     return "blocked"
+
+
+async def queue_correction_payment(session: AsyncSession, invoice: SupplierInvoice) -> None:
+    """Поставить шаги 3–4 в очередь фонового прохода (зовёт сага после «(испр.)»)."""
+    if invoice.iiko_correction_pay_status != "done":
+        invoice.iiko_correction_pay_status = "pending"
+        await session.commit()
+
+
+async def complete_pending_corrections(
+    session: AsyncSession, *, iiko: CorrectionIiko | None = None, enabled: bool | None = None
+) -> dict[str, int]:
+    """Фоновый проход: довести шаги 3–4 у исправлений из очереди. Без людей и кнопок.
+
+    Берёт только ``pending`` — то, что поставила в очередь сама сага; старые пары (до цепочки)
+    и остановленные (``blocked``) не трогает: их доводят по слову человека."""
+    from app.core.config import get_settings
+
+    if not (get_settings().iiko_correction_offset_enabled if enabled is None else enabled):
+        return {}
+    ids = (
+        await session.scalars(
+            select(SupplierInvoice.id).where(
+                SupplierInvoice.iiko_correction_pay_status == "pending"
+            )
+        )
+    ).all()
+    counts: dict[str, int] = {}
+    for invoice_id in ids:
+        outcome = await complete_correction_payment(session, invoice_id, iiko=iiko, enabled=True)
+        counts[outcome] = counts.get(outcome, 0) + 1
+    return counts
 
 
 @dataclass
@@ -400,8 +465,9 @@ async def complete_correction_payment(
     """Шаги 3–4 цепочки: оплатить «(испр.)» зачётом и провести разницу чека расходом.
 
     Возвращает ``disabled`` (настройка выключена — Y остаётся без оплаты, как раньше),
-    ``done`` или ``blocked`` (причина — в ``iiko_return_error``, статус ``failed``, ретрай
-    продолжит с невыполненного шага). Ничего не шлёт по блокерам :func:`inspect_correction`.
+    ``not_queued`` (исправления нет в очереди), ``waiting`` (рано: «(испр.)» только что
+    проведена или iiko ответила «already paid» — следующий проход), ``done`` или ``blocked``
+    (причина — в ``iiko_return_error``). Ничего не шлёт по блокерам :func:`inspect_correction`.
     Идемпотентно: зачёт держит строка журнала ``correction_offset:<id>``, акт —
     ``iiko_correction_act_external_id``."""
     from app.core.config import get_settings
@@ -415,6 +481,8 @@ async def complete_correction_payment(
     invoice = await session.get(SupplierInvoice, invoice_id)
     if invoice is None or not invoice.iiko_correction_new_external_id:
         return "disabled"
+    if invoice.iiko_correction_pay_status != "pending":
+        return "not_queued"
     correction_id = invoice.iiko_correction_new_external_id
     if iiko is None:
         from app.services.iiko_sync import _load_source_credential_env
@@ -441,6 +509,9 @@ async def complete_correction_payment(
         )
     )
     if done is None and plan.offset_amount > 0:
+        settled_since = correction.modified_at
+        if settled_since is not None and datetime.now(UTC) - settled_since < OFFSET_SETTLE_DELAY:
+            return "waiting"
         if seen.blockers:
             return await _fail(
                 session, invoice, "Оплату исправленной не ставим: " + "; ".join(seen.blockers)
@@ -479,17 +550,54 @@ async def complete_correction_payment(
             return await _fail(
                 session, invoice, f"Зачёт оплаты исправленной не прошёл: {res.error or '—'}"
             )
+        if res.status_code is not None and _is_already_paid(res.response):
+            # «already paid» на «(испр.)», которую никто не оплачивал, — iiko ещё не дочитала
+            # документ (проба 25.10.2026). Проводки нет: это не успех. Строку журнала — в ошибку,
+            # следующий проход пошлёт заново; повтор безопасен, отказ ничего не провёл.
+            row = await session.scalar(
+                select(IikoInvoicePaymentPush).where(
+                    IikoInvoicePaymentPush.idempotency_key == offset_key
+                )
+            )
+            row.status = "error"
+            row.error = "iiko ответила «already paid» на непроведённый зачёт — повторим"
+            await session.commit()
+            if row.attempts >= OFFSET_ALREADY_PAID_LIMIT:
+                return await _fail(
+                    session,
+                    invoice,
+                    f"iiko {row.attempts} раза ответила «already paid» на зачёт"
+                    f" «{correction.number}» — похоже, её оплатили помимо Тепла; разберите"
+                    " задвоение",
+                )
+            return "waiting"
+        # Ответ записи не доказывает проводку: читаем её у документа по GUID.
+        try:
+            legs = await anyio.to_thread.run_sync(lambda: iiko.payment_legs(correction_id))
+        except Exception as exc:  # noqa: BLE001
+            return await _fail(session, invoice, f"Проводку зачёта прочитать не удалось: {exc}")
+        # Сумма, а не одна строка: непредставимую для iiko сумму зачёт ставит долями.
+        landed = sum((amount for account, amount in legs if account == advances), Decimal("0"))
+        if abs(landed - plan.offset_amount) > KOPECK:
+            return await _fail(
+                session,
+                invoice,
+                f"iiko приняла зачёт «{correction.number}», но проводки со счёта"
+                f" «{ADVANCES_ACCOUNT_NAME}» у документа нет — сверка проверит",
+            )
 
     # --- ШАГ 4: разница чека — расходом своей статьи (акт услуг) ---
     if plan.expense_shares and not invoice.iiko_correction_act_external_id:
         product = settings.iiko_correction_service_product_id
         if not product:
-            return await _fail(
-                session,
-                invoice,
+            # Недонастройка, а не стоп: исправление остаётся в очереди и доведётся само, как только
+            # услугу заведут и впишут в настройку. Причину видно в накладной.
+            invoice.iiko_return_error = (
                 f"Разница {plan.expense_total} ₽ ждёт акта: в iiko не заведена услуга для акта"
-                " разницы (настройка iiko_correction_service_product_id)",
+                " разницы (настройка iiko_correction_service_product_id)"
             )
+            await session.commit()
+            return "waiting"
         items = []
         for index, share in enumerate(plan.expense_shares, start=1):
             account = await anyio.to_thread.run_sync(
@@ -538,6 +646,7 @@ async def complete_correction_payment(
 
     invoice.iiko_return_status = "booked"
     invoice.iiko_return_error = None
+    invoice.iiko_correction_pay_status = "done"
     await session.commit()
     logger.info(
         "исправление %s: «(испр.)» оплачена зачётом %s, расход разницы %s",
