@@ -9,7 +9,7 @@
  * запроса могут разъехаться по дате среза и показать владельцу расхождение, которого нет.
  */
 import { type ReactNode, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   CalendarClock,
@@ -87,6 +87,7 @@ import {
   type ReconVerdict,
   type TaxCalendarItem,
   type TaxDocumentRow,
+  type TaxDocumentList,
   type TaxPaymentRow,
   type TaxPromotionSummary,
   type TaxRecognition,
@@ -288,7 +289,7 @@ const DOCUMENT_STATUS: Record<string, { label: string; className: string }> = {
 
 /** Что означает каждый статус — показываем по «i», чтобы не гадать. */
 const DOCUMENT_STATUS_HINT: Record<string, string> = {
-  parsed: "Готов: кнопка «Поставить в план» сделает из него обязательство.",
+  parsed: "Платёжка попадёт в план сразу после подтверждения. Готовые документы также можно поставить в план общей кнопкой.",
   needs_review: "Автоматика не уверена — подтвердите поля кнопками в строке.",
   promoted: "Уже в плане, делать ничего не нужно.",
   unsupported: "Не платёжный документ или файл не читается — в налоги не идёт.",
@@ -1272,6 +1273,25 @@ function PaymentRow({ row }: { row: TaxPaymentRow }) {
 
 // ── вкладка «Документы» ────────────────────────────────────────────────────────
 
+function updateReviewedDocument(queryClient: QueryClient, document: TaxDocumentRow) {
+  queryClient.setQueryData<TaxDocumentList>(["taxes", "documents"], (current) => {
+    if (!current) return current;
+    const previous = current.items.find((row) => row.id === document.id);
+    const counts = { ...current.status_counts };
+    if (previous && previous.status !== document.status) {
+      counts[previous.status] = Math.max(0, (counts[previous.status] ?? 0) - 1);
+      counts[document.status] = (counts[document.status] ?? 0) + 1;
+    }
+    return {
+      ...current,
+      status_counts: counts,
+      items: current.items.map((row) => row.id === document.id ? document : row),
+    };
+  });
+  void queryClient.invalidateQueries({ queryKey: ["taxes"] });
+  void queryClient.invalidateQueries({ queryKey: ["finance-payments"] });
+}
+
 function DocumentsTab({ canManage }: { canManage: boolean }) {
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -1573,11 +1593,11 @@ function ReviewPaymentDialog({
         due_date: due || undefined,
         period_hint: period || undefined,
       }),
-    onSuccess: () => {
-      toast.success("Документ проверен", {
-        description: "Поля сохранены — «Поставить в план» создаст обязательство.",
-      });
-      void queryClient.invalidateQueries({ queryKey: ["taxes"] });
+    onSuccess: (document) => {
+      updateReviewedDocument(queryClient, document);
+      toast.success(
+        document.status === "promoted" ? "Платёжка подтверждена и в плане" : "Документ проверен",
+      );
       onClose();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить проверку")),
@@ -1586,11 +1606,15 @@ function ReviewPaymentDialog({
   const fieldLabel = "text-sm font-medium";
   const missing = (recognition.review_reasons ?? []).join("; ");
 
-  /** Взнос на травматизм за месяц N платится до 15 числа N+1 (125-ФЗ, ст. 22). */
+  /** 15 число N+1; выходной переносится на следующий рабочий день (125-ФЗ, ст. 22). */
   function injuryDueFor(monthCode: string): string | null {
     const [year, month] = monthCode.split("-").map(Number);
     if (!year || !month) return null;
-    return toIsoDate(new Date(year, month, 15));  // month без -1 = уже следующий месяц
+    const deadline = new Date(year, month, 15); // month без -1 = уже следующий месяц
+    while (deadline.getDay() === 0 || deadline.getDay() === 6) {
+      deadline.setDate(deadline.getDate() + 1);
+    }
+    return toIsoDate(deadline);
   }
 
   // Меняя месяц, двигаем и срок: сохранить период августа со сроком сентябрьского
@@ -1706,7 +1730,7 @@ function ReviewPaymentDialog({
             {mutation.isPending ? (
               <Loader2 className="mr-1.5 animate-spin" size={15} />
             ) : null}
-            Подтвердить
+            Подтвердить и поставить в план
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1734,11 +1758,11 @@ function AiReviewDialog({
 
   const applyMutation = useMutation({
     mutationFn: () => aiApplyTaxProposal(row.id),
-    onSuccess: () => {
-      toast.success("Предложение ИИ применено", {
-        description: "Документ распознан — «Поставить в план» создаст обязательство.",
-      });
-      void queryClient.invalidateQueries({ queryKey: ["taxes"] });
+    onSuccess: (document) => {
+      updateReviewedDocument(queryClient, document);
+      toast.success(
+        document.status === "promoted" ? "Платёжка подтверждена и в плане" : "Предложение ИИ применено",
+      );
       onClose();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось применить")),
@@ -1863,9 +1887,13 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
   const [aiOpen, setAiOpen] = useState(false);
   const reviewMutation = useMutation({
     mutationFn: (status: "parsed" | "ignored") => reviewTaxDocument(row.id, status),
-    onSuccess: (_result, status) => {
-      toast.success(status === "parsed" ? "Отмечено проверенным" : "Документ отклонён");
-      void queryClient.invalidateQueries({ queryKey: ["taxes"] });
+    onSuccess: (document, status) => {
+      updateReviewedDocument(queryClient, document);
+      toast.success(
+        document.status === "promoted"
+          ? "Платёжка подтверждена и в плане"
+          : status === "parsed" ? "Отмечено проверенным" : "Документ отклонён",
+      );
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось изменить статус")),
   });
@@ -1923,6 +1951,9 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
     recognition.period_source === "letter" || recognition.period_source === "filename";
   const canRefinePeriod =
     derivedPeriod && row.status === "parsed" && row.document_type === "payment_order";
+  const canConfirmPayment =
+    row.status === "parsed" && row.document_type === "payment_order" &&
+    recognition.tax_kind !== "enp_payroll";
   // ИИ-разбор доступен и там, где автоматика сдалась совсем (ошибка/неподдержанный формат).
   const needsAttention =
     needsReview || row.status === "error" || row.status === "unsupported";
@@ -2114,7 +2145,7 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
             {recognition.reason}
           </div>
         ) : null}
-        {(needsAttention || recognition.ai_review || canRefinePeriod) && canManage ? (
+        {(needsAttention || recognition.ai_review || canRefinePeriod || canConfirmPayment) && canManage ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {/* Месяц — допущение автоматики; без этой кнопки бейдж обещал правку, которой
                 у распознанного документа не было: блок кнопок рисовался только для
@@ -2129,7 +2160,7 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
                 Уточнить месяц…
               </Button>
             ) : null}
-            {needsReview ? (
+            {needsReview || (canConfirmPayment && !canRefinePeriod) ? (
               <Button
                 disabled={reviewMutation.isPending}
                 onClick={() =>

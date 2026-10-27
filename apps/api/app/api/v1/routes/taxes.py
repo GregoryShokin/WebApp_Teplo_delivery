@@ -623,12 +623,12 @@ async def review_document(
     session: Annotated[AsyncSession, Depends(get_session)],
     intake_id: uuid.UUID,
     body: TaxDocumentReviewInput,
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> TaxDocumentRead:
-    """Отметить документ проверенным (``parsed`` — готов к продвижению) или отклонить
-    (``ignored``). Так владелец подтверждает то, что автоматика оставила на проверку.
+    """Подтвердить документ или отклонить его. Подтверждённая платёжка сразу идёт в план.
 
-    Вместе со статусом можно дозаполнить нераспознанные поля платёжки (срок, сумму,
-    вид, период) — продвижение возьмёт исправленные значения.
+    Сохранение полей и создание обязательства атомарны: при отказе продвижения запрос
+    возвращает причину, а прежнее состояние документа остаётся в силе.
     """
     intake = await session.get(TaxDocumentIntake, intake_id)
     if intake is None:
@@ -641,7 +641,13 @@ async def review_document(
     }
     overrides = {k: v for k, v in overrides.items() if v is not None}
     try:
-        await set_intake_review(session, intake, status=body.status, overrides=overrides or None)
+        await set_intake_review(
+            session,
+            intake,
+            status=body.status,
+            overrides=overrides or None,
+            actor_user_id=actor.user_id,
+        )
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     await session.commit()
@@ -681,17 +687,18 @@ async def ai_review_one(
 async def ai_apply(
     session: Annotated[AsyncSession, Depends(get_session)],
     intake_id: uuid.UUID,
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> TaxDocumentRead:
     """Владелец подтвердил предложение ИИ в окне разбора — применить сохранённые поля.
 
     Применяется ровно то, что предлагал ИИ (из ``recognition.ai_review.proposal``), той же
-    дорогой и с той же валидацией, что ручная проверка. Документ становится «распознан».
+    дорогой и с той же валидацией, что ручная проверка. Платёжка сразу появляется в плане.
     """
     intake = await session.get(TaxDocumentIntake, intake_id)
     if intake is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Документ не найден.")
     try:
-        await apply_ai_proposal(session, intake)
+        await apply_ai_proposal(session, intake, actor_user_id=actor.user_id)
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     await session.commit()

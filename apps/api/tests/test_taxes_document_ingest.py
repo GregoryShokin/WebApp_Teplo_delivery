@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
+from app.models.core import User
 from app.models.tax import TaxDocumentIntake, TaxPayment
 from app.services.mail.imap_client import FetchedAttachment, MailAccount
 from app.services.taxes.document_ingest import (
@@ -24,6 +25,7 @@ from app.services.taxes.document_ingest import (
     parse_attachment,
     set_intake_review,
 )
+from app.services.taxes.obligations import list_payable_obligations
 from app.services.taxes.promote import promote_ready_intakes
 
 FIXTURES = Path(__file__).parent / "fixtures" / "taxes"
@@ -774,11 +776,12 @@ async def test_review_marks_parsed_then_ignored(
 ) -> None:
     async with async_session_factory() as session:
         intake = _needs_review_intake()
+        intake.document_type = "payroll_statement"
         session.add(intake)
         await session.flush()
 
         await set_intake_review(session, intake, status="parsed")
-        assert intake.status == "parsed"  # проверено → готово к продвижению
+        assert intake.status == "parsed"  # ведомость не создаёт налоговую платёжку
 
         await set_intake_review(session, intake, status="ignored")
         assert intake.status == "ignored"  # передумал → отклонено
@@ -802,8 +805,7 @@ async def test_review_rejects_promoted_and_bad_status(
 async def test_review_with_overrides_fills_missing_fields(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Проверка с дозаправкой: владелец указывает срок/сумму/вид — они попадают в recognition,
-    причины «нужна проверка» снимаются, и продвижение возьмёт исправленные значения."""
+    """Проверка с дозаправкой сразу создаёт план по подтверждённым значениям."""
     async with async_session_factory() as session:
         intake = _needs_review_intake()
         intake.recognition = {
@@ -821,7 +823,12 @@ async def test_review_with_overrides_fills_missing_fields(
             overrides={"tax_kind": "contrib_extra_1pct", "due_date": "2026-04-28"},
         )
 
-        assert intake.status == "parsed"
+        assert intake.status == "promoted"
+        payment = (await session.scalars(select(TaxPayment))).one()
+        assert payment.kind == "contrib_extra_1pct"
+        assert payment.amount == Decimal("116360")
+        assert payment.paid_on == date(2026, 4, 28)
+        assert intake.tax_payment_bundle_id == payment.bundle_id
         assert intake.recognition["tax_kind"] == "contrib_extra_1pct"
         assert intake.recognition["due_date"] == "2026-04-28"
         assert intake.recognition["amount"] == "116360"  # нетронутое осталось
@@ -842,6 +849,145 @@ async def test_review_overrides_reject_unknown_kind(
             await set_intake_review(
                 session, intake, status="parsed", overrides={"tax_kind": "чепуха"}
             )
+
+
+async def test_confirmed_injury_is_payable_without_batch_promotion(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Письмо → распознавание → подтверждение → план и «к уплате» одним действием."""
+    att = _pd_att(period_cell=None, received=datetime(2026, 10, 21, tzinfo=UTC))
+    actor_id = uuid.uuid4()
+    async with async_session_factory() as session:
+        session.add(User(
+            id=actor_id,
+            email="tax-reviewer@example.test",
+            full_name="Tax reviewer",
+            hashed_password="unused-test-password",
+        ))
+        await session.commit()
+        await ingest_tax_documents(
+            session, settings=get_settings(), fetch=_fetch_stub([att]), accounts=_TEST_ACCOUNTS
+        )
+        intake = (await session.scalars(select(TaxDocumentIntake))).one()
+        intake_id = intake.id
+        assert intake.status == "parsed"
+        assert await session.scalar(select(func.count()).select_from(TaxPayment)) == 0
+
+        await set_intake_review(session, intake, status="parsed", actor_user_id=actor_id)
+        await session.commit()
+
+    async with async_session_factory() as session:
+        intake = await session.get(TaxDocumentIntake, intake_id)
+        payment = (await session.scalars(select(TaxPayment))).one()
+        assert intake.status == "promoted"
+        assert intake.recognition["manually_reviewed"] is True
+        assert intake.tax_payment_bundle_id == payment.bundle_id
+        assert payment.kind == "contrib_injury"
+        assert payment.amount == Decimal("100")
+        assert payment.for_period == "2026-10"
+        assert payment.paid_on == date(2026, 11, 16)
+        assert payment.status == "planned"
+        assert payment.created_by_user_id == actor_id
+        payable = await list_payable_obligations(session, today=date(2026, 10, 27))
+        injury = [p for p in payable if p.kind == "contrib_injury" and p.for_period == "2026-10"]
+        assert len(injury) == 1
+        assert injury[0].amount == Decimal("100")
+
+
+@pytest.mark.parametrize(
+    ("kind", "amount", "reason"),
+    [
+        ("contrib_injury", "0", "нулевая"),
+        ("contrib_injury", "NaN", "некорректная сумма"),
+        ("contrib_injury", "Infinity", "некорректная сумма"),
+        ("contrib_injury", "-Infinity", "некорректная сумма"),
+        ("contrib_injury", "не число", "некорректная сумма"),
+        ("enp_payroll", "100", "НДФЛ и взносы"),
+    ],
+)
+async def test_invalid_payment_confirmation_rolls_back_fields_and_plan(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    kind: str,
+    amount: str,
+    reason: str,
+) -> None:
+    """Отказ продвижения не оставляет ложное подтверждение или частичное обязательство."""
+    original = {"amount": "100", "review_reasons": ["проверьте вид"]}
+    async with async_session_factory() as session:
+        intake = _needs_review_intake()
+        intake.recognition = dict(original)
+        session.add(intake)
+        await session.commit()
+        intake_id = intake.id
+        with pytest.raises(ValueError, match=reason):
+            await set_intake_review(
+                session, intake, status="parsed", overrides={"tax_kind": kind, "amount": amount}
+            )
+        # Даже если вызывающий продолжает и коммитит, неуспешное подтверждение откатилось.
+        await session.commit()
+
+    async with async_session_factory() as session:
+        intake = await session.get(TaxDocumentIntake, intake_id)
+        assert intake.status == "needs_review"
+        assert intake.recognition == original
+        assert intake.tax_payment_bundle_id is None
+        assert await session.scalar(select(func.count()).select_from(TaxPayment)) == 0
+
+
+async def test_confirmation_failure_rolls_back_created_plan(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Сбой после создания плана откатывает и план, и подтверждение документа."""
+    from app.services.taxes import document_ingest
+
+    real_promote = document_ingest.promote_intake
+
+    async def fail_after_creation(session, intake, **kwargs):
+        await real_promote(session, intake, **kwargs)
+        raise RuntimeError("synthetic promotion failure")
+
+    async with async_session_factory() as session:
+        intake = _needs_review_intake()
+        intake.recognition = {"tax_kind": "contrib_injury", "amount": "100"}
+        session.add(intake)
+        await session.commit()
+        intake_id = intake.id
+        monkeypatch.setattr(document_ingest, "promote_intake", fail_after_creation)
+        with pytest.raises(RuntimeError, match="synthetic promotion failure"):
+            await set_intake_review(session, intake, status="parsed")
+        await session.commit()
+
+    async with async_session_factory() as session:
+        intake = await session.get(TaxDocumentIntake, intake_id)
+        assert intake.status == "needs_review"
+        assert intake.tax_payment_bundle_id is None
+        assert await session.scalar(select(func.count()).select_from(TaxPayment)) == 0
+
+
+async def test_stale_rejection_cannot_revert_promoted_document(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Вторая вкладка перечитывает свежий статус перед отклонением, сохраняя связь с планом."""
+    async with async_session_factory() as first, async_session_factory() as stale:
+        intake = _needs_review_intake()
+        intake.recognition = {"tax_kind": "contrib_injury", "amount": "100"}
+        first.add(intake)
+        await first.commit()
+        stale_intake = await stale.get(TaxDocumentIntake, intake.id)
+        assert stale_intake.status == "needs_review"
+
+        await set_intake_review(first, intake, status="parsed")
+        await first.commit()
+        with pytest.raises(ValueError, match="уже продвинут"):
+            await set_intake_review(stale, stale_intake, status="ignored")
+        await stale.commit()
+
+    async with async_session_factory() as session:
+        saved = (await session.scalars(select(TaxDocumentIntake))).one()
+        payment = (await session.scalars(select(TaxPayment))).one()
+        assert saved.status == "promoted"
+        assert saved.tax_payment_bundle_id == payment.bundle_id
 
 
 def test_svod_classified_as_turnover() -> None:

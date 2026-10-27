@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.employee import Employee
 from app.models.tax import TaxPayment, TaxPayrollLedger
+from app.services.taxes.deadlines import injury_due
 from app.services.taxes.engine import YearConfig, money, rub
 
 ZERO = Decimal("0")
@@ -102,13 +103,6 @@ def payroll_enp_projection_due(year: int, month: int) -> date:
     if month == 12:
         return date(year + 1, 1, 28)
     return date(year, month + 1, 28)
-
-
-def injury_due(year: int, month: int) -> date:
-    """Срок травматизма за месяц N — 15 число месяца N+1 (125-ФЗ, ст. 22)."""
-    if month == 12:
-        return date(year + 1, 1, 15)
-    return date(year, month + 1, 15)
 
 
 def _worked_full_month(emp: Employee, year: int, month: int) -> bool:

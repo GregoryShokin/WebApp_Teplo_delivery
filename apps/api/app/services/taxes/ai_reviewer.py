@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -33,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings, get_settings
 from app.models.tax import TaxDocumentIntake
 from app.services.anthropic_client import LlmCallError, call_failure_reason, call_tool
+from app.services.taxes.concurrency import lock_row
 from app.services.taxes.document_ingest import REVIEW_TAX_KINDS, set_intake_review
 from app.services.taxes.document_parser import _docx_text
 
@@ -338,31 +340,43 @@ async def review_document(
     )
 
 
-async def apply_ai_proposal(session: AsyncSession, intake: TaxDocumentIntake) -> None:
-    """Владелец подтвердил предложение ИИ («да, делай») — применить сохранённые поля.
+async def apply_ai_proposal(
+    session: AsyncSession,
+    intake: TaxDocumentIntake,
+    *,
+    actor_user_id: uuid.UUID | None = None,
+) -> None:
+    """Применить подтверждённое владельцем предложение ИИ и сразу поставить платёжку в план.
 
-    Применяется РОВНО то, что лежит в ``recognition['ai_review']['proposal']`` (никакой
-    подмены полей с фронта), той же дорогой, что ручная проверка. Документ, который парсер
-    не классифицировал (error/unsupported), при подтверждении выравнивается в платёжку —
-    иначе ``set_intake_review`` откажет в overrides.
+    Тип, поля, след подтверждения и план сохраняются атомарно. Сам ИИ-разбор по-прежнему
+    только предлагает изменения; эта функция вызывается явным действием владельца.
     """
-    review = (intake.recognition or {}).get("ai_review") or {}
-    proposal = review.get("proposal")
-    if not proposal:
-        raise ValueError("У этого документа нет предложения ИИ — сначала запустите разбор.")
-    if intake.document_type != "payment_order":
-        intake.document_type = "payment_order"
-    await set_intake_review(session, intake, status="parsed", overrides=dict(proposal))
+    async with session.begin_nested():
+        await lock_row(session, intake)
+        review = (intake.recognition or {}).get("ai_review") or {}
+        proposal = review.get("proposal")
+        if not proposal:
+            raise ValueError("У этого документа нет предложения ИИ — сначала запустите разбор.")
+        if intake.document_type != "payment_order":
+            intake.document_type = "payment_order"
+            # set_intake_review блокирует и перечитывает строку; сохраняем новый тип до этого.
+            await session.flush()
+        await set_intake_review(
+            session,
+            intake,
+            status="parsed",
+            overrides=dict(proposal),
+            actor_user_id=actor_user_id,
+        )
 
-    updated = dict(intake.recognition or {})
-    ai_review = dict(updated.get("ai_review") or {})
-    ai_review["applied"] = True
-    ai_review["applied_at"] = datetime.now(UTC).isoformat(timespec="seconds")
-    updated["ai_review"] = ai_review
-    # Поля предложил ИИ, подтвердил владелец — фиксируем обе стороны.
-    updated["reviewed_by"] = "ai_confirmed"
-    intake.recognition = updated
-    await session.flush()
+        updated = dict(intake.recognition or {})
+        ai_review = dict(updated.get("ai_review") or {})
+        ai_review["applied"] = True
+        ai_review["applied_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+        updated["ai_review"] = ai_review
+        updated["reviewed_by"] = "ai_confirmed"
+        intake.recognition = updated
+        await session.flush()
 
 
 def _audit_prompt(snapshot: str) -> str:

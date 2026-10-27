@@ -27,6 +27,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
 
+from app.services.taxes.deadlines import injury_due as _injury_due
+
 # КБК → назначение. Единый КБК ЕНП покрывает УСН, НДФЛ, взносы «за себя» — их не различить
 # по КБК, только по имени файла. КБК травматизма отдельный.
 KBK_ENP = "18201061201010000510"
@@ -357,11 +359,6 @@ def _injury_period_month(cells: list[str]) -> tuple[int, int] | None:
 def _month_before(year: int, month: int) -> tuple[int, int]:
     """Предыдущий месяц — обратная операция к :func:`_injury_due`."""
     return (year - 1, 12) if month == 1 else (year, month - 1)
-
-
-def _injury_due(year: int, month: int) -> date:
-    """Срок уплаты взноса на травматизм за месяц N — 15 число N+1 (125-ФЗ, ст. 22)."""
-    return date(year + 1, 1, 15) if month == 12 else date(year, month + 1, 15)
 
 
 def parse_injury_payment(

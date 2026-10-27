@@ -31,6 +31,7 @@ from app.services.mail.imap_client import (
     configured_accounts,
     fetch_tax_document_attachments,
 )
+from app.services.taxes.concurrency import lock_row
 from app.services.taxes.document_parser import (
     PaymentOrderDoc,
     PayrollStatementDoc,
@@ -41,6 +42,7 @@ from app.services.taxes.document_parser import (
     parse_payroll_statement,
     parse_turnover_statement,
 )
+from app.services.taxes.promote import PromotionError, promote_intake
 
 logger = logging.getLogger(__name__)
 
@@ -314,50 +316,57 @@ async def set_intake_review(
     *,
     status: str,
     overrides: dict | None = None,
+    actor_user_id: uuid.UUID | None = None,
 ) -> None:
-    """Владелец проверил документ: пометить готовым к продвижению (``parsed``) или отклонить
-    (``ignored``). Уже продвинутый документ не трогаем — он породил обязательство.
+    """Подтвердить документ или отклонить его. Подтверждённая платёжка сразу идёт в план.
 
-    ``overrides`` — ручная дозаправка распознанного (срок уплаты, сумма, вид, период):
-    автоматика не угадала — человек указал. Пишется в ``recognition`` (СВЕРХУ распознанного),
-    причины ``needs_review`` снимаются: документ проверен человеком, продвижение возьмёт
-    исправленные поля. Разрешено только для платёжек — у ведомостей/оборотк поля другие.
+    Поля и обязательство сохраняются вместе: если продвижение невозможно, проверка
+    откатывается с понятной причиной. Нулевая платёжка и смешанный ЕНП не становятся
+    обязательствами. Оборотки и ведомости сохраняют прежний путь через ``parsed``.
     """
     if status not in INTAKE_REVIEW_STATUSES:
         raise ValueError(f"Недопустимый статус проверки: {status!r}.")
-    if intake.status == "promoted":
-        raise ValueError("Документ уже продвинут в обязательство — статус менять нельзя.")
 
-    if overrides:
-        if intake.document_type != "payment_order":
-            raise ValueError("Поля можно править только у платёжного поручения.")
-        overrides = dict(overrides)
-        kind = overrides.get("tax_kind")
-        if kind is not None and kind not in REVIEW_TAX_KINDS:
-            raise ValueError(
-                f"Неизвестный вид платежа: {kind!r}. Допустимые: {', '.join(REVIEW_TAX_KINDS)}."
-            )
-        # «УСН за год» в хранении — это usn_advance с периодом 'year': отдельного вида
-        # в tax_payment нет (CHECK ck_tax_payment_kind), и без маппинга продвижение
-        # падало «Неизвестный вид платежа» (находка аудита 27.07.2026).
-        if kind == "usn_year":
-            overrides["tax_kind"] = "usn_advance"
-            overrides.setdefault("period_hint", "year")
+    async with session.begin_nested():
+        # Проверяем свежий статус под блокировкой: параллельное отклонение не должно
+        # вернуть уже продвинутый документ в staging, оставив план без основания.
+        await lock_row(session, intake)
+        if intake.status == "promoted":
+            raise ValueError("Документ уже продвинут в обязательство — статус менять нельзя.")
+
         updated = dict(intake.recognition or {})
-        for key in ("tax_kind", "amount", "due_date", "period_hint"):
-            value = overrides.get(key)
-            if value is None:
-                continue
-            updated[key] = str(value)
-        # Период задал человек — бейдж «месяц по дате письма» больше не про этот документ.
-        if overrides.get("period_hint") is not None:
-            updated["period_source"] = "manual"
-        updated["review_reasons"] = []
-        updated["manually_reviewed"] = True
-        intake.recognition = updated
+        if overrides:
+            if intake.document_type != "payment_order":
+                raise ValueError("Поля можно править только у платёжного поручения.")
+            overrides = dict(overrides)
+            kind = overrides.get("tax_kind")
+            if kind is not None and kind not in REVIEW_TAX_KINDS:
+                raise ValueError(
+                    f"Неизвестный вид платежа: {kind!r}. Допустимые: {', '.join(REVIEW_TAX_KINDS)}."
+                )
+            if kind == "usn_year":
+                overrides["tax_kind"] = "usn_advance"
+                overrides.setdefault("period_hint", "year")
+            for key in ("tax_kind", "amount", "due_date", "period_hint"):
+                value = overrides.get(key)
+                if value is not None:
+                    updated[key] = str(value)
+            if overrides.get("period_hint") is not None:
+                updated["period_source"] = "manual"
 
-    intake.status = status
-    await session.flush()
+        if status == "parsed":
+            updated["review_reasons"] = []
+            updated["manually_reviewed"] = True
+        intake.recognition = updated
+        intake.status = status
+        # promote_intake перечитывает документ под блокировкой. Сначала сохраняем поля,
+        # чтобы refresh не заменил подтверждённые значения старым распознаванием.
+        await session.flush()
+        if status == "parsed" and intake.document_type == "payment_order":
+            try:
+                await promote_intake(session, intake, actor_user_id=actor_user_id)
+            except PromotionError as exc:
+                raise ValueError(str(exc)) from exc
 
 
 async def ingest_tax_documents(

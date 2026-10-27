@@ -21,7 +21,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +33,7 @@ from app.models.tax import (
     TaxPayrollLedger,
 )
 from app.services.taxes.concurrency import insert_or_reread, lock_row
+from app.services.taxes.deadlines import injury_due, next_weekday
 from app.services.taxes.enp_split import rebuild_payroll_enp_split
 
 logger = logging.getLogger(__name__)
@@ -62,12 +63,15 @@ def _injury_due_fallback(kind: str, due: date | None, received_at) -> date | Non
     месяца (125-ФЗ, ст. 22); месяц берём из даты письма: бухгалтер шлёт платёжку в том же
     месяце, за который считает взнос.
     """
-    if kind != "contrib_injury" or due is not None or received_at is None:
+    if kind != "contrib_injury":
         return due
+    if due is not None:
+        # Старые распознанные документы могли сохранить 15-е на выходном.
+        return next_weekday(due)
+    if received_at is None:
+        return None
     sent = received_at.date() if hasattr(received_at, "date") else received_at
-    return (
-        date(sent.year + 1, 1, 15) if sent.month == 12 else date(sent.year, sent.month + 1, 15)
-    )
+    return injury_due(sent.year, sent.month)
 
 
 def _tax_year(period_hint: str | None, due: date | None, received_at=None) -> int:
@@ -123,7 +127,12 @@ def _validate(intake: TaxDocumentIntake) -> tuple[str, Decimal, date | None, str
     raw_amount = rec.get("amount")
     if raw_amount is None:
         raise PromotionError("В документе не распознана сумма.")
-    amount = Decimal(str(raw_amount))
+    try:
+        amount = Decimal(str(raw_amount))
+    except (InvalidOperation, ValueError) as exc:
+        raise PromotionError("В документе указана некорректная сумма платежа.") from exc
+    if not amount.is_finite():
+        raise PromotionError("В документе указана некорректная сумма платежа.")
     if amount <= 0:
         raise PromotionError(
             "Сумма в документе нулевая — это несформированная платёжка, а не обязательство."
@@ -151,6 +160,9 @@ async def promote_intake(
     await lock_row(session, intake)
     kind, amount, due, period = _validate(intake)
     due = _injury_due_fallback(kind, due, intake.received_at)
+    if kind == "contrib_injury" and due is not None:
+        # Документ и план должны показывать один срок после переноса выходного.
+        intake.recognition = {**(intake.recognition or {}), "due_date": due.isoformat()}
     year = _tax_year(period, due, intake.received_at)
 
     async def _find_slot() -> TaxPayment | None:
@@ -313,6 +325,9 @@ async def promote_ready_intakes(
             )
             # Тай-брейк по id: вложения одного письма несут один received_at.
             .order_by(TaxDocumentIntake.received_at.asc(), TaxDocumentIntake.id.asc())
+            # Блокируем все документы ДО обновления общих платёжных слотов. Иначе
+            # batch держит платёж и ждёт документ, а ручная проверка — наоборот.
+            .with_for_update()
         )
     ).scalars().all()
 

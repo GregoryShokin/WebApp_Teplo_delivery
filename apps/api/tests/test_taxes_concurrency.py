@@ -6,19 +6,21 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.tax import TaxBankDraft, TaxDocumentIntake, TaxPayment, TaxPayrollLedger
 from app.services.taxes.bank_draft import create_tax_payment_draft
+from app.services.taxes.document_ingest import set_intake_review
 from app.services.taxes.enp_split import rebuild_payroll_enp_split
-from app.services.taxes.promote import PromotionError, promote_intake
+from app.services.taxes.promote import PromotionError, promote_intake, promote_ready_intakes
 
 
 def _intake(*, sha: str | None = None) -> TaxDocumentIntake:
@@ -291,3 +293,60 @@ async def test_parallel_enp_split_keeps_one_row_per_slot(
         ).all()
     kinds = sorted(r.kind for r in rows)
     assert kinds == ["contrib_employees", "ndfl"]  # по одной строке на вид
+
+
+async def test_batch_and_manual_confirmation_same_slot_do_not_deadlock(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Batch ждёт документ до захвата платежа, который нужен ручному подтверждению."""
+    earlier, later = _intake(), _intake()
+    later.received_at = datetime(2026, 7, 24, tzinfo=UTC)
+    async with async_session_factory() as setup:
+        setup.add_all([earlier, later, _planned()])
+        await setup.commit()
+        later_id = later.id
+
+    async with (
+        async_session_factory() as batch,
+        async_session_factory() as manual,
+        async_session_factory() as observer,
+    ):
+        manual_doc = await manual.get(TaxDocumentIntake, later_id)
+        await manual.refresh(manual_doc, with_for_update=True)
+        batch_pid = await batch.scalar(text("select pg_backend_pid()"))
+
+        async def run_batch() -> None:
+            await promote_ready_intakes(batch)
+            await batch.commit()
+
+        async def wait_for_batch_lock() -> None:
+            # Ждём реальную блокировку PostgreSQL, а не предполагаем порядок по sleep.
+            while not await observer.scalar(
+                text("select cardinality(pg_blocking_pids(:pid)) > 0"), {"pid": batch_pid}
+            ):
+                if batch_task.done():
+                    await batch_task
+                    raise AssertionError("Batch не дождался заблокированного документа")
+                await asyncio.sleep(0.01)
+
+        async def confirm_manually() -> None:
+            await set_intake_review(manual, manual_doc, status="parsed")
+            await manual.commit()
+
+        batch_task = asyncio.create_task(run_batch())
+        try:
+            await asyncio.wait_for(wait_for_batch_lock(), timeout=5)
+            await asyncio.wait_for(
+                asyncio.gather(confirm_manually(), batch_task), timeout=10
+            )
+        finally:
+            if not batch_task.done():
+                batch_task.cancel()
+            await asyncio.gather(batch_task, return_exceptions=True)
+
+    async with async_session_factory() as check:
+        docs = (await check.scalars(select(TaxDocumentIntake))).all()
+        payments = (await check.scalars(select(TaxPayment))).all()
+        assert len(payments) == 1
+        assert {doc.status for doc in docs} == {"promoted"}
+        assert {doc.tax_payment_bundle_id for doc in docs} == {payments[0].bundle_id}

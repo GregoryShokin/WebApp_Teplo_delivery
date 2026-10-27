@@ -303,7 +303,7 @@ async def test_injury_without_due_gets_legal_deadline(
 
     В «Форме ПД (налог)» срока нет (поле «Дата» — для отметки банка), и плановая строка брала
     дату письма. Обязательство назавтра краснело просрочкой, хотя по 125-ФЗ (ст. 22) взнос за
-    июль платится до 15 августа (вопрос владельца 27.07.2026).
+    июль платится до 17 августа 2026: 15-е выпадает на субботу.
     """
     async with async_session_factory() as session:
         intake = _intake(
@@ -326,7 +326,8 @@ async def test_injury_without_due_gets_legal_deadline(
             )
         ).one()
 
-    assert row.paid_on == date(2026, 8, 15)
+    assert row.paid_on == date(2026, 8, 17)
+    assert intake.recognition["due_date"] == "2026-08-17"
     assert row.recipient == "sfr"  # отдельные реквизиты СФР, не ЕНП
 
 
@@ -361,3 +362,30 @@ async def test_month_period_defines_tax_year_not_due_date(
 
     assert row.for_year == 2025
     assert row.paid_on == date(2026, 1, 15)  # срок остаётся законным
+
+
+async def test_existing_injury_weekend_deadline_matches_document_and_plan(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Старое распознавание с воскресеньем обновляется вместе с планом."""
+    async with async_session_factory() as session:
+        intake = _intake(
+            tax_kind="contrib_injury",
+            amount="100",
+            period="2026-10",
+            due="2026-11-15",
+            received=datetime(2026, 10, 21, tzinfo=UTC),
+            filename="0,2 %.xls",
+        )
+        session.add(intake)
+        await session.commit()
+        intake_id = intake.id
+        await promote_intake(session, intake)
+        await session.commit()
+
+    async with async_session_factory() as session:
+        saved = await session.get(TaxDocumentIntake, intake_id)
+        payment = (await session.scalars(select(TaxPayment))).one()
+        assert saved.recognition["due_date"] == "2026-11-16"
+        assert payment.paid_on == date(2026, 11, 16)
+        assert saved.tax_payment_bundle_id == payment.bundle_id

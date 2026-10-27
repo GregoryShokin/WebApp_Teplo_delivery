@@ -8,13 +8,15 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pytest
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
-from app.models.tax import TaxDocumentIntake
+from app.models.tax import TaxDocumentIntake, TaxPayment
 from app.services.taxes.ai_reviewer import (
     _AUDIT_TOOL,
     _REVIEW_TOOL,
@@ -94,30 +96,70 @@ async def test_review_saves_proposal_but_does_not_apply(
 async def test_owner_confirms_and_proposal_is_applied(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """«Да, делай»: применяется ровно сохранённое предложение, документ — «распознан»."""
+    """Подтверждение сохранённого предложения сразу создаёт обязательство."""
     async with async_session_factory() as session:
         # Файл, который парсер вовсе не классифицировал — ИИ опознал платёжкой.
-        intake = _intake("ЕНС до 27.03.docx", status="error", document_type="unknown")
+        intake = _intake("Травматизм.xls", status="error", document_type="unknown")
         session.add(intake)
         await session.commit()
 
+        injury_proposal = {
+            **_CONFIDENT_PAYMENT,
+            "tax_kind": "contrib_injury",
+            "amount": "100",
+            "period_hint": "2026-10",
+            "due_date": "2026-11-16",
+        }
         await review_document(
-            session, intake, settings=get_settings(), call=_fake_call(_CONFIDENT_PAYMENT)
+            session, intake, settings=get_settings(), call=_fake_call(injury_proposal)
         )
         await session.commit()
         assert intake.status == "error"  # разбор сам ничего не применил
 
         await apply_ai_proposal(session, intake)
         await session.commit()
+        payment = (await session.scalars(select(TaxPayment))).one()
+        assert payment.status == "planned"
+        assert payment.kind == "contrib_injury"
+        assert payment.amount == Decimal("100")
+        assert payment.for_period == "2026-10"
+        assert payment.paid_on == date(2026, 11, 16)
+        assert intake.tax_payment_bundle_id == payment.bundle_id
 
-    assert intake.status == "parsed"
+    assert intake.status == "promoted"
     assert intake.document_type == "payment_order"  # тип выровнен при подтверждении
     rec = intake.recognition
-    assert rec["tax_kind"] == "enp_payroll"
-    assert rec["amount"] == "19460.93"
+    assert rec["tax_kind"] == "contrib_injury"
+    assert rec["amount"] == "100"
     assert rec["review_reasons"] == []
     assert rec["reviewed_by"] == "ai_confirmed"  # предложил ИИ, подтвердил владелец
     assert rec["ai_review"]["applied"] is True
+
+
+async def test_ai_confirmed_mixed_enp_keeps_original_document_on_failure(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Отказ смешанного ЕНП откатывает также новый тип и метку применения предложения."""
+    async with async_session_factory() as session:
+        intake = _intake("ЕНС до 27.03.docx", status="error", document_type="unknown")
+        session.add(intake)
+        await session.commit()
+        await review_document(
+            session, intake, settings=get_settings(), call=_fake_call(_CONFIDENT_PAYMENT)
+        )
+        await session.commit()
+        intake_id = intake.id
+        original = dict(intake.recognition)
+        with pytest.raises(ValueError, match="НДФЛ и взносы"):
+            await apply_ai_proposal(session, intake)
+        await session.commit()
+
+    async with async_session_factory() as session:
+        intake = await session.get(TaxDocumentIntake, intake_id)
+        assert intake.status == "error"
+        assert intake.document_type == "unknown"
+        assert intake.recognition == original
+        assert await session.scalar(select(func.count()).select_from(TaxPayment)) == 0
 
 
 async def test_apply_without_proposal_refuses(
