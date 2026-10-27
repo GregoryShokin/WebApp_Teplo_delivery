@@ -30,8 +30,9 @@
 * ``reserved_safe`` — «На Сейфе»: резерв на карте Сейф, ждёт выплаты.
 * ``reserved_kassa``— «В кассе»: передан в кассу, ждёт выдачи наличными.
 
-Терминальные состояния (``paid``/``failed``/``cancelled``) корзины не имеют — они видны
-только в истории (``scope='all'``) на странице «Финансы → Платежи». Для зарплатного
+Завершённые платежи и служебные состояния документов (``closing``/``duplicate``/
+``ignored``/``excluded``) корзины не имеют — они видны только в истории (``scope='all'``)
+на странице «Финансы → Платежи». Для зарплатного
 черновика ``deleted`` возвращается в ``bank_ready``, пока ведомость не выплачена.
 
 Модуль ТОЛЬКО читает — никаких мутаций и движений денег.
@@ -98,6 +99,10 @@ STATE_LABELS: dict[str, str] = {
     "failed": "Ошибка банка",
     "cancelled": "Отменён",
     "deleted": "Удалён",
+    "closing": "Акт / УПД",
+    "duplicate": "Дубликат",
+    "ignored": "Не к оплате",
+    "excluded": "Исключён из очереди",
 }
 
 # Состояние → корзина активной модалки (None — только история).
@@ -112,6 +117,10 @@ BUCKET_BY_STATE: dict[str, str | None] = {
     "failed": None,
     "cancelled": None,
     "deleted": None,
+    "closing": None,
+    "duplicate": None,
+    "ignored": None,
+    "excluded": None,
 }
 
 # Порядок корзин в модалке.
@@ -262,7 +271,8 @@ async def _invoice_items(session: AsyncSession) -> list[PaymentItem]:
         # документ (closing: УПД/акт) — не счёт к оплате: он гасит дебиторку / встаёт в кредиторку,
         # живёт в учёте ДЗ/КЗ, а не в очереди оплат.
         if intake.status in ("ignored", "duplicate", "excluded", "closing"):
-            state = "cancelled"
+            # Это состояние документа, а не отмена банковского платежа.
+            state = intake.status
         elif pay_status == "paid":
             state = "paid"
         elif draft_id is not None:

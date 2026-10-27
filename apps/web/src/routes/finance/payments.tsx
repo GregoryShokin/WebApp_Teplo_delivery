@@ -33,7 +33,10 @@ function stateVariant(row: PaymentRow): "default" | "secondary" | "outline" {
   return "outline";
 }
 
+const NONPAYMENT_DOCUMENT_STATES = new Set(["closing", "duplicate", "ignored", "excluded"]);
+
 function methodLabel(row: PaymentRow): string {
+  if (row.source === "invoice" && NONPAYMENT_DOCUMENT_STATES.has(row.state)) return "—";
   if (row.method === "cash") return "Наличные / Сейф";
   return row.bank_channel === "sber" ? "Сбербанк" : "Т-Банк";
 }
@@ -114,7 +117,7 @@ export function FinancePaymentsRoute({
               <TableHead>Способ</TableHead>
               <TableHead>Статус</TableHead>
               <TableHead className="text-right">Сумма</TableHead>
-              <TableHead className="text-right">Дата</TableHead>
+              <TableHead className="text-right">Добавлено</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

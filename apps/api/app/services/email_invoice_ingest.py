@@ -573,6 +573,8 @@ async def materialize_from_intake(
         raise ValueError("В распознанном нет суммы к оплате")
 
     rec_json = intake.recognition or {}
+    if rec_json.get("package_ambiguous"):
+        raise ValueError("Не определён полный состав пакета документов — проверьте счёт и акт")
     number = rec_json.get("invoice_number") or None
     inv_date: date | None = None
     if rec_json.get("invoice_date"):
@@ -722,6 +724,8 @@ async def confirm_intake_with_review(
     """Подтверждение счёта оператором с правками (окно разбора): выбор/создание контрагента,
     скорректированные поля, опц. перенос реквизитов в карточку с верификацией, затем создание
     накладной из распознанного. Возвращает итоговый статус intake."""
+    if (intake.recognition or {}).get("package_ambiguous"):
+        raise ValueError("Не определён полный состав пакета документов — проверьте счёт и акт")
     inn = (new_counterparty_inn or "").strip() or None
     if service_duration_months is not None and not 1 <= service_duration_months <= 120:
         raise ValueError("Длительность услуги — от 1 до 120 месяцев")
@@ -1271,6 +1275,10 @@ async def process_attachment(
     intake.recognition = rec.to_json()
     intake.engine = rec.engine
     intake.confidence = _confidence_decimal(rec.confidence)
+    if (intake.recognition or {}).get("package_ambiguous"):
+        intake.status = "needs_review"
+        intake.error = "Не определён полный состав пакета документов — проверьте счёт и акт"
+        return intake.status
 
     # Роль документа в контуре ДЗ/КЗ (канон 17.07): счёт → bill (очередь оплат), УПД/акт →
     # closing (гасит дебиторку / встаёт в кредиторку).
