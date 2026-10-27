@@ -391,6 +391,17 @@ def _pick_form_number_date(text: str) -> tuple[str | None, date | None]:
 
 
 def _pick_invoice_date(raw_text: str) -> date | None:
+    if _classify_document(raw_text) == "reconciliation":
+        # Даты строк продаж/платежей относятся к операциям сверки, а не к самому акту.
+        # Берём дату только из его собственного заголовка, не сканируя табличное тело.
+        header = re.match(r"\s*акт\s+сверки[^\r\n]*", raw_text, re.IGNORECASE)
+        if header is None:
+            return None
+        own_header = header.group(0)
+        following_lines = raw_text[header.end():].strip().splitlines()
+        if following_lines and re.match(r"\s*(?:№\s*\S+|от\s+\d)", following_lines[0]):
+            own_header += " " + following_lines[0]
+        raw_text = own_header
     # Дата бланка («Номер документа / Дата составления») — собственная дата документа, поэтому
     # она сильнее любого «от <дата>» в теле; строку основания при поиске не рассматриваем вовсе.
     _, form_date = _pick_form_number_date(raw_text)

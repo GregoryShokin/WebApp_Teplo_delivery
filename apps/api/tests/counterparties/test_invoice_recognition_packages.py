@@ -295,3 +295,21 @@ def test_invoice_contract_keeps_its_own_date_after_older_reference() -> None:
         "Счет-договор № BILL-1 от 27.10.2026"
     )
     assert ir._pick_invoice_date(text) == date(2026, 10, 27)
+
+
+def test_reconciliation_ledger_date_does_not_become_the_act_date() -> None:
+    text = (
+        "Акт сверки № 7062\nвзаимных расчетов за 01.01.2026-31.03.2026\n"
+        "по договору № OLD от 11.01.2021\n"
+        "31.01.26 Продажа № SALE-1 от 31.01.2026\n"
+    )
+    assert ir._pick_invoice_date(text) is None
+
+
+def test_explicit_reconciliation_header_date_survives_ledger_body() -> None:
+    text = (
+        "Акт сверки № X от 12.10.2026\n"
+        "по договору № OLD от 11.01.2021\n"
+        "31.01.26 Продажа № SALE-1 от 31.01.2026\n"
+    )
+    assert ir._pick_invoice_date(text) == date(2026, 10, 12)
