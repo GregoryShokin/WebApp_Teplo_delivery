@@ -1955,9 +1955,9 @@
     "semantic_hash": "a663645f5f1f3d757522a1df8e9c78ed"
   },
   "apps/api/app/api/v1/routes/taxes.py": {
-    "mtime": 1792745285.426974,
-    "ast_hash": "6f9b7b4fee9021e8ea74c5865f4cf8c4",
-    "semantic_hash": "6f9b7b4fee9021e8ea74c5865f4cf8c4"
+    "mtime": 1793105178.8241754,
+    "ast_hash": "07268192e5464214820d9754f2fbc473",
+    "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/utilities.py": {
     "mtime": 1786099613.5688272,
@@ -3470,9 +3470,9 @@
     "semantic_hash": "a00dd892e03ef6d3a0cd95e6a20d0505"
   },
   "apps/api/app/services/taxes/ai_reviewer.py": {
-    "mtime": 1785440858.4898336,
-    "ast_hash": "98a7aeb8d1e257dc7d180552473570e9",
-    "semantic_hash": "98a7aeb8d1e257dc7d180552473570e9"
+    "mtime": 1793105178.8250954,
+    "ast_hash": "502b430df78f876c1d29fd23f05f3958",
+    "semantic_hash": ""
   },
   "apps/api/app/services/taxes/bank_draft.py": {
     "mtime": 1785439300.0642483,
@@ -3495,14 +3495,14 @@
     "semantic_hash": "531f731ba3068603c4bbf6ba24fae1ce"
   },
   "apps/api/app/services/taxes/document_ingest.py": {
-    "mtime": 1792748427.0421762,
-    "ast_hash": "ed3b8d80eaa0fe9d2fe7770cdcdd352c",
-    "semantic_hash": "ed3b8d80eaa0fe9d2fe7770cdcdd352c"
+    "mtime": 1793105178.8259003,
+    "ast_hash": "904e296ae1ad3e24680d41a7ac484fc9",
+    "semantic_hash": ""
   },
   "apps/api/app/services/taxes/document_parser.py": {
-    "mtime": 1787151618.3515213,
-    "ast_hash": "cbe753f8f23ee286842b1539c7527c86",
-    "semantic_hash": "cbe753f8f23ee286842b1539c7527c86"
+    "mtime": 1793105178.8265028,
+    "ast_hash": "af782b63a3ef2a22d62da7b92f389e93",
+    "semantic_hash": ""
   },
   "apps/api/app/services/taxes/engine.py": {
     "mtime": 1792745285.437301,
@@ -3530,14 +3530,14 @@
     "semantic_hash": "89485e23e43616e1f71e4f905b3fcebc"
   },
   "apps/api/app/services/taxes/official_payroll.py": {
-    "mtime": 1785173434.8989666,
-    "ast_hash": "4092d2e9cdac7aff0f5707ba0bbdb644",
-    "semantic_hash": "4092d2e9cdac7aff0f5707ba0bbdb644"
+    "mtime": 1793105178.8268712,
+    "ast_hash": "95bfebbe9bc7403fc51dd17bd138d68f",
+    "semantic_hash": ""
   },
   "apps/api/app/services/taxes/promote.py": {
-    "mtime": 1785175813.210748,
-    "ast_hash": "0578d9dda59d931f32341ac3bd70aaeb",
-    "semantic_hash": "0578d9dda59d931f32341ac3bd70aaeb"
+    "mtime": 1793105178.827309,
+    "ast_hash": "afeed524c432da4210943c6f573b077d",
+    "semantic_hash": ""
   },
   "apps/api/app/services/taxes/reconcile.py": {
     "mtime": 1792745285.4380183,
@@ -5130,9 +5130,9 @@
     "semantic_hash": "436b65e6294644ebce25ba1310851032"
   },
   "apps/api/tests/test_taxes_ai_reviewer.py": {
-    "mtime": 1785177769.1112332,
-    "ast_hash": "7a143a5e72bea6f7d009689e5bc93143",
-    "semantic_hash": "7a143a5e72bea6f7d009689e5bc93143"
+    "mtime": 1793105178.8278346,
+    "ast_hash": "c4f2e36bf2d36815dffc328a514fb51d",
+    "semantic_hash": ""
   },
   "apps/api/tests/test_taxes_audit_fixes.py": {
     "mtime": 1785173434.9048681,
@@ -5150,9 +5150,9 @@
     "semantic_hash": "ae2739f3a4e49e00d887672d599c20e0"
   },
   "apps/api/tests/test_taxes_concurrency.py": {
-    "mtime": 1785173434.9056168,
-    "ast_hash": "2495d19dc16afa55e536f80b868e2a02",
-    "semantic_hash": "2495d19dc16afa55e536f80b868e2a02"
+    "mtime": 1793105178.828496,
+    "ast_hash": "1e615c2b50d18a1404deacdad3056dd5",
+    "semantic_hash": ""
   },
   "apps/api/tests/test_taxes_dds_projection.py": {
     "mtime": 1785445277.0212603,
@@ -5160,9 +5160,9 @@
     "semantic_hash": "5fb12533e4e527ad817615c7e788c331"
   },
   "apps/api/tests/test_taxes_document_ingest.py": {
-    "mtime": 1792748427.0432193,
-    "ast_hash": "0024c2e810dbffa5c1ee9f320f833245",
-    "semantic_hash": "0024c2e810dbffa5c1ee9f320f833245"
+    "mtime": 1793105178.8290164,
+    "ast_hash": "9cc0e0d731aadc54156ed8bbe8ca667e",
+    "semantic_hash": ""
   },
   "apps/api/tests/test_taxes_document_parser.py": {
     "mtime": 1787151618.3528507,
@@ -5200,9 +5200,9 @@
     "semantic_hash": "6f2f9e45d6317893f9aebd051266a4d6"
   },
   "apps/api/tests/test_taxes_promote.py": {
-    "mtime": 1785175813.2111192,
-    "ast_hash": "548967c45c9326915a3db1e76b59051f",
-    "semantic_hash": "548967c45c9326915a3db1e76b59051f"
+    "mtime": 1793105178.829674,
+    "ast_hash": "18c1b68f4cd8123d9b57480de2ecb97a",
+    "semantic_hash": ""
   },
   "apps/api/tests/test_taxes_reconcile.py": {
     "mtime": 1792745285.443642,
@@ -6270,9 +6270,9 @@
     "semantic_hash": "fd46a4ddf3a7e3e44286ddebcd17c0ee"
   },
   "apps/web/src/routes/taxes/index.tsx": {
-    "mtime": 1792745285.446675,
-    "ast_hash": "689a75c73d63182f57c4fc5bb2ed152f",
-    "semantic_hash": "689a75c73d63182f57c4fc5bb2ed152f"
+    "mtime": 1793105178.8305187,
+    "ast_hash": "65e2d6bda0a2b61a891ceecdb94cb014",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/warehouse/BarterTab.tsx": {
     "mtime": 1784562714.847346,
@@ -8412,6 +8412,21 @@
   "graphify-out/memory/query_20261007_111655_\u043f\u043e\u0447\u0435\u043c\u0443_\u0432_\u043d\u043e\u0432\u043e\u043c_\u043f\u043b\u0430\u0442\u0435\u0436\u0435_\u043d\u0435\u043b\u044c\u0437\u044f_\u0432\u044b\u0431\u0440\u0430\u0442\u044c_\u0441\u043e\u0431\u0441\u0442\u0432\u0435\u043d\u043d\u0438\u043a\u0430.md": {
     "mtime": 1791373018.9727461,
     "ast_hash": "7ce36564eb87362255b3c28d40292309",
+    "semantic_hash": ""
+  },
+  "apps/api/app/services/taxes/deadlines.py": {
+    "mtime": 1793105178.8252835,
+    "ast_hash": "d95e00b2b9da88971204b5cdcfdf8b25",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/test_taxes_deadlines.py": {
+    "mtime": 1793105178.8287277,
+    "ast_hash": "403c30ae7c22e4c49e0df3856d215629",
+    "semantic_hash": ""
+  },
+  "apps/web/tests/tax-confirm-plan.spec.ts": {
+    "mtime": 1793105178.830863,
+    "ast_hash": "51ce67ae06d0173f2238ad5765404c07",
     "semantic_hash": ""
   }
 }
