@@ -2910,9 +2910,9 @@
     "semantic_hash": "cf3a9f89c33ec0964712166d861b7cb7"
   },
   "apps/api/app/services/email_invoice_ingest.py": {
-    "mtime": 1792748427.041364,
-    "ast_hash": "de93af25112adefdf0831eb3c63266ad",
-    "semantic_hash": "de93af25112adefdf0831eb3c63266ad"
+    "mtime": 1793118795.5605626,
+    "ast_hash": "8a41f2e4335f2f3194a28837f6c87038",
+    "semantic_hash": ""
   },
   "apps/api/app/services/employee_assignments.py": {
     "mtime": 1780926254.528712,
@@ -3050,9 +3050,9 @@
     "semantic_hash": "449fb48b1d0fc68ab0c2bd2c3c7ccbce"
   },
   "apps/api/app/services/invoice_recognition.py": {
-    "mtime": 1791751578.0405712,
-    "ast_hash": "ead28afdcef0736ea84b831c42496ccc",
-    "semantic_hash": "ead28afdcef0736ea84b831c42496ccc"
+    "mtime": 1793119459.7622232,
+    "ast_hash": "d835ddce2f21100d54b83596afcd1dc8",
+    "semantic_hash": ""
   },
   "apps/api/app/services/kassa/__init__.py": {
     "mtime": 1781699366.624222,
@@ -3130,9 +3130,9 @@
     "semantic_hash": "d0ec1d06b873cbaacb06d81bf8aed874"
   },
   "apps/api/app/services/payments_aggregator.py": {
-    "mtime": 1791288938.7172754,
-    "ast_hash": "242ea2f1a5e7fc1d6c66efd4ebdcd5c4",
-    "semantic_hash": "242ea2f1a5e7fc1d6c66efd4ebdcd5c4"
+    "mtime": 1793118795.5618758,
+    "ast_hash": "179fd44ece2f82bfcdf82e0218c2a1b4",
+    "semantic_hash": ""
   },
   "apps/api/app/services/payroll_adjustment_service.py": {
     "mtime": 1781694650.8479972,
@@ -5960,9 +5960,9 @@
     "semantic_hash": "0f974db2e2299003ede7ad15c7e0f210"
   },
   "apps/web/src/routes/finance/payments.tsx": {
-    "mtime": 1785761206.1071873,
-    "ast_hash": "4d28b386919d48923c3248a3b454320b",
-    "semantic_hash": "4d28b386919d48923c3248a3b454320b"
+    "mtime": 1793118795.5630157,
+    "ast_hash": "587316bedad551d280f4eee85682422e",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/fixed-assets/api.ts": {
     "mtime": 1785678451.1546624,
@@ -8427,6 +8427,31 @@
   "apps/web/tests/tax-confirm-plan.spec.ts": {
     "mtime": 1793105178.830863,
     "ast_hash": "51ce67ae06d0173f2238ad5765404c07",
+    "semantic_hash": ""
+  },
+  "apps/api/app/services/email_invoice_recovery.py": {
+    "mtime": 1793118795.560773,
+    "ast_hash": "8f971205376ff545ac4c84e18d606024",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/counterparties/test_email_recognition_recovery.py": {
+    "mtime": 1793118795.5621107,
+    "ast_hash": "b490c42cee2295d9fc4b5ddbf4d72861",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/counterparties/test_invoice_recognition_packages.py": {
+    "mtime": 1793119459.7624605,
+    "ast_hash": "812cb8fa4f29976e0dc0e8fc83aa2a7d",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/test_payments_document_states.py": {
+    "mtime": 1793118795.5624506,
+    "ast_hash": "8ae60351b2d9f04e6cf98ee240853f8d",
+    "semantic_hash": ""
+  },
+  "apps/web/tests/payment-history-document-states.spec.ts": {
+    "mtime": 1793118795.5632737,
+    "ast_hash": "dfb021525e7c911bfca7762a2c2b005e",
     "semantic_hash": ""
   }
 }
