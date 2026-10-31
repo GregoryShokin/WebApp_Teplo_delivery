@@ -47,6 +47,7 @@ from app.services.deposit_schedule import (
     revert_schedules_for_run,
 )
 from app.services.iiko_revenue import fetch_daily_revenue
+from app.services.payroll_adjustment_service import load_adjustments_for_period
 from app.services.payroll_advance_recovery import (
     apply_advance_issuances,
     apply_advance_recoveries,
@@ -80,7 +81,7 @@ from app.services.payroll_freelancer_settlement import (
 )
 from app.services.payroll_rounding import apply_employee_payable_rounding
 from app.services.payroll_shift_validation import collect_period_shift_issues
-from app.services.position_registry import production_payroll_positions
+from app.services.position_registry import admin_payroll_positions, production_payroll_positions
 
 
 class PayrollNotFoundError(LookupError):
@@ -1332,6 +1333,41 @@ async def run_has_stale_penalty_debt(
     return _debt_key(baked) != _debt_key(current)
 
 
+async def run_has_unaccounted_adjustments(
+    session: AsyncSession, run: PayrollRun, period: PayrollPeriod
+) -> bool:
+    """Разошлись ли премии и штрафы недели с тем, что вошло в строки расчёта.
+
+    Запись ложится в строку только на расчёте, а финализация ведомость не пересчитывает. Штраф,
+    внесённый после расчёта, молча выпал бы из недели, а у человека без смен — навсегда:
+    следующие ведомости берут только свои даты. Поэтому закрытие ждёт «Пересчитать».
+    Сверяем и сумму: правка записи после расчёта теряется точно так же.
+    """
+    if period.period_type != "week" or run.is_imported_legacy:
+        return False
+    adjustments_by_day = await load_adjustments_for_period(
+        session,
+        employee_ids=None,
+        period_start=period.start_date,
+        period_end=period.end_date,
+        exclude_roles=admin_payroll_positions(),
+    )
+    current = {
+        str(adjustment.id): money_text(decimal(adjustment.amount))
+        for adjustments in adjustments_by_day.values()
+        for adjustment in adjustments
+    }
+    baked: dict[str, str] = {}
+    for components in await session.scalars(
+        select(PayrollLine.components).where(PayrollLine.run_id == run.id)
+    ):
+        found = (components or {}).get("adjustments") or {}
+        for item in (found.get("penalties") or []) + (found.get("bonuses") or []):
+            if item.get("id"):
+                baked[str(item["id"])] = money_text(decimal(item.get("amount")))
+    return current != baked
+
+
 async def penalty_debt_meets_later_closed_week(
     session: AsyncSession,
     run: PayrollRun,
@@ -1418,6 +1454,11 @@ async def finalize_payroll_run(
     if await run_has_stale_penalty_debt(session, run, period):
         raise PayrollConflictError(
             "Ведомость устарела: долг с прошлых недель изменился после расчёта. "
+            "Пересчитайте ведомость перед финализацией."
+        )
+    if await run_has_unaccounted_adjustments(session, run, period):
+        raise PayrollConflictError(
+            "Ведомость устарела: премии или штрафы изменились после расчёта. "
             "Пересчитайте ведомость перед финализацией."
         )
     if await penalty_debt_meets_later_closed_week(session, run, period, only_carried=False):
@@ -1840,9 +1881,11 @@ async def get_run(session: AsyncSession, run_id: uuid.UUID) -> dict[str, Any]:
     run, period = row
     needs_recalc = False
     if run.status == "completed":
-        needs_recalc = await run_has_unaccounted_advances(
-            session, run, period
-        ) or await run_has_stale_penalty_debt(session, run, period)
+        needs_recalc = (
+            await run_has_unaccounted_advances(session, run, period)
+            or await run_has_stale_penalty_debt(session, run, period)
+            or await run_has_unaccounted_adjustments(session, run, period)
+        )
     payload = serialize_run(run, period, needs_recalc=needs_recalc)
     if run.status == "completed" and not run.is_imported_legacy:
         payload["blocking_issues"] = deduplicate_issues(
