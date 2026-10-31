@@ -59,6 +59,7 @@ from app.services.payroll_calculator import (
     DISMISSED_EMPLOYEE_STATUS,
     PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY,
     PENALTY_DEBT_DISMISSED_NOTE,
+    KeptPenaltyWriteOff,
     calculate_payroll_lines,
     decimal,
     deduplicate_issues,
@@ -380,9 +381,11 @@ async def run_payroll(
     )
     line_deposit_overrides: dict[tuple[uuid.UUID, str], dict[str, Any]] = {}
     frozen_rate_versions: list[Mapping[str, Any]] | None = None
+    kept_penalty_write_offs: dict[uuid.UUID, KeptPenaltyWriteOff] = {}
     if existing_run is not None:
         frozen_rate_versions = locked_payroll_rate_versions_from_summary(existing_run.summary)
         line_deposit_overrides = await load_line_deposit_overrides(session, existing_run.id)
+        kept_penalty_write_offs = await load_kept_penalty_write_offs(session, existing_run.id)
         # Очищаем линии прошлой попытки расчёта — они будут пересозданы.
         await session.execute(
             text("DELETE FROM payroll_line WHERE run_id = :run_id"),
@@ -486,6 +489,7 @@ async def run_payroll(
             line_deposit_overrides=line_deposit_overrides,
             rate_versions_override=frozen_rate_versions,
             deposit_payout_schedules=deposit_payout_schedules,
+            kept_penalty_write_offs=kept_penalty_write_offs,
         )
         if calculation.blocking_issues:
             run.status = "blocked"
@@ -534,6 +538,7 @@ async def run_payroll(
                 line_deposit_overrides=line_deposit_overrides,
                 rate_versions_override=frozen_rate_versions,
                 deposit_payout_schedules=deposit_payout_schedules,
+                kept_penalty_write_offs=kept_penalty_write_offs,
             )
             if calculation.blocking_issues:
                 run.status = "blocked"
@@ -712,6 +717,34 @@ async def load_line_deposit_overrides(
         )
     )
     return line_deposit_overrides_from_lines(result.all())
+
+
+async def load_kept_penalty_write_offs(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+) -> dict[uuid.UUID, KeptPenaltyWriteOff]:
+    """Списания скрипта починки на этой ведомости: пересчёт удалит строки, а решение останется.
+
+    Остаток уволенного сюда не входит: расчёт выводит его заново сам.
+    """
+    result = await session.scalars(
+        select(PayrollLine).where(
+            PayrollLine.run_id == run_id,
+            PayrollLine.penalty_debt_written_off > 0,
+        )
+    )
+    kept: dict[uuid.UUID, KeptPenaltyWriteOff] = {}
+    for line in result.all():
+        components = line.components if isinstance(line.components, dict) else {}
+        repair = components.get("repair")
+        if not isinstance(repair, Mapping):
+            continue
+        kept[line.employee_id] = KeptPenaltyWriteOff(
+            amount=decimal(line.penalty_debt_written_off),
+            note=components.get("penalty_debt_note"),
+            repair=repair,
+        )
+    return kept
 
 
 def line_deposit_overrides_from_lines(

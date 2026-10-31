@@ -373,15 +373,6 @@ async def repaired_week_rolled_back_and_recounted(
     return await run_payroll(session, week.id)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Дефект: откат и пересчёт починенной недели возвращают списанный штраф долгом. "
-        "calculate_payroll_lines читает штраф как новый и не знает про списание скрипта "
-        "(payroll_calculator.settle_penalty_debts), а решение владельца 31.10.2026 — "
-        "«прежние долги списаны»."
-    ),
-)
 async def test_repaired_week_keeps_the_write_off_after_a_rollback(
     async_session_factory: async_sessionmaker[AsyncSession], run_script: Any
 ) -> None:

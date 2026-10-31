@@ -161,6 +161,7 @@ PENALTY_DEBTS_CONFIG_KEY = "payroll.penalty_debts_by_employee"
 # Статус уволенного: неделя его показывается, долгом не ставится (владелец 31.10.2026).
 DISMISSED_EMPLOYEE_STATUS = "inactive"
 PENALTY_DEBT_DISMISSED_NOTE = "Списано: уволен"
+PENALTY_WRITE_OFFS_CONFIG_KEY = "payroll.penalty_write_offs_by_employee"
 WEEKDAY_KEYS = (
     "monday",
     "tuesday",
@@ -180,6 +181,21 @@ class PayrollCalculationResult:
 
 
 @dataclass(slots=True)
+class KeptPenaltyWriteOff:
+    """Списание долга решением владельца, которое переживает пересчёт недели.
+
+    Скрипт починки ставит его на закрытую неделю. Строки при пересчёте удаляются, и без этой
+    записи откат с пересчётом вернул бы списанный штраф долгом.
+    """
+
+    # Сколько было списано на неделе до пересчёта.
+    amount: Decimal
+    # Подпись для экрана и след скрипта: те же, что стояли на строке.
+    note: str | None
+    repair: Mapping[str, Any]
+
+
+@dataclass(slots=True)
 class PenaltyDebtSettlement:
     """Как сошёлся долг по штрафу одного человека за неделю.
 
@@ -193,10 +209,12 @@ class PenaltyDebtSettlement:
     debt_in: Decimal
     # «Долг дальше»: что осталось неудержанным и уходит в следующую ведомость.
     debt_out: Decimal
-    # «Списано»: остаток уволенного, долгом он не ставится.
+    # «Списано»: остаток уволенного и списание, пережившее пересчёт; долгом они не ставятся.
     written_off: Decimal
     # Сколько снято с каждой строки человека сверх её собственных штрафов.
     taken_by_role: dict[str, Decimal]
+    # Списание владельца, если оно понадобилось после пересчёта недели.
+    kept_write_off: KeptPenaltyWriteOff | None = None
 
 
 _MISSING_CONFIG_VALUE = object()
@@ -212,6 +230,7 @@ async def calculate_payroll_lines(
     deposit_payout_schedules: Mapping[uuid.UUID, Mapping[str, Any]] | None = None,
     *,
     include_vacation_payout_lump: bool = True,
+    kept_penalty_write_offs: Mapping[uuid.UUID, KeptPenaltyWriteOff] | None = None,
 ) -> PayrollCalculationResult:
     """Строки ведомости за период.
 
@@ -344,6 +363,7 @@ async def calculate_payroll_lines(
             employee_ids,
             before=period.start_date,
         )
+        settings[PENALTY_WRITE_OFFS_CONFIG_KEY] = kept_penalty_write_offs or {}
     deposit_balances = await load_deposit_balances_for_employees(session, employee_ids)
     result = calculate_payroll_lines_from_inputs(
         period,
@@ -1062,16 +1082,22 @@ def calculate_payroll_lines_from_inputs(
                     # Сколько снято с этой строки сверх её штрафов: равенство держится по
                     # человеку, и у строки с долгом это объясняет разницу с начисленным.
                     **({"penalty_debt_taken": money(taken_debt)} if taken_debt > 0 else {}),
-                    **(
-                        {"penalty_debt_note": PENALTY_DEBT_DISMISSED_NOTE}
-                        if is_debt_carrier and settlement.written_off > 0
-                        else {}
-                    ),
+                    **(penalty_debt_note_components(settlement) if is_debt_carrier else {}),
                 },
             )
         )
 
     return PayrollCalculationResult(lines=lines, blocking_issues=[], summary=summarize_lines(lines))
+
+
+def penalty_debt_note_components(settlement: PenaltyDebtSettlement) -> dict[str, Any]:
+    """Пометка строки-носителя: почему сумма списана и след скрипта, если он был."""
+    if settlement.written_off <= 0:
+        return {}
+    kept = settlement.kept_write_off
+    if kept is None:
+        return {"penalty_debt_note": PENALTY_DEBT_DISMISSED_NOTE}
+    return {"penalty_debt_note": kept.note, "repair": kept.repair}
 
 
 def line_net_after_penalties(totals: Mapping[str, Any]) -> Decimal:
@@ -1108,11 +1134,15 @@ def settle_penalty_debts(
     обрезке выплаты до нуля. Снимается сначала со строки-носителя, потом с остальных строк
     человека, крупные первыми, как округление. Что не поместилось, уходит дальше долгом.
     Остаток уволенного долгом не ставится: неделя показывается, остаток идёт в «Списано».
+    Прежнее списание владельца после отката и пересчёта остаётся списанием, а не становится
+    долгом; если неделя теперь покрывает штраф заработком, списывать больше нечего.
 
     Депозита здесь нет: в Тепле он идёт после штрафа и считается уже от остатка.
     """
     debts = settings.get(PENALTY_DEBTS_CONFIG_KEY)
     debts = debts if isinstance(debts, Mapping) else {}
+    write_offs = settings.get(PENALTY_WRITE_OFFS_CONFIG_KEY)
+    write_offs = write_offs if isinstance(write_offs, Mapping) else {}
     settlements: dict[uuid.UUID, PenaltyDebtSettlement] = {}
     for employee_id, roles in roles_by_employee.items():
         nets = {role: line_net_after_penalties(line_totals[(employee_id, role)]) for role in roles}
@@ -1135,12 +1165,15 @@ def settle_penalty_debts(
             taken_by_role[role] = taken
             remaining -= taken
         dismissed = getattr(employees[employee_id], "status", None) == DISMISSED_EMPLOYEE_STATUS
+        write_off = write_offs.get(employee_id)
+        kept = min(remaining, write_off.amount) if write_off is not None else Decimal("0")
         settlements[employee_id] = PenaltyDebtSettlement(
             carrier_role=carrier_role,
             debt_in=debt_in,
-            debt_out=Decimal("0") if dismissed else remaining,
-            written_off=remaining if dismissed else Decimal("0"),
+            debt_out=Decimal("0") if dismissed else remaining - kept,
+            written_off=remaining if dismissed else kept,
             taken_by_role=taken_by_role,
+            kept_write_off=write_off if kept > 0 else None,
         )
     return settlements
 

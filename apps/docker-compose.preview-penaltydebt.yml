@@ -11,6 +11,8 @@ services:
   postgres:
     image: postgres:16
     container_name: teplo-postgres-penaltydebt
+    # Полный прогон pytest держит сотни соединений: со 100 по умолчанию он падает ложно.
+    command: ["postgres", "-c", "max_connections=800"]
     environment:
       POSTGRES_DB: teplo
       POSTGRES_USER: teplo
