@@ -68,6 +68,15 @@ WRITE_OFF_NOTE = "Списано: решение владельца 31.10.2026"
 LEGACY_IMPORT_LABEL = "import:legacy"
 
 
+def repair_mark(amount: Decimal) -> dict[str, str]:
+    """След скрипта на строке: сумма здесь держит решение владельца при любом пересчёте недели."""
+    return {
+        "action": REPAIR_ACTION,
+        "reason": REPAIR_REASON,
+        "amount": money_string(amount),
+    }
+
+
 @dataclass(slots=True)
 class ClosedWeek:
     """Закрытая недельная ведомость: последний финализированный прогон периода."""
@@ -211,7 +220,7 @@ async def add_write_off_line(
                 "primary_role_chosen": role,
             },
             "penalty_debt_note": WRITE_OFF_NOTE,
-            "repair": {"action": REPAIR_ACTION, "reason": REPAIR_REASON},
+            "repair": repair_mark(amount),
         },
     )
     session.add(line)
@@ -345,7 +354,7 @@ async def mark_excess_lines(
         line.components = {
             **(line.components or {}),
             "penalty_debt_note": WRITE_OFF_NOTE,
-            "repair": {"action": REPAIR_ACTION, "reason": REPAIR_REASON},
+            "repair": repair_mark(amount),
         }
         changes_by_run.setdefault(week.run.id, RunChanges()).write_offs.append(
             {

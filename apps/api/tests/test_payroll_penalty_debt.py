@@ -988,6 +988,46 @@ async def test_closing_is_refused_when_a_record_changed_after_the_count(
             await finalize_payroll_run(session, run.id, finalized_by_user_id=actor.id)
 
 
+async def test_closing_is_refused_when_a_bonus_became_a_penalty_after_the_count(
+    async_session_factory: async_sessionmaker[AsyncSession], stand: None
+) -> None:
+    async with async_session_factory() as session:
+        actor = await make_actor(session)
+        colleague = await make_cook(session, "Коллега")
+        employee = await make_cook(session, "Вид сменили")
+        week = await week_with_colleague(session, 0, colleague)
+        await add_shift(session, employee, week.start_date)
+        adjustment = await add_adjustment(session, employee, week.start_date, "bonus", "1000")
+        run = await calculate(session, week)
+        adjustment.type = "penalty"
+        await session.commit()
+
+        assert (await get_run(session, run.id))["needs_recalc"] is True
+        with pytest.raises(PayrollConflictError, match="премии или штрафы изменились"):
+            await finalize_payroll_run(session, run.id, finalized_by_user_id=actor.id)
+
+
+async def test_closing_is_refused_when_a_penalty_moved_to_another_person_after_the_count(
+    async_session_factory: async_sessionmaker[AsyncSession], stand: None
+) -> None:
+    async with async_session_factory() as session:
+        actor = await make_actor(session)
+        colleague = await make_cook(session, "Коллега")
+        first = await make_cook(session, "Было на нём")
+        second = await make_cook(session, "Стало на нём")
+        week = await week_with_colleague(session, 0, colleague)
+        await add_shift(session, first, week.start_date)
+        await add_shift(session, second, week.start_date)
+        adjustment = await add_adjustment(session, first, week.start_date, "penalty", "500")
+        run = await calculate(session, week)
+        adjustment.employee_id = second.id
+        await session.commit()
+
+        assert (await get_run(session, run.id))["needs_recalc"] is True
+        with pytest.raises(PayrollConflictError, match="премии или штрафы изменились"):
+            await finalize_payroll_run(session, run.id, finalized_by_user_id=actor.id)
+
+
 async def test_count_with_every_record_needs_no_recalculation(
     async_session_factory: async_sessionmaker[AsyncSession], stand: None
 ) -> None:

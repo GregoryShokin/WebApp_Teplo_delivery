@@ -725,14 +725,10 @@ async def load_kept_penalty_write_offs(
 ) -> dict[uuid.UUID, KeptPenaltyWriteOff]:
     """Списания скрипта починки на этой ведомости: пересчёт удалит строки, а решение останется.
 
+    Сумма берётся из следа скрипта, а не из итога строки: её держит решение владельца.
     Остаток уволенного сюда не входит: расчёт выводит его заново сам.
     """
-    result = await session.scalars(
-        select(PayrollLine).where(
-            PayrollLine.run_id == run_id,
-            PayrollLine.penalty_debt_written_off > 0,
-        )
-    )
+    result = await session.scalars(select(PayrollLine).where(PayrollLine.run_id == run_id))
     kept: dict[uuid.UUID, KeptPenaltyWriteOff] = {}
     for line in result.all():
         components = line.components if isinstance(line.components, dict) else {}
@@ -740,7 +736,7 @@ async def load_kept_penalty_write_offs(
         if not isinstance(repair, Mapping):
             continue
         kept[line.employee_id] = KeptPenaltyWriteOff(
-            amount=decimal(line.penalty_debt_written_off),
+            amount=decimal(repair.get("amount")),
             note=components.get("penalty_debt_note"),
             repair=repair,
         )
@@ -1374,7 +1370,8 @@ async def run_has_unaccounted_adjustments(
     Запись ложится в строку только на расчёте, а финализация ведомость не пересчитывает. Штраф,
     внесённый после расчёта, молча выпал бы из недели, а у человека без смен — навсегда:
     следующие ведомости берут только свои даты. Поэтому закрытие ждёт «Пересчитать».
-    Сверяем и сумму: правка записи после расчёта теряется точно так же.
+    Сверяем человека, вид и сумму: перенос на другого, смена штрафа на премию и правка суммы
+    теряются точно так же. Правка комментария или дня внутри недели деньги не меняет.
     """
     if period.period_type != "week" or run.is_imported_legacy:
         return False
@@ -1386,18 +1383,28 @@ async def run_has_unaccounted_adjustments(
         exclude_roles=admin_payroll_positions(),
     )
     current = {
-        str(adjustment.id): money_text(decimal(adjustment.amount))
+        str(adjustment.id): (
+            adjustment.employee_id,
+            adjustment.type,
+            money_text(decimal(adjustment.amount)),
+        )
         for adjustments in adjustments_by_day.values()
         for adjustment in adjustments
     }
-    baked: dict[str, str] = {}
-    for components in await session.scalars(
-        select(PayrollLine.components).where(PayrollLine.run_id == run.id)
-    ):
+    baked: dict[str, tuple[uuid.UUID, str, str]] = {}
+    rows = await session.execute(
+        select(PayrollLine.employee_id, PayrollLine.components).where(PayrollLine.run_id == run.id)
+    )
+    for employee_id, components in rows.all():
         found = (components or {}).get("adjustments") or {}
-        for item in (found.get("penalties") or []) + (found.get("bonuses") or []):
-            if item.get("id"):
-                baked[str(item["id"])] = money_text(decimal(item.get("amount")))
+        for kind, key in (("penalty", "penalties"), ("bonus", "bonuses")):
+            for item in found.get(key) or []:
+                if item.get("id"):
+                    baked[str(item["id"])] = (
+                        employee_id,
+                        kind,
+                        money_text(decimal(item.get("amount"))),
+                    )
     return current != baked
 
 

@@ -185,10 +185,11 @@ class KeptPenaltyWriteOff:
     """Списание долга решением владельца, которое переживает пересчёт недели.
 
     Скрипт починки ставит его на закрытую неделю. Строки при пересчёте удаляются, и без этой
-    записи откат с пересчётом вернул бы списанный штраф долгом.
+    записи откат с пересчётом вернул бы списанный штраф долгом. Сумма прощена насовсем: она
+    не зависит от того, что потом окажется в неделе.
     """
 
-    # Сколько было списано на неделе до пересчёта.
+    # Сколько списано решением: сумма из следа скрипта, а не из текущей строки.
     amount: Decimal
     # Подпись для экрана и след скрипта: те же, что стояли на строке.
     note: str | None
@@ -213,7 +214,8 @@ class PenaltyDebtSettlement:
     written_off: Decimal
     # Сколько снято с каждой строки человека сверх её собственных штрафов.
     taken_by_role: dict[str, Decimal]
-    # Списание владельца, если оно понадобилось после пересчёта недели.
+    # Прощённое владельцем после пересчёта: возвращается на строку-носитель раньше снятий.
+    forgiven: Decimal = Decimal("0")
     kept_write_off: KeptPenaltyWriteOff | None = None
 
 
@@ -1018,6 +1020,8 @@ def calculate_payroll_lines_from_inputs(
         taken_debt = Decimal("0")
         if settlement is not None:
             taken_debt = settlement.taken_by_role.get(role, Decimal("0"))
+            if role == settlement.carrier_role:
+                line_net += settlement.forgiven
             # В Тепле штраф идёт раньше депозита, поэтому долг уменьшает базу так же, как
             # штрафы: депозит удерживается только с того, что осталось после него.
             deposit_base = max(
@@ -1134,8 +1138,8 @@ def settle_penalty_debts(
     обрезке выплаты до нуля. Снимается сначала со строки-носителя, потом с остальных строк
     человека, крупные первыми, как округление. Что не поместилось, уходит дальше долгом.
     Остаток уволенного долгом не ставится: неделя показывается, остаток идёт в «Списано».
-    Прежнее списание владельца после отката и пересчёта остаётся списанием, а не становится
-    долгом; если неделя теперь покрывает штраф заработком, списывать больше нечего.
+    Прежнее списание владельца после отката и пересчёта остаётся списанием: сумма возвращается
+    на строку-носитель раньше всех снятий, поэтому не тратит заработок и не становится долгом.
 
     Депозита здесь нет: в Тепле он идёт после штрафа и считается уже от остатка.
     """
@@ -1147,10 +1151,13 @@ def settle_penalty_debts(
     for employee_id, roles in roles_by_employee.items():
         nets = {role: line_net_after_penalties(line_totals[(employee_id, role)]) for role in roles}
         debt_in = decimal(debts.get(employee_id))
-        excess = sum((-net for net in nets.values() if net < 0), Decimal("0"))
-        if debt_in <= 0 and excess <= 0:
+        write_off = write_offs.get(employee_id)
+        forgiven = write_off.amount if write_off is not None else Decimal("0")
+        if debt_in <= 0 and forgiven <= 0 and all(net >= 0 for net in nets.values()):
             continue
         carrier_role = primary_line_role(settings, employee_id, roles, period)
+        nets[carrier_role] += forgiven
+        excess = sum((-net for net in nets.values() if net < 0), Decimal("0"))
         other_roles = sorted(
             (role for role in roles if role != carrier_role),
             key=lambda role: nets[role],
@@ -1165,15 +1172,14 @@ def settle_penalty_debts(
             taken_by_role[role] = taken
             remaining -= taken
         dismissed = getattr(employees[employee_id], "status", None) == DISMISSED_EMPLOYEE_STATUS
-        write_off = write_offs.get(employee_id)
-        kept = min(remaining, write_off.amount) if write_off is not None else Decimal("0")
         settlements[employee_id] = PenaltyDebtSettlement(
             carrier_role=carrier_role,
             debt_in=debt_in,
-            debt_out=Decimal("0") if dismissed else remaining - kept,
-            written_off=remaining if dismissed else kept,
+            debt_out=Decimal("0") if dismissed else remaining,
+            written_off=forgiven + remaining if dismissed else forgiven,
             taken_by_role=taken_by_role,
-            kept_write_off=write_off if kept > 0 else None,
+            forgiven=forgiven,
+            kept_write_off=write_off,
         )
     return settlements
 

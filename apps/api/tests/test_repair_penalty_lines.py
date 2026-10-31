@@ -18,7 +18,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from test_inventory_audit_snapshot import (
     BUSINESS_DATE,
@@ -54,10 +54,13 @@ from app.models import (
     PayrollPeriod,
     PayrollRun,
     PayrollRunEvent,
+    ShiftLedgerEntry,
 )
 from app.scripts import repair_audit_snapshots, repair_penalty_lines
 from app.services import inventory_audit_service
 from app.services.inventory_audit_service import adjustment_comment
+from app.services.payroll_calculator import decimal
+from app.services.payroll_rounding import round_payable_down
 from app.services.payroll_runner import run_payroll, unfinalize_payroll_run
 from app.services.staff_balance_as_of import build_staff_balance_as_of
 
@@ -388,6 +391,109 @@ async def test_repaired_week_keeps_the_write_off_after_a_rollback(
         line = await only_line(session, recounted, no_line)
         assert line.penalty_debt_written_off == Decimal("839.42")
         assert line.penalty_debt_out == ZERO
+
+
+async def test_repair_mark_keeps_the_written_off_sum(
+    async_session_factory: async_sessionmaker[AsyncSession], run_script: Any
+) -> None:
+    async with async_session_factory() as session:
+        _week, run, no_line, excess, _penalties, _line = await closed_week_with_damage(session)
+
+    await run_script(repair_penalty_lines, "--apply")
+
+    async with async_session_factory() as session:
+        run = await session.get(PayrollRun, run.id)
+        line = await only_line(session, run, no_line)
+        assert line.components["repair"]["amount"] == "839.42"
+        assert (await only_line(session, run, excess)).components["repair"]["amount"]
+
+
+async def test_shift_added_to_a_repaired_week_leaves_the_fine_forgiven(
+    async_session_factory: async_sessionmaker[AsyncSession], run_script: Any
+) -> None:
+    """Списано насовсем: заработок недели штраф не гасит, а без него штраф не становится долгом."""
+    async with async_session_factory() as session:
+        week, run, no_line, _excess, _penalties, _line = await closed_week_with_damage(session)
+
+    await run_script(repair_penalty_lines, "--apply")
+
+    async with async_session_factory() as session:
+        actor = await make_actor(session)
+        run = await session.get(PayrollRun, run.id)
+        week = await session.get(PayrollPeriod, week.id)
+        await unfinalize_payroll_run(session, run.id, reason="Смена", actor_user_id=actor.id)
+        await add_shift(session, no_line, week.start_date)
+        run = await calculate(session, week)
+        line = await only_line(session, run, no_line)
+        wage = decimal(line.base_pay) + decimal(line.percent_pay)
+        assert line.penalty_debt_written_off == Decimal("839.42")
+        assert line.penalty_debt_out == ZERO
+        assert decimal(line.total_payable) == round_payable_down(wage)
+        assert_week_equality(await lines_of(session, run, no_line))
+
+        await session.execute(
+            delete(ShiftLedgerEntry).where(ShiftLedgerEntry.employee_id == no_line.id)
+        )
+        await session.execute(
+            delete(AttendanceEntry).where(AttendanceEntry.employee_id == no_line.id)
+        )
+        await session.commit()
+        run = await calculate(session, week)
+        line = await only_line(session, run, no_line)
+        assert line.penalty_debt_written_off == Decimal("839.42")
+        assert line.penalty_debt_out == ZERO
+        assert line.total_payable == ZERO
+
+
+async def test_repeated_recounts_do_not_grow_the_write_off(
+    async_session_factory: async_sessionmaker[AsyncSession], run_script: Any
+) -> None:
+    async with async_session_factory() as session:
+        week, run, no_line, _excess, _penalties, _line = await closed_week_with_damage(session)
+
+    await run_script(repair_penalty_lines, "--apply")
+
+    async with async_session_factory() as session:
+        run = await session.get(PayrollRun, run.id)
+        week = await session.get(PayrollPeriod, week.id)
+        for _ in range(3):
+            recounted = await repaired_week_rolled_back_and_recounted(session, run, week)
+            line = await only_line(session, recounted, no_line)
+            assert line.penalty_debt_written_off == Decimal("839.42")
+            actor = await make_actor(session)
+            await session.refresh(week)
+            run = await close_week(session, week, actor)
+
+
+async def test_debt_of_the_past_week_does_not_eat_the_forgiven_fine(
+    async_session_factory: async_sessionmaker[AsyncSession], run_script: Any
+) -> None:
+    async with async_session_factory() as session:
+        actor = await make_actor(session)
+        colleague = await make_cook(session, "Коллега")
+        debtor = await make_cook(session, "Должник")
+        past = await week_with_colleague(session, 0, colleague)
+        await add_adjustment(session, debtor, past.start_date, "penalty", "1600")
+        await close_week(session, past, actor)
+        week = await week_with_colleague(session, 1, colleague)
+        run = await close_week(session, week, actor)
+        await add_adjustment(session, debtor, week.start_date, "penalty", "839.42")
+
+    await run_script(repair_penalty_lines, "--apply")
+
+    async with async_session_factory() as session:
+        actor = await make_actor(session)
+        run = await session.get(PayrollRun, run.id)
+        week = await session.get(PayrollPeriod, week.id)
+        await unfinalize_payroll_run(session, run.id, reason="Смена", actor_user_id=actor.id)
+        await add_shift(session, debtor, week.start_date)
+        run = await calculate(session, week)
+        line = await only_line(session, run, debtor)
+        wage = decimal(line.base_pay) + decimal(line.percent_pay)
+        assert line.penalty_debt_written_off == Decimal("839.42")
+        assert line.penalty_debt_in == Decimal("1600.00")
+        assert decimal(line.total_payable) == round_payable_down(max(wage - Decimal("1600"), ZERO))
+        assert_week_equality(await lines_of(session, run, debtor))
 
 
 # --- снимки применённых ревизий ------------------------------------------------------
