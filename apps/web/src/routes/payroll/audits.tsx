@@ -1689,14 +1689,17 @@ function AuditDetail({
             </div>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
-            <Button disabled={isComputing} onClick={() => onCompute(audit)} variant="outline">
-              {isComputing ? (
-                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-              ) : (
-                <RefreshCw size={16} aria-hidden="true" />
-              )}
-              Перерасчёт
-            </Button>
+            {/* Применённая ревизия — снимок: пересчитывать в ней нечего. */}
+            {audit.status === "draft" ? (
+              <Button disabled={isComputing} onClick={() => onCompute(audit)} variant="outline">
+                {isComputing ? (
+                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                ) : (
+                  <RefreshCw size={16} aria-hidden="true" />
+                )}
+                Перерасчёт
+              </Button>
+            ) : null}
             {audit.status === "draft" ? (
               <Button onClick={() => onApply(audit)}>
                 <Check size={16} aria-hidden="true" />
