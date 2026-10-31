@@ -227,6 +227,11 @@ async def build_personal_report(
             "bonus_total": bonus_total,
             "penalty_total": penalty_total,
             "total_payable": money_float(line.total_payable),
+            # В итоги ``totals`` не входят: долг переносится из недели в неделю, и сумма
+            # «Долга с прошлых недель» по периоду посчитала бы один и тот же долг много раз.
+            "penalty_debt_in": money_float(getattr(line, "penalty_debt_in", 0)),
+            "penalty_debt_out": money_float(getattr(line, "penalty_debt_out", 0)),
+            "penalty_debt_written_off": money_float(getattr(line, "penalty_debt_written_off", 0)),
         }
         # totals считаются ПОСТРОЧНО (как раньше) — объединение ролей влияет только на
         # представление «расчёток», не на итоги.

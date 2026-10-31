@@ -2532,6 +2532,8 @@ class StaffBalanceAsOfRow(BaseModel):
     courier_deposit: float
     payable: float
     receivable: float
+    # Долг по штрафу: ``receivable`` уже его содержит, складывать нельзя.
+    penalty_debt: float = 0
 
 
 class StaffBalanceAsOfList(BaseModel):
@@ -2558,6 +2560,7 @@ class StaffBalanceAsOfList(BaseModel):
     courier_deposit_total: float
     approximate_payments: float
     approximate_write_offs: float
+    penalty_debt_total: float = 0
 
 
 @router.get("/staff-payable/as-of", response_model=StaffBalanceAsOfList, dependencies=READ)
@@ -2595,6 +2598,7 @@ async def list_staff_payable_as_of(
                 courier_deposit=_float(row.courier_deposit),
                 payable=_float(row.payable),
                 receivable=_float(row.receivable),
+                penalty_debt=_float(row.penalty_debt),
             )
             for row in report.rows
         ],
@@ -2607,6 +2611,7 @@ async def list_staff_payable_as_of(
         courier_deposit_total=_float(report.courier_deposit_total),
         approximate_payments=_float(report.approximate_payments),
         approximate_write_offs=_float(report.approximate_write_offs),
+        penalty_debt_total=_float(report.penalty_debt_total),
     )
 
 

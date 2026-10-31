@@ -18,7 +18,9 @@
   до финализации — превью, их пересчитывают;
 * выплата — дата ПРОВОДКИ ДДС, которой она заплачена, а снятие отметки — дата её реверса.
   Отдельно расписано в ``_paid_by_employee``;
-* аванс/заём — ``issued_on`` и ``closed_on``, удержание — ``applied_at`` своей строки.
+* аванс/заём — ``issued_on`` и ``closed_on``, удержание — ``applied_at`` своей строки;
+* долг по штрафу — ``finalized_at`` ведомости, той же датой, что хвост: удержание, которое не
+  поместилось в неделю, становится долгом в момент её закрытия.
 
 ВЕДОМОСТЬ «В ПОЛЁТЕ» В СРЕЗ НЕ ВХОДИТ ВОВСЕ (решение владельца 08.08.2026). Нефинализированный
 прогон не приносит ни хвоста, ни удержания депозита, ни начисления фонда: пока прогон открыт,
@@ -77,6 +79,7 @@ from app.services.payroll_advance_availability import (
     admin_oklad_outside_basis,
     earned_as_of,
 )
+from app.services.payroll_calculator import DISMISSED_EMPLOYEE_STATUS, latest_penalty_debts
 from app.services.payroll_payouts import DDS_ARTICLE_DEPOSIT_PAYOUT
 from app.services.position_registry import eligible_for_personal_report
 
@@ -148,8 +151,10 @@ class StaffBalanceRow:
     production_deposit: Decimal
     courier_deposit: Decimal
     # Нам должен сотрудник: непогашенные авансы/займы, выплаты вне ведомости, переплата
-    # «по востребованию».
+    # «по востребованию», долг по штрафу.
     receivable: Decimal
+    # Долг по штрафу внутри ``receivable`` — справочно, вторым слагаемым не считать.
+    penalty_debt: Decimal = _ZERO
 
     @property
     def payable(self) -> Decimal:
@@ -182,6 +187,8 @@ class StaffBalanceAsOf:
     courier_deposit_total: Decimal
     approximate_payments: Decimal
     approximate_write_offs: Decimal
+    # Долги по штрафу внутри ``receivable_total`` — справочно.
+    penalty_debt_total: Decimal = _ZERO
 
 
 async def _finalized_runs(session: AsyncSession, as_of: date) -> list[uuid.UUID]:
@@ -778,6 +785,59 @@ async def _employee_payouts_as_of(
     }
 
 
+async def _penalty_debts_as_of(session: AsyncSession, as_of: date) -> dict[uuid.UUID, Decimal]:
+    """Долг по штрафу на дату — такая же дебиторка, как аванс (решение владельца 31.10.2026).
+
+    Это ``penalty_debt_out`` самой поздней недельной строки человека, закрытой не позже даты:
+    строка следующей недели, закрытая позже, в этот день ещё не существовала. Открытая неделя
+    долг не меняет: её заработанное считается без него (``calculate_payroll_lines``, провизорный
+    прогон), поэтому здесь долг стоит один раз.
+
+    Уволенные не считаются: неделя уволенного показывается, долгом не ставится. Статус тут
+    текущий, истории у него нет, поэтому на прошлую дату долг такого человека тоже не виден.
+    """
+    rows = (
+        await session.execute(
+            select(
+                PayrollLine.employee_id,
+                PayrollRun.id,
+                PayrollLine.penalty_debt_out,
+                PayrollPeriod,
+            )
+            .join(PayrollRun, PayrollRun.id == PayrollLine.run_id)
+            .join(PayrollPeriod, PayrollPeriod.id == PayrollRun.period_id)
+            .where(
+                PayrollRun.status == "finalized",
+                PayrollPeriod.period_type == "week",
+                PayrollPeriod.finalized_at.is_not(None),
+            )
+            .order_by(PayrollPeriod.start_date.desc(), PayrollRun.started_at.desc())
+        )
+    ).all()
+    debts = latest_penalty_debts(
+        (employee_id, run_id, debt_out)
+        for employee_id, run_id, debt_out, period in rows
+        if _finalized_by(period, as_of)
+    )
+    if not debts:
+        return {}
+    dismissed = set(
+        (
+            await session.scalars(
+                select(Employee.id).where(
+                    Employee.id.in_(debts),
+                    Employee.status == DISMISSED_EMPLOYEE_STATUS,
+                )
+            )
+        ).all()
+    )
+    return {
+        employee_id: _money(debt)
+        for employee_id, debt in debts.items()
+        if employee_id not in dismissed
+    }
+
+
 async def build_staff_balance_as_of(session: AsyncSession, *, as_of: date) -> StaffBalanceAsOf:
     """Обязательства и требования по сотрудникам на конец указанной даты (включительно)."""
     if as_of < ACCOUNTING_START:
@@ -799,6 +859,7 @@ async def build_staff_balance_as_of(session: AsyncSession, *, as_of: date) -> St
         production_deposit[employee_id] = production_deposit.get(employee_id, _ZERO) + withheld
     advances, approximate_write_offs = await _advances_as_of(session, as_of)
     payouts = await _employee_payouts_as_of(session, as_of)
+    penalty_debts = await _penalty_debts_as_of(session, as_of)
 
     employee_ids = (
         set(tail)
@@ -809,6 +870,7 @@ async def build_staff_balance_as_of(session: AsyncSession, *, as_of: date) -> St
         | set(provisional_deposit)
         | set(advances)
         | set(payouts)
+        | set(penalty_debts)
     )
     # Курьерские депозиты спрашиваем у своего модуля пачкой: формулу остатка (входящий +
     # пополнения − возвраты/удержания) держит он, и второй её копии здесь быть не должно.
@@ -861,10 +923,12 @@ async def build_staff_balance_as_of(session: AsyncSession, *, as_of: date) -> St
         salary = _money(
             earned_value + vacation + tail.get(employee.id, _ZERO) + max(debt, _ZERO)
         )
+        penalty_debt = penalty_debts.get(employee.id, _ZERO)
         receivable = _money(
             advances.get(employee.id, _ZERO)
             + payouts.get(employee.id, _ZERO)
             + max(-debt, _ZERO)
+            + penalty_debt
         )
         row = StaffBalanceRow(
             employee_id=employee.id,
@@ -876,6 +940,7 @@ async def build_staff_balance_as_of(session: AsyncSession, *, as_of: date) -> St
             production_deposit=production_deposit.get(employee.id, _ZERO),
             courier_deposit=courier_deposit.get(employee.id, _ZERO),
             receivable=receivable,
+            penalty_debt=penalty_debt,
         )
         if row.payable or row.receivable:
             rows.append(row)
@@ -893,4 +958,5 @@ async def build_staff_balance_as_of(session: AsyncSession, *, as_of: date) -> St
         courier_deposit_total=_money(sum((row.courier_deposit for row in rows), _ZERO)),
         approximate_payments=approximate_payments,
         approximate_write_offs=approximate_write_offs,
+        penalty_debt_total=_money(sum((row.penalty_debt for row in rows), _ZERO)),
     )
