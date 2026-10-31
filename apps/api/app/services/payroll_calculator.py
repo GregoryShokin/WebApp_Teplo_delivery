@@ -1097,12 +1097,12 @@ def calculate_payroll_lines_from_inputs(
 def penalty_debt_note_components(settlement: PenaltyDebtSettlement) -> dict[str, Any]:
     """Пометка строки-носителя: почему сумма списана и след скрипта, если он был.
 
-    След остаётся и при нуле: решение владельца должно пережить следующий пересчёт.
+    След с подписью остаётся и при нуле: решение владельца должно пережить следующий пересчёт,
+    а экран показывает подпись только рядом с ненулевым списанием.
     """
     kept = settlement.kept_write_off
     if kept is not None:
-        note = {"penalty_debt_note": kept.note} if settlement.written_off > 0 else {}
-        return {**note, "repair": kept.repair}
+        return {"penalty_debt_note": kept.note, "repair": kept.repair}
     if settlement.written_off <= 0:
         return {}
     return {"penalty_debt_note": PENALTY_DEBT_DISMISSED_NOTE}

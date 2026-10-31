@@ -470,6 +470,7 @@ async def test_forgiveness_never_pays_money_when_the_fine_was_removed(
         assert line.penalty_debt_written_off == Decimal("64.41")
         # След решения остаётся целым: он держит списание при следующем пересчёте.
         assert line.components["repair"]["amount"] == "839.42"
+        assert line.components["penalty_debt_note"] == repair_penalty_lines.WRITE_OFF_NOTE
 
 
 async def test_repeated_recounts_do_not_grow_the_write_off(
