@@ -5,12 +5,12 @@
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 28709 nodes · 92111 edges · 1163 communities (1011 shown, 152 thin omitted)
+- 28768 nodes · 92247 edges · 1163 communities (1011 shown, 152 thin omitted)
 - Extraction: 73% EXTRACTED · 26% INFERRED · 0% AMBIGUOUS · INFERRED: 24396 edges (avg confidence: 0.62)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `df6b6e52`
+- Built from commit: `9e256765`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
