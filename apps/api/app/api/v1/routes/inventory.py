@@ -56,6 +56,7 @@ from app.services.inventory_audit_service import (
     InventoryAuditValidationError,
     apply_audit_penalties,
     audit_item_is_considered,
+    audit_period,
     cancel_audit,
     carryover_suggestions,
     compute_penalties,
@@ -390,11 +391,20 @@ async def preview_audit(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
+    """Открыть ревизию: черновик пересчитывается, закрытая отдаёт сохранённый снимок.
+
+    Решение владельца 31.10.2026: у закрытой ревизии распределение — снимок, открытие
+    его не меняет и в базу не пишет.
+    """
     try:
-        await compute_penalties(session, audit_id)
         result = await get_audit_with_items(session, audit_id)
+        if result["audit"].status == "draft":
+            await compute_penalties(session, audit_id)
+            result = await get_audit_with_items(session, audit_id)
     except InventoryAuditNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InventoryAuditConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return audit_payload(result["audit"], include_items=True)
 
 
@@ -704,10 +714,20 @@ async def compute_audit(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
+    """Пересчитать черновик; закрытая ревизия отдаёт сохранённое в той же форме ответа.
+
+    Кнопка «Перерасчёт» на экране есть у ревизии любого статуса, поэтому отказ здесь
+    превратился бы в ошибку на кнопке. Закрытая ревизия ничего не пишет.
+    """
     try:
+        result = await get_audit_with_items(session, audit_id)
+        if result["audit"].status != "draft":
+            return saved_computation_payload(result["audit"])
         computation = await compute_penalties(session, audit_id)
     except InventoryAuditNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InventoryAuditConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return computation_payload(computation)
 
 
@@ -1012,6 +1032,29 @@ def computation_payload(computation: Any) -> dict[str, Any]:
         "employee_penalties": computation.employee_rows,
         "employee_recipients": computation.snapshot.get("employee_recipients", []),
         "warnings": computation.warnings,
+    }
+
+
+def saved_computation_payload(audit: InventoryAudit) -> dict[str, Any]:
+    """Ответ двери расчёта для закрытой ревизии: то же, что ``computation_payload``, из снимка.
+
+    Суммы берутся с ревизии, а период — её же правилом, потому что старые снимки могут
+    не нести части полей. Ревизия без снимка (черновик отменили, не считая) даёт пустое
+    распределение: штрафа у неё и нет.
+    """
+    snapshot = audit.computation_snapshot if isinstance(audit.computation_snapshot, dict) else {}
+    period_start, period_end = audit_period(audit)
+    return {
+        "audit_id": audit.id,
+        "total_shortage_amount": decimal_string(audit.total_shortage_amount),
+        "total_penalty_amount": decimal_string(audit.total_penalty_amount),
+        "period_start": period_start,
+        "period_end": period_end,
+        "groups": snapshot.get("groups") or {},
+        "swap_groups": snapshot.get("swap_groups") or [],
+        "employee_penalties": snapshot.get("employee_penalties") or [],
+        "employee_recipients": snapshot.get("employee_recipients") or [],
+        "warnings": snapshot.get("warnings") or [],
     }
 
 

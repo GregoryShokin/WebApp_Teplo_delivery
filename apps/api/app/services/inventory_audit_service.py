@@ -337,6 +337,17 @@ async def create_manual_audit(
 
 
 async def compute_penalties(session: AsyncSession, audit_id: uuid.UUID) -> PenaltyComputation:
+    """Пересчитать штрафы черновика и сохранить расчёт.
+
+    Считается только черновик. Решение владельца 31.10.2026: у закрытой ревизии
+    распределение — снимок. Пересчёт берёт круг людей по статусу на сегодня, поэтому
+    на применённой ревизии он выбросил бы уволенных и разложил их долю на оставшихся.
+
+    Бросает ``InventoryAuditConflictError``, если ревизия не черновик.
+    """
+    audit = await _load_audit_or_404(session, audit_id)
+    if audit.status != "draft":
+        raise InventoryAuditConflictError("Пересчитать можно только черновик ревизии")
     computation = await _compute_penalties(session, audit_id, commit=True)
     return computation
 
@@ -1482,7 +1493,6 @@ async def _compute_penalties(
     commit: bool,
 ) -> PenaltyComputation:
     audit = await _load_audit_or_404(session, audit_id)
-    settings = await _inventory_settings(session)
     period_start, period_end = audit_period(audit)
     chefs = await _load_period_employees(
         session,
@@ -1508,7 +1518,97 @@ async def _compute_penalties(
         period_start=period_start,
         period_end=payout_period_end,
     )
-    computation = build_penalty_computation(
+    computation = await _computation_for_participants(
+        session,
+        audit,
+        chefs=chefs,
+        admins=admins,
+        prepaid_charges=prepaid_charges,
+    )
+    audit.total_shortage_amount = computation.total_shortage_amount
+    audit.total_penalty_amount = computation.total_penalty_amount
+    audit.computation_snapshot = computation.snapshot
+    audit.updated_at = datetime.now(UTC)
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
+    return computation
+
+
+async def rebuild_applied_computation(
+    session: AsyncSession,
+    audit: InventoryAudit,
+    *,
+    keep_employee_ids: set[uuid.UUID],
+) -> PenaltyComputation:
+    """Пересобрать распределение применённой ревизии, ничего не записывая.
+
+    Нужен для починки снимков, испорченных пересчётом закрытой ревизии. Решение
+    владельца 31.10.2026: уволенные из снимка не пропадают. Обычный расчёт берёт людей
+    по статусу на сегодня, поэтому здесь круг шире: люди со сменами в периоде ревизии
+    без фильтра статуса, а из них остаются работающие сегодня и ``keep_employee_ids`` —
+    те, с кого по этой ревизии реально удержано. Уволенный без штрафа остаётся вне
+    снимка: его не было в раздаче и при применении.
+
+    Исключения берутся с ревизии. Предоплаты — из её сохранённого снимка, а не запросом
+    к базе: окна двух соседних ревизий перекрываются, и запрос подхватил бы ручной
+    штраф, поставленный уже после применения. Снимок без такого поля значит, что при
+    применении предоплат не было.
+
+    Возвращает расчёт в том же виде, что и черновик. Сверка с фактом и запись —
+    дело вызывающего.
+    """
+    period_start, period_end = audit_period(audit)
+
+    def participants(employees: list[Employee]) -> list[Employee]:
+        # Статус здесь — сегодняшний: работающий сегодня работал и при применении,
+        # а для уволенного единственное свидетельство участия — его штраф.
+        return [
+            employee
+            for employee in employees
+            if employee.status in REVISION_PARTICIPANT_STATUSES or employee.id in keep_employee_ids
+        ]
+
+    chefs = await _load_period_employees(
+        session,
+        position="Повар",
+        period_start=period_start,
+        period_end=period_end,
+        statuses=None,
+    )
+    admins = await _load_period_employees(
+        session,
+        position="Кассир",
+        period_start=period_start,
+        period_end=period_end,
+        statuses=None,
+    )
+    snapshot = audit.computation_snapshot if isinstance(audit.computation_snapshot, dict) else {}
+    return await _computation_for_participants(
+        session,
+        audit,
+        chefs=participants(chefs),
+        admins=participants(admins),
+        prepaid_charges=snapshot.get("prepaid_revision_charges") or [],
+    )
+
+
+async def _computation_for_participants(
+    session: AsyncSession,
+    audit: InventoryAudit,
+    *,
+    chefs: list[Employee],
+    admins: list[Employee],
+    prepaid_charges: list[dict],
+) -> PenaltyComputation:
+    """Посчитать распределение ревизии по готовому кругу людей и предоплатам.
+
+    Настройки и исключения одни для черновика и для починки снимка: так починка считает
+    тем же расчётом и расходится с фактом только по существу.
+    """
+    settings = await _inventory_settings(session)
+    return build_penalty_computation(
         audit=audit,
         items=audit.items,
         settings=settings,
@@ -1524,15 +1624,6 @@ async def _compute_penalties(
             for exclusion in getattr(audit, "item_exclusions", [])
         },
     )
-    audit.total_shortage_amount = computation.total_shortage_amount
-    audit.total_penalty_amount = computation.total_penalty_amount
-    audit.computation_snapshot = computation.snapshot
-    audit.updated_at = datetime.now(UTC)
-    if commit:
-        await session.commit()
-    else:
-        await session.flush()
-    return computation
 
 
 def _group_shortages(
@@ -2036,7 +2127,14 @@ async def _load_period_employees(
     position: str,
     period_start: date,
     period_end: date,
+    statuses: tuple[str, ...] | None = REVISION_PARTICIPANT_STATUSES,
 ) -> list[Employee]:
+    """Люди должности со сменой в периоде ревизии.
+
+    ``statuses`` — кого брать по статусу на сегодня; ``None`` снимает фильтр. Без
+    фильтра работает только починка снимка применённой ревизии: черновик по-прежнему
+    не берёт уволенных.
+    """
     # Участие в ревизии — по ФАКТУ отработанной смены (табель ShiftLedgerEntry),
     # а не по плановому графику (ScheduledShift): «смена стоит в графике» ≠
     # «работал». Иначе новичок, у которого в периоде лишь плановая смена без
@@ -2050,22 +2148,18 @@ async def _load_period_employees(
         )
         .exists()
     )
-    return (
-        await session.scalars(
-            select(Employee)
-            .where(
-                Employee.position == position,
-                # Уволенные (inactive) исключаются, «в увольнении» — остаются
-                # (у них расчёт ещё открыт). См. REVISION_PARTICIPANT_STATUSES.
-                Employee.status.in_(REVISION_PARTICIPANT_STATUSES),
-                ledger_exists,
-                # Плейсхолдеры пула «Внештат №N» в ревизии не участвуют (их явка
-                # перекладывается на реального внештатника, который и попадёт сюда).
-                Employee.is_freelancer_placeholder.is_(False),
-            )
-            .order_by(Employee.full_name)
-        )
-    ).all()
+    query = select(Employee).where(
+        Employee.position == position,
+        ledger_exists,
+        # Плейсхолдеры пула «Внештат №N» в ревизии не участвуют (их явка
+        # перекладывается на реального внештатника, который и попадёт сюда).
+        Employee.is_freelancer_placeholder.is_(False),
+    )
+    if statuses is not None:
+        # Уволенные (inactive) исключаются, «в увольнении» — остаются
+        # (у них расчёт ещё открыт). См. REVISION_PARTICIPANT_STATUSES.
+        query = query.where(Employee.status.in_(statuses))
+    return (await session.scalars(query.order_by(Employee.full_name))).all()
 
 
 async def _load_prepaid_revision_charges(
