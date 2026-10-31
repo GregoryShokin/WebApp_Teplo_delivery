@@ -445,6 +445,33 @@ async def test_shift_added_to_a_repaired_week_leaves_the_fine_forgiven(
         assert line.total_payable == ZERO
 
 
+async def test_forgiveness_never_pays_money_when_the_fine_was_removed(
+    async_session_factory: async_sessionmaker[AsyncSession], run_script: Any
+) -> None:
+    """Прощается штраф, а не деньги: удалили часть штрафа — разницу человек не получает."""
+    async with async_session_factory() as session:
+        week, run, no_line, _excess, penalties, _line = await closed_week_with_damage(session)
+        removed_id = penalties[1].id
+
+    await run_script(repair_penalty_lines, "--apply")
+
+    async with async_session_factory() as session:
+        actor = await make_actor(session)
+        run = await session.get(PayrollRun, run.id)
+        week = await session.get(PayrollPeriod, week.id)
+        await unfinalize_payroll_run(session, run.id, reason="Штраф", actor_user_id=actor.id)
+        await session.execute(delete(PayrollAdjustment).where(PayrollAdjustment.id == removed_id))
+        await session.commit()
+
+        run = await calculate(session, week)
+        line = await only_line(session, run, no_line)
+        assert line.total_payable == ZERO
+        assert line.penalty_debt_out == ZERO
+        assert line.penalty_debt_written_off == Decimal("64.41")
+        # След решения остаётся целым: он держит списание при следующем пересчёте.
+        assert line.components["repair"]["amount"] == "839.42"
+
+
 async def test_repeated_recounts_do_not_grow_the_write_off(
     async_session_factory: async_sessionmaker[AsyncSession], run_script: Any
 ) -> None:

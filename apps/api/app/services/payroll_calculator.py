@@ -1095,13 +1095,17 @@ def calculate_payroll_lines_from_inputs(
 
 
 def penalty_debt_note_components(settlement: PenaltyDebtSettlement) -> dict[str, Any]:
-    """Пометка строки-носителя: почему сумма списана и след скрипта, если он был."""
+    """Пометка строки-носителя: почему сумма списана и след скрипта, если он был.
+
+    След остаётся и при нуле: решение владельца должно пережить следующий пересчёт.
+    """
+    kept = settlement.kept_write_off
+    if kept is not None:
+        note = {"penalty_debt_note": kept.note} if settlement.written_off > 0 else {}
+        return {**note, "repair": kept.repair}
     if settlement.written_off <= 0:
         return {}
-    kept = settlement.kept_write_off
-    if kept is None:
-        return {"penalty_debt_note": PENALTY_DEBT_DISMISSED_NOTE}
-    return {"penalty_debt_note": kept.note, "repair": kept.repair}
+    return {"penalty_debt_note": PENALTY_DEBT_DISMISSED_NOTE}
 
 
 def line_net_after_penalties(totals: Mapping[str, Any]) -> Decimal:
@@ -1152,9 +1156,15 @@ def settle_penalty_debts(
         nets = {role: line_net_after_penalties(line_totals[(employee_id, role)]) for role in roles}
         debt_in = decimal(debts.get(employee_id))
         write_off = write_offs.get(employee_id)
-        forgiven = write_off.amount if write_off is not None else Decimal("0")
-        if debt_in <= 0 and forgiven <= 0 and all(net >= 0 for net in nets.values()):
+        if debt_in <= 0 and write_off is None and all(net >= 0 for net in nets.values()):
             continue
+        # Прощается штраф, а не деньги: сумма не больше штрафов, оставшихся в неделе, иначе
+        # правка или удаление штрафа после отката выплатили бы разницу человеку.
+        week_penalties = sum(
+            (decimal(line_totals[(employee_id, role)].get("manual_deduction")) for role in roles),
+            Decimal("0"),
+        )
+        forgiven = min(write_off.amount, week_penalties) if write_off is not None else Decimal("0")
         carrier_role = primary_line_role(settings, employee_id, roles, period)
         nets[carrier_role] += forgiven
         excess = sum((-net for net in nets.values() if net < 0), Decimal("0"))
