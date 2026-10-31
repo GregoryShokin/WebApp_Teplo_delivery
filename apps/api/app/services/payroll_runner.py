@@ -55,12 +55,15 @@ from app.services.payroll_advance_recovery import (
 )
 from app.services.payroll_calculator import (
     DAILY_REVENUE_CONFIG_KEY,
+    DISMISSED_EMPLOYEE_STATUS,
     PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY,
+    PENALTY_DEBT_DISMISSED_NOTE,
     calculate_payroll_lines,
     decimal,
     deduplicate_issues,
     load_deposit_balances_for_employees,
     load_payroll_settings,
+    load_penalty_debts_for_employees,
     money,
     needs_setup_issue,
     payroll_rate_snapshot_payload,
@@ -587,6 +590,7 @@ async def run_payroll(
             | advance_summary
             | advance_issue_summary
             | freelancer_cash_summary
+            | payout_offset_summary
             | rounding_summary
             | attendance_warning_summary
             | {"vacations_marked_paid": paid_vacations}
@@ -821,16 +825,29 @@ async def build_period_deposit_payout_lines(
 
     Нужны для уволенных «через ведомость»: у них нет явок в периоде, значит нет обычной
     строки — но выдачу депозита надо провести вместе с ведомостью (через Сейф-контур при
-    финализации, как остальные выдачи). Сотрудники, у которых строка уже есть (с явками),
-    здесь пропускаются — их выдача считается в основном расчёте.
+    финализации, как остальные выдачи). Сотрудники, чья выдача уже посчитана в основном
+    расчёте (строка со сменами), здесь пропускаются.
+
+    Строка без явок бывает и готовая, с одним штрафом или отпускными: основной расчёт планов
+    таких людей не видит, поэтому выдача садится на эту строку, иначе она бы не состоялась.
+    Новая депозитная строка становится самой поздней строкой человека и обязана пронести его
+    долг по штрафу дальше: денег на ней нет, а ноль в ``penalty_debt_out`` стёр бы долг.
     """
     if not await is_scheduled_payout_enabled(session):
         return []
     period_scheduled = await load_period_schedules(session, period.id)
     if not period_scheduled:
         return []
-    existing_emp_ids = {line.employee_id for line in existing_lines}
-    target_emp_ids = [emp_id for emp_id in period_scheduled if emp_id not in existing_emp_ids]
+    lines_by_employee: dict[uuid.UUID, list[PayrollLine]] = defaultdict(list)
+    for line in existing_lines:
+        lines_by_employee[line.employee_id].append(line)
+    target_emp_ids = [
+        emp_id
+        for emp_id in period_scheduled
+        if not any(
+            decimal(line.deposit_payout_scheduled) > 0 for line in lines_by_employee.get(emp_id, [])
+        )
+    ]
     if not target_emp_ids:
         return []
     employees = {
@@ -841,6 +858,11 @@ async def build_period_deposit_payout_lines(
     }
     balances = await load_deposit_balances_for_employees(session, target_emp_ids)
     settings = await load_payroll_settings(session)
+    penalty_debts = await load_penalty_debts_for_employees(
+        session,
+        (emp_id for emp_id in target_emp_ids if emp_id not in lines_by_employee),
+        before=period.start_date,
+    )
     new_lines: list[PayrollLine] = []
     for emp_id in target_emp_ids:
         employee = employees.get(emp_id)
@@ -853,14 +875,29 @@ async def build_period_deposit_payout_lines(
         payout = max(min(requested_dec, available), Decimal("0"))
         if payout <= 0:
             continue
+        employee_lines = lines_by_employee.get(emp_id)
+        if employee_lines:
+            line = employee_lines[0]
+            line.deposit_payout_scheduled = money(payout)
+            line.components = {**(line.components or {}), "deposit_payout": money(payout)}
+            continue
         role = vacation_role_for_employee_day(settings, employee, period.payroll_date)
+        debt = penalty_debts.get(emp_id, Decimal("0"))
+        # Неделя уволенного показывается, долгом не ставится (решение владельца 31.10.2026).
+        dismissed = employee.status == DISMISSED_EMPLOYEE_STATUS
+        components: dict[str, Any] = {"days": [], "deposit_payout": money(payout)}
+        if dismissed and debt > 0:
+            components["penalty_debt_note"] = PENALTY_DEBT_DISMISSED_NOTE
         line = PayrollLine(
             run_id=run_id,
             employee_id=emp_id,
             role=role,
             deposit_payout_scheduled=money(payout),
             total_payable=Decimal("0"),
-            components={"days": [], "deposit_payout": money(payout)},
+            penalty_debt_in=money(debt),
+            penalty_debt_out=money(0 if dismissed else debt),
+            penalty_debt_written_off=money(debt if dismissed else 0),
+            components=components,
         )
         session.add(line)
         new_lines.append(line)
@@ -1269,6 +1306,72 @@ async def run_has_stale_vacation_payouts(
     return _lump_key(baked_lump) != _lump_key(current_lump) or baked_days != current_days
 
 
+async def run_has_stale_penalty_debt(
+    session: AsyncSession, run: PayrollRun, period: PayrollPeriod
+) -> bool:
+    """Разошёлся ли долг, принесённый в расчёт, с закрытой неделей перед ним.
+
+    Долг читается при расчёте. Если предыдущую неделю после этого откатили, пересчитали или
+    закрыли, строки этой недели помнят старую сумму, а финализация не пересчитывает ведомость.
+    """
+    if period.period_type != "week" or run.is_imported_legacy:
+        return False
+    rows = await session.execute(
+        select(PayrollLine.employee_id, PayrollLine.penalty_debt_in).where(
+            PayrollLine.run_id == run.id
+        )
+    )
+    baked: dict[uuid.UUID, Decimal] = {}
+    for employee_id, debt_in in rows.all():
+        baked[employee_id] = baked.get(employee_id, Decimal("0")) + decimal(debt_in)
+    current = await load_penalty_debts_for_employees(session, baked, before=period.start_date)
+
+    def _debt_key(values: Mapping[uuid.UUID, Decimal]) -> dict[uuid.UUID, str]:
+        return {emp: money_text(amount) for emp, amount in values.items() if amount != 0}
+
+    return _debt_key(baked) != _debt_key(current)
+
+
+async def penalty_debt_meets_later_closed_week(
+    session: AsyncSession,
+    run: PayrollRun,
+    period: PayrollPeriod,
+    *,
+    only_carried: bool,
+) -> bool:
+    """Есть ли у должников этой недели строка в более поздней закрытой неделе.
+
+    ``only_carried=True`` смотрит только строки, где долг уже принесён: так откат узнаёт, что
+    долг этой недели принят следующей. ``False`` ищет любую такую строку: долг читается из
+    самой поздней закрытой недели, и за уже закрытой он потерялся бы молча.
+    """
+    debtor_ids = (
+        await session.scalars(
+            select(PayrollLine.employee_id).where(
+                PayrollLine.run_id == run.id,
+                PayrollLine.penalty_debt_out > 0,
+            )
+        )
+    ).all()
+    if not debtor_ids:
+        return False
+    query = (
+        select(PayrollLine.id)
+        .join(PayrollRun, PayrollRun.id == PayrollLine.run_id)
+        .join(PayrollPeriod, PayrollPeriod.id == PayrollRun.period_id)
+        .where(
+            PayrollLine.employee_id.in_(debtor_ids),
+            PayrollRun.status == "finalized",
+            PayrollPeriod.period_type == "week",
+            PayrollPeriod.start_date > period.end_date,
+        )
+        .limit(1)
+    )
+    if only_carried:
+        query = query.where(PayrollLine.penalty_debt_in > 0)
+    return await session.scalar(query) is not None
+
+
 async def finalize_payroll_run(
     session: AsyncSession,
     run_id: uuid.UUID,
@@ -1311,6 +1414,16 @@ async def finalize_payroll_run(
         raise PayrollConflictError(
             "Ведомость устарела: отпускные изменились после расчёта. "
             "Пересчитайте ведомость перед финализацией."
+        )
+    if await run_has_stale_penalty_debt(session, run, period):
+        raise PayrollConflictError(
+            "Ведомость устарела: долг с прошлых недель изменился после расчёта. "
+            "Пересчитайте ведомость перед финализацией."
+        )
+    if await penalty_debt_meets_later_closed_week(session, run, period, only_carried=False):
+        raise PayrollConflictError(
+            "Долг этой недели некуда перенести: следующая неделя уже закрыта. "
+            "Откатите её и пересчитайте перед финализацией."
         )
 
     try:
@@ -1408,6 +1521,10 @@ async def unfinalize_payroll_run(
         period.end_date,
         action="откатить финализацию ведомости",
     )
+    if await penalty_debt_meets_later_closed_week(session, run, period, only_carried=True):
+        raise PayrollConflictError(
+            "Откат невозможен: долг этой недели уже перешёл в закрытую следующую"
+        )
 
     now = datetime.now(UTC)
     previous_run_status = run.status
@@ -1723,7 +1840,9 @@ async def get_run(session: AsyncSession, run_id: uuid.UUID) -> dict[str, Any]:
     run, period = row
     needs_recalc = False
     if run.status == "completed":
-        needs_recalc = await run_has_unaccounted_advances(session, run, period)
+        needs_recalc = await run_has_unaccounted_advances(
+            session, run, period
+        ) or await run_has_stale_penalty_debt(session, run, period)
     payload = serialize_run(run, period, needs_recalc=needs_recalc)
     if run.status == "completed" and not run.is_imported_legacy:
         payload["blocking_issues"] = deduplicate_issues(

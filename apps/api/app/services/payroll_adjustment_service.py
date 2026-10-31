@@ -182,7 +182,7 @@ async def load_locked_dates_for_period(
 async def load_adjustments_for_period(
     session: AsyncSession,
     *,
-    employee_ids: Iterable[uuid.UUID],
+    employee_ids: Iterable[uuid.UUID] | None,
     period_start: date,
     period_end: date,
     roles: Iterable[str] | None = None,
@@ -190,18 +190,22 @@ async def load_adjustments_for_period(
 ) -> dict[tuple[uuid.UUID, date], list[PayrollAdjustment]]:
     """Загрузить премии/штрафы за период, сгруппированные по (сотрудник, дата).
 
+    ``employee_ids`` — чьи записи брать; пустой список даёт пустой ответ. ``None`` значит
+    «всех в периоде»: так производственная ведомость находит людей, у которых за неделю есть
+    только премия или штраф (решение владельца 31.10.2026: человек с движением не выпадает).
     ``roles`` — взять только указанные роли (нужно админской ведомости).
     ``exclude_roles`` — исключить указанные роли (производственная ведомость
     исключает админские роли, чтобы не задвоить штрафы сотрудников с двумя ролями).
     """
-    employee_ids = set(employee_ids)
-    if not employee_ids:
-        return {}
     conditions = [
-        PayrollAdjustment.employee_id.in_(employee_ids),
         PayrollAdjustment.work_date >= period_start,
         PayrollAdjustment.work_date <= period_end,
     ]
+    if employee_ids is not None:
+        employee_ids = set(employee_ids)
+        if not employee_ids:
+            return {}
+        conditions.append(PayrollAdjustment.employee_id.in_(employee_ids))
     if roles is not None:
         conditions.append(PayrollAdjustment.role.in_(set(roles)))
     if exclude_roles is not None:

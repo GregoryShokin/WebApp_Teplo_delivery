@@ -22,6 +22,7 @@ from app.models import (
     PayrollPeriod,
     PayrollRate,
     PayrollRoleCategoryAvailability,
+    PayrollRun,
     ShiftLedgerEntry,
 )
 from app.services import vacation_service
@@ -155,6 +156,11 @@ VACATION_DAYS_CONFIG_KEY = "vacation.days_by_employee_date"
 VACATION_DAILY_AMOUNT_CONFIG_KEY = vacation_service.VACATION_DAILY_AMOUNT_KEY
 # Отпуска, выплачиваемые одним траншем на дату выплаты текущей ведомости.
 VACATION_PAYOUTS_CONFIG_KEY = "vacation.payouts_for_run"
+# Долг по штрафу, принесённый в неделю, по сотрудникам (решение владельца 31.10.2026).
+PENALTY_DEBTS_CONFIG_KEY = "payroll.penalty_debts_by_employee"
+# Статус уволенного: неделя его показывается, долгом не ставится (владелец 31.10.2026).
+DISMISSED_EMPLOYEE_STATUS = "inactive"
+PENALTY_DEBT_DISMISSED_NOTE = "Списано: уволен"
 WEEKDAY_KEYS = (
     "monday",
     "tuesday",
@@ -171,6 +177,26 @@ class PayrollCalculationResult:
     lines: list[PayrollLine]
     blocking_issues: list[dict[str, Any]]
     summary: dict[str, Any]
+
+
+@dataclass(slots=True)
+class PenaltyDebtSettlement:
+    """Как сошёлся долг по штрафу одного человека за неделю.
+
+    Заводится только у того, у кого долг есть: принесён с прошлых недель или штрафы этой
+    недели не поместились в начисленное. У остальных расчёт строки не меняется ни на копейку.
+    """
+
+    # Строка-носитель: основная роль, та же, куда ложатся штрафы (``primary_line_role``).
+    carrier_role: str
+    # «Долг с прошлых недель»: весь долг, принесённый в неделю.
+    debt_in: Decimal
+    # «Долг дальше»: что осталось неудержанным и уходит в следующую ведомость.
+    debt_out: Decimal
+    # «Списано»: остаток уволенного, долгом он не ставится.
+    written_off: Decimal
+    # Сколько снято с каждой строки человека сверх её собственных штрафов.
+    taken_by_role: dict[str, Decimal]
 
 
 _MISSING_CONFIG_VALUE = object()
@@ -194,8 +220,13 @@ async def calculate_payroll_lines(
     в провизорном прогоне «сколько заработано на дату» (аванс) он давал бы полную сумму
     ещё не отгулянного отпуска с первого же дня недели. Подённые отпускные (отпуска без
     ``payout_date``) окном дат ограничены и остаются.
+
+    Этот же флаг отличает провизорный прогон, поэтому в нём нет двух вещей из настоящего.
+    Людей без смен: ответ «сколько заработано» им не нужен. И долга с прошлых недель: срез
+    на дату держит его дебиторкой, снятый ещё и из заработанного он посчитался бы дважды.
     """
     entries = list(entries)
+    is_provisional = not include_vacation_payout_lump
     vacation_days = await vacation_service.vacation_days_for_payroll_period(
         session,
         period_start=period.start_date,
@@ -214,12 +245,32 @@ async def calculate_payroll_lines(
     payout_role_days = {
         (payout.employee_id, payout.date_start): None for payout in vacation_payouts
     }
-    vacation_extra_days = {**vacation_days, **payout_role_days}
     employee_ids = (
         {entry.employee_id for entry in entries}
         | {employee_id for employee_id, _work_date in vacation_days}
         | {payout.employee_id for payout in vacation_payouts}
     )
+    adjustments_by_day = await load_adjustments_for_period(
+        session,
+        employee_ids=employee_ids if is_provisional else None,
+        period_start=period.start_date,
+        period_end=period.end_date,
+        # Производственная ведомость не подхватывает админские штрафы/премии — иначе
+        # начисление сотруднику с двумя ролями (управляющий + повар-субститут)
+        # удвоилось бы (повторно в полумесячной админской ведомости).
+        exclude_roles=admin_payroll_positions(),
+    )
+    # Человек с одной премией или штрафом за неделю входит в расчёт (решение владельца
+    # 31.10.2026): раньше строка рождалась только сменами и отпускными, и штраф молча
+    # пропадал. Роль ему ищем на день самой записи, поэтому эти дни грузятся как дни отпуска.
+    # Только для людей без смен: дни остальных не должны менять выбор их основной роли.
+    adjustment_only_days = {
+        employee_day: None
+        for employee_day in adjustments_by_day
+        if employee_day[0] not in employee_ids
+    }
+    vacation_extra_days = {**vacation_days, **payout_role_days, **adjustment_only_days}
+    employee_ids |= {employee_id for employee_id, _work_date in adjustment_only_days}
     employees = {
         employee.id: employee
         for employee in (
@@ -286,16 +337,13 @@ async def calculate_payroll_lines(
         CASHIER_ALLOWANCE_ASSIGNMENTS_CONFIG_KEY
     ] = await load_cashier_allowance_assignments_for_entries(session, entries)
     settings[SHIFT_LEDGER_CONFIG_KEY] = await load_shift_ledger_for_entries(session, entries)
-    settings[PAYROLL_ADJUSTMENTS_CONFIG_KEY] = await load_adjustments_for_period(
-        session,
-        employee_ids=employee_ids,
-        period_start=period.start_date,
-        period_end=period.end_date,
-        # Производственная ведомость не подхватывает админские штрафы/премии — иначе
-        # начисление сотруднику с двумя ролями (управляющий + повар-субститут)
-        # удвоилось бы (повторно в полумесячной админской ведомости).
-        exclude_roles=admin_payroll_positions(),
-    )
+    settings[PAYROLL_ADJUSTMENTS_CONFIG_KEY] = adjustments_by_day
+    if not is_provisional:
+        settings[PENALTY_DEBTS_CONFIG_KEY] = await load_penalty_debts_for_employees(
+            session,
+            employee_ids,
+            before=period.start_date,
+        )
     deposit_balances = await load_deposit_balances_for_employees(session, employee_ids)
     result = calculate_payroll_lines_from_inputs(
         period,
@@ -476,6 +524,58 @@ async def load_deposit_balances_for_employees(
         select(DepositAccount).where(DepositAccount.employee_id.in_(employee_ids))
     )
     return {account.employee_id: decimal(account.balance) for account in result.all()}
+
+
+async def load_penalty_debts_for_employees(
+    session: AsyncSession,
+    employee_ids: Iterable[uuid.UUID],
+    *,
+    before: date,
+) -> dict[uuid.UUID, Decimal]:
+    """Долг по штрафу, с которым человек входит в неделю, начатую ``before``.
+
+    Это ``penalty_debt_out`` самой поздней закрытой недельной ведомости раньше этой недели, где
+    у человека есть строка. Неделя без движения строки не даёт, поэтому долг ждёт ближайшую
+    строку. Импортированная ведомость остаётся в поиске и даёт ноль: своих долгов в ней нет.
+    """
+    employee_ids = set(employee_ids)
+    if not employee_ids:
+        return {}
+    rows = await session.execute(
+        select(
+            PayrollLine.employee_id,
+            PayrollRun.id,
+            PayrollLine.penalty_debt_out,
+        )
+        .join(PayrollRun, PayrollRun.id == PayrollLine.run_id)
+        .join(PayrollPeriod, PayrollPeriod.id == PayrollRun.period_id)
+        .where(
+            PayrollLine.employee_id.in_(employee_ids),
+            PayrollRun.status == "finalized",
+            PayrollPeriod.period_type == "week",
+            PayrollPeriod.end_date < before,
+        )
+        .order_by(PayrollPeriod.start_date.desc(), PayrollRun.started_at.desc())
+    )
+    return latest_penalty_debts(rows.all())
+
+
+def latest_penalty_debts(
+    rows: Iterable[tuple[uuid.UUID, uuid.UUID, Any]],
+) -> dict[uuid.UUID, Decimal]:
+    """Долг по самой поздней ведомости каждого человека.
+
+    ``rows`` — строки (сотрудник, прогон, долг дальше), новые недели первыми. Один прогон на
+    человека: строк-ролей в нём может быть несколько, а старые пересчёты той же недели, если
+    они остались в базе, сложить значило бы удвоить долг.
+    """
+    latest_run: dict[uuid.UUID, uuid.UUID] = {}
+    debts: dict[uuid.UUID, Decimal] = {}
+    for employee_id, run_id, debt_out in rows:
+        if latest_run.setdefault(employee_id, run_id) != run_id:
+            continue
+        debts[employee_id] = debts.get(employee_id, Decimal("0")) + decimal(debt_out)
+    return {employee_id: debt for employee_id, debt in debts.items() if debt > 0}
 
 
 def _new_line_totals() -> dict[str, Any]:
@@ -773,8 +873,6 @@ def calculate_payroll_lines_from_inputs(
             day_component["fund_excluded"] = True
         totals["days"].append(day_component)
 
-    apply_adjustments_to_line_totals(line_totals, settings, period)
-
     # Отпускные одним траншем: вся сумма падает в ведомость с датой выплаты =
     # payout_date. В total_payable входит полностью, но НЕ облагается НДФЛ и НЕ
     # участвует в удержании депозита (см. line build ниже).
@@ -804,6 +902,11 @@ def calculate_payroll_lines_from_inputs(
             }
         )
 
+    # Строки отпускных одним траншем заведены выше, поэтому премии и штрафы такого человека
+    # садятся на его строку, а не теряются: раньше у него строка появлялась уже после них.
+    add_adjustment_only_lines(line_totals, employees, settings, period)
+    apply_adjustments_to_line_totals(line_totals, settings, period)
+
     roles_by_employee: dict[uuid.UUID, list[str]] = defaultdict(list)
     for employee_id, role in line_totals:
         roles_by_employee[employee_id].append(role)
@@ -817,6 +920,27 @@ def calculate_payroll_lines_from_inputs(
         )
         for employee_id, roles in roles_by_employee.items()
     }
+
+    # НДФЛ считаем заранее: долг распределяется по строкам человека по тому, что на них
+    # осталось после налога и штрафов. Сумма налога от долга не зависит.
+    line_ndfl: dict[tuple[uuid.UUID, str], dict[str, Any]] = {}
+    for line_key, totals in line_totals.items():
+        employee_id, role = line_key
+        # НДФЛ считается по totals["vacation_pay"] (подневные отпускные), лумп-выплата
+        # в налоговую базу не входит — отпускные одним траншем платятся полностью.
+        ndfl = calculate_ndfl_for_line(settings, employees[employee_id], role, totals)
+        totals["ndfl_withheld"] = ndfl["withheld"]
+        totals["ndfl_taxable_base"] = ndfl["taxable_base"]
+        totals["ndfl_components"] = ndfl["components"]
+        apply_ndfl_to_day_components(totals, ndfl)
+        line_ndfl[line_key] = ndfl
+    debt_settlements = settle_penalty_debts(
+        line_totals,
+        roles_by_employee,
+        employees,
+        settings,
+        period,
+    )
 
     lines = []
     running_deposit_balances = {
@@ -840,13 +964,8 @@ def calculate_payroll_lines_from_inputs(
             + vacation_payout_lump
         )
         manual_deduction = totals.get("manual_deduction", Decimal("0"))
-        # НДФЛ считается по totals["vacation_pay"] (подневные отпускные), лумп-выплата
-        # в налоговую базу не входит — отпускные одним траншем платятся полностью.
-        ndfl = calculate_ndfl_for_line(settings, employees[employee_id], role, totals)
-        totals["ndfl_withheld"] = ndfl["withheld"]
-        totals["ndfl_taxable_base"] = ndfl["taxable_base"]
-        totals["ndfl_components"] = ndfl["components"]
-        apply_ndfl_to_day_components(totals, ndfl)
+        ndfl = line_ndfl[(employee_id, role)]
+        settlement = debt_settlements.get(employee_id)
         # Отложенная выдача депозита: выдаём накопленное (или запрошенную сумму, но не больше
         # баланса) и СБРАСЫВАЕМ running-баланс на остаток. Если на момент выдачи депозит собран
         # ЧАСТИЧНО (баланс < цели) — удержание копит депозит заново с этой ведомости (правило
@@ -873,6 +992,18 @@ def calculate_payroll_lines_from_inputs(
             total_before_deduction - vacation_payout_lump - manual_deduction - ndfl["withheld"],
             Decimal("0"),
         )
+        # Строки человека с долгом считаем по хранимым копейкам, иначе равенство недели
+        # разошлось бы на округление начислений.
+        line_net = line_net_after_penalties(totals)
+        taken_debt = Decimal("0")
+        if settlement is not None:
+            taken_debt = settlement.taken_by_role.get(role, Decimal("0"))
+            # В Тепле штраф идёт раньше депозита, поэтому долг уменьшает базу так же, как
+            # штрафы: депозит удерживается только с того, что осталось после него.
+            deposit_base = max(
+                line_net - decimal(vacation_payout_lump).quantize(MONEY) - taken_debt,
+                Decimal("0"),
+            )
         line_override = line_deposit_override(deposit_overrides, employee_id, role)
         deposit_excluded_for_run = bool(line_override.get("deposit_excluded_for_run", False))
         deposit_exclusion_reason = optional_text(line_override.get("deposit_exclusion_reason"))
@@ -882,6 +1013,8 @@ def calculate_payroll_lines_from_inputs(
             or deposit_excluded_for_run
             or is_substitute_line
             or employee_id in deposit_fully_collected_at_payout
+            # Строка без смен депозит не удерживает: правило владельца 31.10.2026.
+            or not totals["days"]
         ):
             deduction = Decimal("0")
         else:
@@ -895,7 +1028,11 @@ def calculate_payroll_lines_from_inputs(
         totals["deposit_withholding"] = deduction
         totals["deduction"] = manual_deduction + deduction
         total_payable = total_before_deduction - ndfl["withheld"] - deduction - manual_deduction
+        if settlement is not None:
+            total_payable = line_net - taken_debt - deduction
+        # Минус здесь бывает только у строки с излишком штрафа: его уже несёт долг человека.
         total_payable = max(total_payable, Decimal("0"))
+        is_debt_carrier = settlement is not None and role == settlement.carrier_role
         lines.append(
             PayrollLine(
                 run_id=run_id,
@@ -912,6 +1049,9 @@ def calculate_payroll_lines_from_inputs(
                 deposit_excluded_for_run=deposit_excluded_for_run,
                 deposit_exclusion_reason=deposit_exclusion_reason,
                 deposit_payout_scheduled=money(scheduled_payout),
+                penalty_debt_in=money(settlement.debt_in if is_debt_carrier else 0),
+                penalty_debt_out=money(settlement.debt_out if is_debt_carrier else 0),
+                penalty_debt_written_off=money(settlement.written_off if is_debt_carrier else 0),
                 components={
                     "days": totals["days"],
                     "deposit_withholding": money(deduction),
@@ -919,11 +1059,90 @@ def calculate_payroll_lines_from_inputs(
                     "ndfl_withheld": money(ndfl["withheld"]),
                     "ndfl": ndfl["components"],
                     "adjustments": totals["adjustments"],
+                    # Сколько снято с этой строки сверх её штрафов: равенство держится по
+                    # человеку, и у строки с долгом это объясняет разницу с начисленным.
+                    **({"penalty_debt_taken": money(taken_debt)} if taken_debt > 0 else {}),
+                    **(
+                        {"penalty_debt_note": PENALTY_DEBT_DISMISSED_NOTE}
+                        if is_debt_carrier and settlement.written_off > 0
+                        else {}
+                    ),
                 },
             )
         )
 
     return PayrollCalculationResult(lines=lines, blocking_issues=[], summary=summarize_lines(lines))
+
+
+def line_net_after_penalties(totals: Mapping[str, Any]) -> Decimal:
+    """Что остаётся на строке после НДФЛ и штрафов, по копейкам хранимых полей.
+
+    Начисления тут округлены так же, как лягут в строку ведомости, поэтому сумма сходится с
+    равенством недели. Минус значит, что штрафы строки больше её начисленного.
+    """
+    accrued = (
+        decimal(totals["base_pay"]).quantize(MONEY)
+        + decimal(totals["premium"]).quantize(MONEY)
+        + decimal(totals["percent_pay"]).quantize(MONEY)
+        + (
+            decimal(totals["vacation_pay"]) + decimal(totals.get("vacation_payout_lump"))
+        ).quantize(MONEY)
+    )
+    return (
+        accrued
+        - decimal(totals.get("ndfl_withheld"))
+        - decimal(totals.get("manual_deduction")).quantize(MONEY)
+    )
+
+
+def settle_penalty_debts(
+    line_totals: Mapping[tuple[uuid.UUID, str], Mapping[str, Any]],
+    roles_by_employee: Mapping[uuid.UUID, list[str]],
+    employees: Mapping[uuid.UUID, Employee],
+    settings: Mapping[str, Any],
+    period: PayrollPeriod,
+) -> dict[uuid.UUID, PenaltyDebtSettlement]:
+    """Свести долг по штрафу каждого человека за неделю (решение владельца 31.10.2026).
+
+    Снимать надо принесённый долг и излишек штрафов этой недели, который раньше терялся на
+    обрезке выплаты до нуля. Снимается сначала со строки-носителя, потом с остальных строк
+    человека, крупные первыми, как округление. Что не поместилось, уходит дальше долгом.
+    Остаток уволенного долгом не ставится: неделя показывается, остаток идёт в «Списано».
+
+    Депозита здесь нет: в Тепле он идёт после штрафа и считается уже от остатка.
+    """
+    debts = settings.get(PENALTY_DEBTS_CONFIG_KEY)
+    debts = debts if isinstance(debts, Mapping) else {}
+    settlements: dict[uuid.UUID, PenaltyDebtSettlement] = {}
+    for employee_id, roles in roles_by_employee.items():
+        nets = {role: line_net_after_penalties(line_totals[(employee_id, role)]) for role in roles}
+        debt_in = decimal(debts.get(employee_id))
+        excess = sum((-net for net in nets.values() if net < 0), Decimal("0"))
+        if debt_in <= 0 and excess <= 0:
+            continue
+        carrier_role = primary_line_role(settings, employee_id, roles, period)
+        other_roles = sorted(
+            (role for role in roles if role != carrier_role),
+            key=lambda role: nets[role],
+            reverse=True,
+        )
+        remaining = debt_in + excess
+        taken_by_role: dict[str, Decimal] = {}
+        for role in [carrier_role, *other_roles]:
+            taken = min(max(nets[role], Decimal("0")), remaining)
+            if taken <= 0:
+                continue
+            taken_by_role[role] = taken
+            remaining -= taken
+        dismissed = getattr(employees[employee_id], "status", None) == DISMISSED_EMPLOYEE_STATUS
+        settlements[employee_id] = PenaltyDebtSettlement(
+            carrier_role=carrier_role,
+            debt_in=debt_in,
+            debt_out=Decimal("0") if dismissed else remaining,
+            written_off=remaining if dismissed else Decimal("0"),
+            taken_by_role=taken_by_role,
+        )
+    return settlements
 
 
 def calculate_ndfl_for_line(
@@ -1300,6 +1519,39 @@ def optional_text(value: Any) -> str | None:
     return text or None
 
 
+def add_adjustment_only_lines(
+    line_totals: dict[tuple[uuid.UUID, str], dict[str, Any]],
+    employees: Mapping[uuid.UUID, Employee],
+    settings: Mapping[str, Any],
+    period: PayrollPeriod,
+) -> None:
+    """Завести строку человеку, у которого за неделю только премия или штраф.
+
+    Решение владельца 31.10.2026: любое начисление и удержание попадает в свою неделю, штраф
+    без строки молча пропадал. Строка без смен: ``days`` пустой, роль как у отпускных, на день
+    самой ранней записи недели. Депозита и фонда на ней нет, НДФЛ считается по общему правилу.
+    """
+    adjustments_by_day = settings.get(PAYROLL_ADJUSTMENTS_CONFIG_KEY)
+    if not isinstance(adjustments_by_day, Mapping):
+        return
+    employees_with_lines = {employee_id for employee_id, _role in line_totals}
+    first_dates: dict[uuid.UUID, date] = {}
+    for adjustment in iter_adjustments(adjustments_by_day):
+        employee_id = getattr(adjustment, "employee_id", None)
+        work_date = date_or_none(getattr(adjustment, "work_date", None))
+        if (
+            employee_id in employees_with_lines
+            or employee_id not in employees
+            or work_date is None
+            or not period.start_date <= work_date <= period.end_date
+        ):
+            continue
+        first_dates[employee_id] = min(first_dates.get(employee_id, work_date), work_date)
+    for employee_id, work_date in first_dates.items():
+        role = vacation_role_for_employee_day(settings, employees[employee_id], work_date)
+        line_totals[(employee_id, role)] = _new_line_totals()
+
+
 def apply_adjustments_to_line_totals(
     line_totals: dict[tuple[uuid.UUID, str], dict[str, Any]],
     settings: Mapping[str, Any],
@@ -1341,6 +1593,15 @@ def apply_adjustments_to_line_totals(
                 totals["adjustments"]["penalties"].append(item)
 
 
+def iter_adjustments(adjustments_by_day: Mapping[Any, Any]) -> Iterable[PayrollAdjustment]:
+    """Все записи словаря премий и штрафов: значение бывает и списком, и одной записью."""
+    for value in adjustments_by_day.values():
+        if isinstance(value, Iterable) and not isinstance(value, str | bytes):
+            yield from value
+        else:
+            yield value
+
+
 def adjustments_for_employee_period(
     adjustments_by_day: Mapping[Any, Any],
     employee_id: uuid.UUID,
@@ -1348,20 +1609,15 @@ def adjustments_for_employee_period(
     period_end: date,
 ) -> list[PayrollAdjustment]:
     adjustments: list[PayrollAdjustment] = []
-    for value in adjustments_by_day.values():
-        if isinstance(value, Iterable) and not isinstance(value, str | bytes):
-            candidates = value
-        else:
-            candidates = [value]
-        for adjustment in candidates:
-            adjustment_employee_id = getattr(adjustment, "employee_id", None)
-            work_date = date_or_none(getattr(adjustment, "work_date", None))
-            if (
-                adjustment_employee_id == employee_id
-                and work_date is not None
-                and period_start <= work_date <= period_end
-            ):
-                adjustments.append(adjustment)
+    for adjustment in iter_adjustments(adjustments_by_day):
+        adjustment_employee_id = getattr(adjustment, "employee_id", None)
+        work_date = date_or_none(getattr(adjustment, "work_date", None))
+        if (
+            adjustment_employee_id == employee_id
+            and work_date is not None
+            and period_start <= work_date <= period_end
+        ):
+            adjustments.append(adjustment)
     return sorted(
         adjustments,
         key=lambda adjustment: (
