@@ -424,6 +424,11 @@ class PayrollLineRead(BaseModel):
     advance_issued: float = 0
     ndfl_deduction: float = 0
     total_payable: float
+    # Долг по штрафу на строке-носителе: «Долг с прошлых недель», «Долг дальше», «Списано».
+    # Причина списания — в components.penalty_debt_note.
+    penalty_debt_in: float = 0
+    penalty_debt_out: float = 0
+    penalty_debt_written_off: float = 0
     deposit_excluded_for_run: bool = False
     deposit_exclusion_reason: str | None = None
     payment_status: str = "pending"
@@ -582,6 +587,9 @@ class PayrollPersonalReportRoleRead(BaseModel):
     bonus_total: float
     penalty_total: float
     total_payable: float
+    penalty_debt_in: float = 0
+    penalty_debt_out: float = 0
+    penalty_debt_written_off: float = 0
 
 
 class PayrollPersonalReportDepositTransactionRead(BaseModel):
@@ -618,6 +626,9 @@ class PayrollPersonalReportPeriodRead(BaseModel):
     bonus_total: float
     penalty_total: float
     total_payable: float
+    penalty_debt_in: float = 0
+    penalty_debt_out: float = 0
+    penalty_debt_written_off: float = 0
     # Строка «исполняющего» окладную должность (кассир → Помощник менеджера): оклад по
     # должности, отличной от основной. Персональный отчёт делит ведомости на два леджера.
     is_substitute: bool = False

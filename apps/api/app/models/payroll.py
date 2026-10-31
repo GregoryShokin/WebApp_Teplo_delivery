@@ -499,6 +499,22 @@ class PayrollLine(Base):
     deposit_payout_scheduled: Mapped[Decimal] = mapped_column(
         Numeric(14, 2), nullable=False, default=0, server_default="0"
     )
+    # Долг по штрафу (решение владельца 31.10.2026). Все три стоят на одной строке-носителе
+    # человека — строке основной роли, куда ложатся штрафы; равенство держится по человеку за
+    # неделю: сумма (начислено − НДФЛ − deduction) − penalty_debt_in + penalty_debt_out
+    # + penalty_debt_written_off = сумма total_payable до авансов, зачётов и округления.
+    # «Долг с прошлых недель»: весь долг человека, принесённый в эту неделю.
+    penalty_debt_in: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
+    # «Долг дальше»: что осталось неудержанным и уходит в следующую ведомость.
+    penalty_debt_out: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
+    # «Списано»: что снято без удержания. Причина — в components['penalty_debt_note'].
+    penalty_debt_written_off: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
     components: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )
@@ -1484,7 +1500,9 @@ class SalaryAdvanceBankDraft(Base):
 
 
 class DepositBankDraft(Base):
-    """Банк-черновик выдачи депозита (производственники + курьеры) — зеркало ``SalaryAdvanceBankDraft``.
+    """Банк-черновик выдачи депозита (производственники + курьеры).
+
+    Зеркало ``SalaryAdvanceBankDraft``.
 
     Полный цикл вместо мгновенной выдачи: когда счёт выдачи — банковский, деньги не уходят
     сразу. Выписывается черновик в Т-Банке/Сбере, оплата приходит вебхуком (Т-Банк) или
@@ -1506,7 +1524,8 @@ class DepositBankDraft(Base):
     __tablename__ = "deposit_bank_draft"
     __table_args__ = (
         CheckConstraint(
-            "status in ('created', 'updated', 'paid', 'disbursed', 'failed', 'deleted', 'cancelled')",
+            "status in ('created', 'updated', 'paid', 'disbursed', 'failed', 'deleted', "
+            "'cancelled')",
             name="ck_deposit_bank_draft_status",
         ),
         CheckConstraint(
@@ -1623,7 +1642,8 @@ class EmployeePayout(Base):
         String(32), nullable=False, default="paid", server_default="paid"
     )
     # Сколько из этой выпл(kind='salary'/'other') уже зачтено в ведомостях как «уже выплачено».
-    # Баланс потребления — зеркало SalaryAdvance.recovered_amount: outstanding = amount − offset_amount.
+    # Баланс потребления — зеркало SalaryAdvance.recovered_amount:
+    # outstanding = amount − offset_amount.
     # Двигается только на финализации прогона (apply_employee_payout_offsets_to_balances);
     # для kind='owner_salary' не используется (тот контур гасится compute_on_demand_debt).
     offset_amount: Mapped[Decimal] = mapped_column(
