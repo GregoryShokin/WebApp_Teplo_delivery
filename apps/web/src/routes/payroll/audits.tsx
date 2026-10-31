@@ -1538,7 +1538,8 @@ function AuditDetail({
   const payoutOptionsQuery = useQuery({
     queryKey: ["inventory-audit-payout-options", audit.id],
     queryFn: () => getInventoryAuditPayoutOptions(audit.id),
-    enabled: audit.status === "draft",
+    // Отменённая ревизия ничего не удерживает, выплата ей не нужна.
+    enabled: audit.status !== "cancelled",
   });
   const penaltyDateMutation = useMutation({
     mutationFn: (override: string | null) =>
@@ -1607,6 +1608,8 @@ function AuditDetail({
       (option) =>
         payrollPeriodStart >= option.period_start && payrollPeriodStart <= option.period_end,
     ) ?? null;
+  // Удержан, когда ревизия применена и ведомость недели закрыта с этим штрафом.
+  const isPenaltyWithheld = audit.status === "applied" && selectedPayout?.locked === true;
   const isFinalized = audit.status !== "draft";
   const isOverrideDisabled =
     audit.status !== "draft" || overrideMutation.isPending || itemExclusionMutation.isPending;
@@ -1630,11 +1633,13 @@ function AuditDetail({
               : ""}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span>
-              Штраф спишется в выплату{" "}
-              {formatDate(selectedPayout ? selectedPayout.payout_date : payrollPeriodStart)}
-              {hasOverride ? " · перенесено" : ""}
-            </span>
+            {selectedPayout && audit.status !== "cancelled" ? (
+              <span>
+                {isPenaltyWithheld ? "Штраф удержан из выплаты" : "Штраф спишется в выплату"}{" "}
+                {formatDate(selectedPayout.payout_date)}
+                {hasOverride ? " · перенесено" : ""}
+              </span>
+            ) : null}
             {audit.status === "draft" ? (
               <Select
                 value={selectedPayout?.period_start ?? ""}
