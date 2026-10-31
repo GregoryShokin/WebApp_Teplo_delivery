@@ -79,6 +79,9 @@ type OperationKind =
   | "premium"
   | "manual_penalty"
   | "audit_penalty"
+  | "penalty_written_off"
+  | "penalty_debt_in"
+  | "penalty_debt_out"
   | "deposit_accrual"
   | "deposit_payout"
   | "deposit_writeoff"
@@ -130,6 +133,22 @@ const KIND_META: Record<
     badgeClass: "bg-orange-100 text-orange-800",
     isDeduction: true,
   },
+  // Отчёт передают сотруднику: подписи простые, причина списания сюда не идёт.
+  penalty_written_off: {
+    label: "Штраф списан",
+    badgeClass: "bg-emerald-100 text-emerald-800",
+    isDeduction: false,
+  },
+  penalty_debt_in: {
+    label: "Долг с прошлых недель",
+    badgeClass: "bg-rose-100 text-rose-800",
+    isDeduction: true,
+  },
+  penalty_debt_out: {
+    label: "Долг дальше",
+    badgeClass: "bg-amber-100 text-amber-800",
+    isDeduction: false,
+  },
   deposit_payout: {
     label: "Выдача депозита",
     badgeClass: "bg-emerald-50 text-emerald-700",
@@ -174,13 +193,16 @@ const KIND_ORDER: Record<OperationKind, number> = {
   premium: 4,
   manual_penalty: 5,
   audit_penalty: 6,
-  deposit_payout: 7,
-  deposit_accrual: 8,
-  deposit_writeoff: 9,
-  fund_accrual: 10,
-  fund_payout: 11,
-  ndfl: 12,
-  payroll_rounding: 13,
+  penalty_written_off: 7,
+  penalty_debt_in: 8,
+  penalty_debt_out: 9,
+  deposit_payout: 10,
+  deposit_accrual: 11,
+  deposit_writeoff: 12,
+  fund_accrual: 13,
+  fund_payout: 14,
+  ndfl: 15,
+  payroll_rounding: 16,
 };
 
 export function PayrollPersonalReportPageTab() {
@@ -306,6 +328,17 @@ export function PayrollPersonalReportPageTab() {
     }
     return rows;
   }, [openWeek]);
+  // Колонки долга появляются, только если в отчёте есть такие суммы.
+  const debtColumns = PENALTY_DEBT_COLUMNS.filter((column) =>
+    report?.periods.some((period) => Math.abs(Number(period[column.field] ?? 0)) >= 0.005),
+  ).map<DataTableColumn<PayrollPersonalReportPeriod>>((column) => ({
+    key: column.field,
+    header: column.header,
+    cell: (row) => formatMoney(Number(row[column.field] ?? 0)),
+    className: "text-right tabular-nums",
+    headerClassName: "text-right",
+  }));
+  const debtForward = report ? latestPenaltyDebtOut(report.periods) : 0;
   const hasReportData = Boolean(
     report &&
     (report.periods.length > 0 ||
@@ -357,7 +390,14 @@ export function PayrollPersonalReportPageTab() {
     {
       key: "deduction",
       header: "Удержано",
-      cell: (row) => formatMoney(row.deduction),
+      cell: (row) => (
+        <>
+          <div>{formatMoney(row.deduction)}</div>
+          {Number(row.penalty_debt_written_off ?? 0) > 0 ? (
+            <div className="text-xs text-emerald-700">списан</div>
+          ) : null}
+        </>
+      ),
       className: "text-right tabular-nums",
       headerClassName: "text-right",
     },
@@ -382,6 +422,7 @@ export function PayrollPersonalReportPageTab() {
       className: "text-right tabular-nums",
       headerClassName: "text-right",
     },
+    ...debtColumns,
     {
       key: "total_payable",
       header: "К выплате",
@@ -509,6 +550,13 @@ export function PayrollPersonalReportPageTab() {
                   value={formatReportMoney(report.closing_balance)}
                   description={balanceDescription(report.closing_balance)}
                 />
+                {debtForward >= 0.005 ? (
+                  <PersonalMetric
+                    title="Долг дальше"
+                    value={formatMoney(debtForward)}
+                    description="Удержим из следующей ведомости"
+                  />
+                ) : null}
                 <PersonalMetric
                   title="Смены"
                   value={String(report.shifts_count)}
@@ -736,6 +784,12 @@ function buildOperations(report: PayrollPersonalReport): OperationRow[] {
     });
   }
 
+  for (const period of report.periods) {
+    for (const row of penaltyDebtOperations(period)) {
+      pushOperation(row);
+    }
+  }
+
   // TODO: Add fund_payout once the backend exposes it separately in the personal report.
   rows.sort((left, right) => {
     if (left.date !== right.date) {
@@ -758,6 +812,24 @@ function manualPayoutOperations(transactions: PayrollPersonalReportDepositTransa
     amount: String(transaction.amount),
     comment: "Выдано отдельно от ведомости",
   }));
+}
+
+// Долг по штрафу считается на всю неделю, а не на отдельный штраф, поэтому в операциях он идёт
+// последним днём недели: так же, как удержание депозита и округление.
+function penaltyDebtOperations(period: PayrollPersonalReportPeriod): OperationRow[] {
+  return ([
+    ["penalty_written_off", period.penalty_debt_written_off],
+    ["penalty_debt_in", period.penalty_debt_in],
+    ["penalty_debt_out", period.penalty_debt_out],
+  ] as const)
+    .filter(([, amount]) => Number(amount ?? 0) > 0)
+    .map(([kind, amount]) => ({
+      id: `${period.run_id}-${kind}`,
+      date: period.period_end,
+      kind,
+      amount: String(amount),
+      comment: null,
+    }));
 }
 
 function buildPayslipOperations(period: PayrollPersonalReportPeriod): OperationRow[] {
@@ -823,6 +895,7 @@ function buildPayslipOperations(period: PayrollPersonalReportPeriod): OperationR
       });
     }
   }
+  rows.push(...penaltyDebtOperations(period));
   rows.sort((left, right) => {
     if (left.date !== right.date) return left.date < right.date ? 1 : -1;
     return KIND_ORDER[left.kind] - KIND_ORDER[right.kind] || left.id.localeCompare(right.id);
@@ -901,6 +974,9 @@ const PAYSLIP_COLUMNS: Array<{ kind: OperationKind; withComment: boolean }> = [
   { kind: "deposit_payout", withComment: false },
   { kind: "manual_penalty", withComment: true },
   { kind: "audit_penalty", withComment: false },
+  { kind: "penalty_written_off", withComment: false },
+  { kind: "penalty_debt_in", withComment: false },
+  { kind: "penalty_debt_out", withComment: false },
   { kind: "deposit_accrual", withComment: false },
   { kind: "deposit_writeoff", withComment: false },
   { kind: "ndfl", withComment: false },
@@ -908,6 +984,24 @@ const PAYSLIP_COLUMNS: Array<{ kind: OperationKind; withComment: boolean }> = [
 ];
 // Фонд показываем отдельным KPI-виджетом, а не колонкой детализации (накопление вне «к выплате»).
 const PAYSLIP_FUND_KINDS = new Set<OperationKind>(["fund_accrual", "fund_payout"]);
+
+const PENALTY_DEBT_COLUMNS = [
+  { field: "penalty_debt_in", header: "Долг с прошлых недель" },
+  { field: "penalty_debt_out", header: "Долг дальше" },
+  { field: "penalty_debt_written_off", header: "Списано" },
+] as const;
+
+// Долг, с которым человек вышел из последней недели отчёта. Неделя может дать несколько записей
+// (замещающая должность, пересчёт), а долг стоит на одной: берём наибольшую, а не сумму.
+function latestPenaltyDebtOut(periods: PayrollPersonalReportPeriod[]) {
+  const latestEnd = periods.reduce(
+    (latest, period) => (period.period_end > latest ? period.period_end : latest),
+    "",
+  );
+  return periods
+    .filter((period) => period.period_end === latestEnd)
+    .reduce((largest, period) => Math.max(largest, Number(period.penalty_debt_out ?? 0)), 0);
+}
 
 function formatPlainAmount(value: number) {
   return new Intl.NumberFormat("ru-RU", {

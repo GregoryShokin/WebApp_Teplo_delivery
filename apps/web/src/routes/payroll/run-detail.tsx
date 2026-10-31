@@ -1277,6 +1277,7 @@ function PayrollPaymentsTable({
                       row.roles.length > 0
                         ? row.roles.map((role) => payrollRoleLabel(role)).join(" · ")
                         : row.employee?.position || "Роль не указана";
+                    const noShifts = lineHasNoShifts(row.line);
                     return (
                       <tr
                         className={cn(
@@ -1302,7 +1303,10 @@ function PayrollPaymentsTable({
                         ) : null}
                         <td className="px-3 py-3">
                           <div className="font-medium">{row.employeeName}</div>
-                          <div className="text-xs text-muted-foreground">{roleLabel}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {roleLabel}
+                            {noShifts ? " · без смен" : ""}
+                          </div>
                         </td>
                         <td className="px-3 py-3 text-right tabular-nums">
                           <div>{formatMoney(row.line.total_payable)}</div>
@@ -1311,6 +1315,12 @@ function PayrollPaymentsTable({
                               + депозит {formatMoney(row.line.deposit_payout)}
                             </div>
                           ) : null}
+                          {noShifts && moneyValue(row.line.deduction) > 0 ? (
+                            <div className="text-xs text-rose-700">
+                              штраф {formatDebtMoney(moneyValue(row.line.deduction))}
+                            </div>
+                          ) : null}
+                          <PenaltyDebtLines line={row.line} />
                         </td>
                         <td className="px-3 py-3 text-right font-medium tabular-nums">
                           {formatMoney(lineOnHand(row.line))}
@@ -2075,7 +2085,7 @@ function PaymentStatusSummary({ line }: { line: PayrollLine }) {
 
   return (
     <Badge className="rounded-md border-border bg-muted text-muted-foreground shadow-none">
-      Ожидает
+      {lineNothingToPay(line) ? "Без выплаты" : "Ожидает"}
     </Badge>
   );
 }
@@ -2096,6 +2106,9 @@ function PaymentCell({
   const accrued = lineOnHand(line);
   const paid = linePaidOnHand(line);
   const remaining = normalizeMoney(Math.max(0, accrued - paid));
+  // К выплате ноль, а отметка всё равно нужна: без неё вся ведомость считается не выплаченной.
+  // Сумма нулевая, поэтому закрытие ничего не книжит в ДДС.
+  const nothingToPay = !isPaid && !isPartial && lineNothingToPay(line);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [amountInput, setAmountInput] = useState("");
   const [comment, setComment] = useState("");
@@ -2158,7 +2171,7 @@ function PaymentCell({
       await invalidate();
       setFullDialogOpen(false);
       setFullWalletCode(null);
-      toast.success("Выплата проведена полностью");
+      toast.success(nothingToPay ? "Строка закрыта без выплаты" : "Выплата проведена полностью");
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error, "Не удалось провести выплату"));
@@ -2206,7 +2219,7 @@ function PaymentCell({
         </Badge>
       ) : (
         <Badge className="rounded-md border-border bg-muted text-muted-foreground shadow-none">
-          Ожидает
+          {nothingToPay ? "Без выплаты" : "Ожидает"}
         </Badge>
       )}
       {isPartial ? (
@@ -2226,7 +2239,7 @@ function PaymentCell({
       {canManagePayments && !isPaid ? (
         <div className="flex flex-wrap gap-2">
           <Button
-            disabled={fullMutation.isPending || remaining <= 0}
+            disabled={fullMutation.isPending || (remaining <= 0 && !nothingToPay)}
             onClick={(event) => {
               event.stopPropagation();
               setFullWalletCode(null);
@@ -2240,9 +2253,11 @@ function PaymentCell({
             ) : (
               <CheckCircle2 size={15} aria-hidden="true" />
             )}
-            {isPartial ? "Доплатить" : "Выплатить"} {formatMoney(remaining)}
+            {nothingToPay
+              ? "Закрыть без выплаты"
+              : `${isPartial ? "Доплатить" : "Выплатить"} ${formatMoney(remaining)}`}
           </Button>
-          {!hasDepositPayout ? (
+          {!hasDepositPayout && !nothingToPay ? (
             <Button
               onClick={(event) => {
                 event.stopPropagation();
@@ -2344,9 +2359,17 @@ function PaymentCell({
       <Dialog onOpenChange={setFullDialogOpen} open={fullDialogOpen}>
         <DialogContent onClick={(event) => event.stopPropagation()}>
           <DialogHeader>
-            <DialogTitle>{isPartial ? "Доплатить сотруднику" : "Выплатить сотруднику"}</DialogTitle>
+            <DialogTitle>
+              {nothingToPay
+                ? "Закрыть строку без выплаты"
+                : isPartial
+                  ? "Доплатить сотруднику"
+                  : "Выплатить сотруднику"}
+            </DialogTitle>
             <DialogDescription>
-              К выплате {formatMoney(remaining)}. Выберите счёт фактической выдачи денег.
+              {nothingToPay
+                ? "К выплате 0 ₽, деньги не выдаются. Выберите счёт, чтобы закрыть строку."
+                : `К выплате ${formatMoney(remaining)}. Выберите счёт фактической выдачи денег.`}
             </DialogDescription>
           </DialogHeader>
           <CashPayoutSourcePicker
@@ -2369,7 +2392,7 @@ function PaymentCell({
               {fullMutation.isPending ? (
                 <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
               ) : null}
-              Выплатить {formatMoney(remaining)}
+              {nothingToPay ? "Закрыть без выплаты" : `Выплатить ${formatMoney(remaining)}`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2450,6 +2473,7 @@ function PayrollLineDialogContent({
   const runIsFinal = isFinalStatus(runStatus);
   const depositPayout = moneyValue(row.line.deposit_payout);
   const depositWithholding = moneyValue(row.line.deposit_withholding);
+  const penaltyDebt = linePenaltyDebt(row.line);
 
   return (
     <div className="space-y-5">
@@ -2473,8 +2497,19 @@ function PayrollLineDialogContent({
         {depositPayout > 0 ? (
           <ComponentValue label="Выдача депозита" value={formatMoney(depositPayout)} />
         ) : null}
+        {penaltyDebt.items.map((item) => (
+          <ComponentValue
+            key={item.label}
+            label={item.label}
+            value={formatDebtMoney(item.amount)}
+          />
+        ))}
         <ComponentValue label="К выплате" value={formatMoney(lineOnHand(row.line))} strong />
       </section>
+
+      {penaltyDebt.note ? (
+        <p className="text-sm text-muted-foreground">{penaltyDebt.note}</p>
+      ) : null}
 
       {depositWithholding > 0 ? (
         <DepositOverrideControl line={row.line} lineIds={row.sourceLineIds} runStatus={runStatus} />
@@ -2558,7 +2593,7 @@ function PayrollLineDialogContent({
                       <div className="text-xs text-muted-foreground">
                         {day.roles.length > 0
                           ? day.roles.map((role) => payrollRoleLabel(role)).join(", ")
-                          : "Начисление без смены"}
+                          : "Без смены"}
                         {day.categories.length > 0
                           ? ` · ${day.categories
                               .map((category) => employeeCategoryLabel(category))
@@ -2622,6 +2657,11 @@ function PayrollLineDialogContent({
               </tbody>
             </table>
           </div>
+        ) : lineHasNoShifts(row.line) ? (
+          <EmptyState
+            title="Смен за неделю нет"
+            description="В ведомости у сотрудника только суммы, показанные выше."
+          />
         ) : (
           <EmptyState
             title="Детализация смен не загружена"
@@ -2783,7 +2823,14 @@ function PayoutFormula({ line }: { line: PayrollLine }) {
   const salary = lineSalaryBeforeSettlement(line);
   const flows = lineSettlementFlows(line);
   const rounding = extractPayrollRounding(line);
+  const penaltyDebt = linePenaltyDebt(line);
+  // Долг идёт с копейками, поэтому с ним вся формула показана точно: иначе равенство
+  // на экране не сойдётся из-за округления до рубля.
+  const formatTerm = penaltyDebt.items.length > 0 ? formatDebtMoney : formatMoney;
   const terms: PayoutFormulaTerm[] = [
+    { label: "долг с прошлых недель", amount: -penaltyDebt.broughtIn },
+    { label: "долг дальше", amount: penaltyDebt.carriedOut },
+    { label: "списано", amount: penaltyDebt.writtenOff },
     { label: "удержание депозита", amount: -moneyValue(line.deposit_withholding) },
     { label: "выдача депозита", amount: moneyValue(line.deposit_payout) },
     { label: "аванс", amount: flows.advanceIssued },
@@ -2808,17 +2855,17 @@ function PayoutFormula({ line }: { line: PayrollLine }) {
 
   return (
     <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-emerald-900">
-      <span>зарплата {formatMoney(salary)}</span>
+      <span>зарплата {formatTerm(salary)}</span>
       {terms.map((term, index) => (
         <span className="contents" key={`${term.label}-${index}`}>
           <span aria-hidden="true">{term.amount >= 0 ? "+" : "−"}</span>
           <span>
-            {term.label} {formatMoney(Math.abs(term.amount))}
+            {term.label} {formatTerm(Math.abs(term.amount))}
           </span>
         </span>
       ))}
       <span aria-hidden="true">=</span>
-      <strong className="text-lg tabular-nums">{formatMoney(finalTotal)}</strong>
+      <strong className="text-lg tabular-nums">{formatTerm(finalTotal)}</strong>
     </div>
   );
 }
@@ -3157,6 +3204,8 @@ function mergeComponentArray(
 // они идентичны у всех строк сотрудника (см. serialize_payroll_line на бэке). Смены и
 // корректировки конкатенируем: аванс/штрафы/премии висят только на первой строке, задвоения
 // нет; роль каждого дня хранится в самом дне (для дровера и подсветки).
+// Долг по штрафу стоит на строке основной роли, а она не обязательно первая: суммы складываем,
+// пометку ищем по всем строкам.
 function mergeEmployeeLines(lines: PayrollLine[]): PayrollLine {
   const [first, ...rest] = lines;
   if (rest.length === 0) {
@@ -3181,8 +3230,13 @@ function mergeEmployeeLines(lines: PayrollLine[]): PayrollLine {
     total_payable: sum((line) => line.total_payable),
     deposit_withholding: sum((line) => line.deposit_withholding),
     advance_issued: sum((line) => line.advance_issued),
+    penalty_debt_in: sum((line) => line.penalty_debt_in),
+    penalty_debt_out: sum((line) => line.penalty_debt_out),
+    penalty_debt_written_off: sum((line) => line.penalty_debt_written_off),
     components: {
       ...(isRecord(first.components) ? first.components : {}),
+      penalty_debt_note: lines.find((line) => line.components?.penalty_debt_note)?.components
+        .penalty_debt_note,
       days: mergeComponentArray(lines, (components) => components.days),
       adjustments: {
         ...firstAdjustments,
@@ -3230,6 +3284,66 @@ function lineRemainingOnHand(line: PayrollLine) {
 
 function lineHours(line: PayrollLine) {
   return lineDays(line).reduce((sum, day) => sum + day.hours, 0);
+}
+
+// Строка без смен: человек попал в неделю только премией, штрафом или долгом. Смотрим и на
+// суммы: у старой импортированной ведомости дней тоже нет, но оклад в итоговых полях есть.
+function lineHasNoShifts(line: PayrollLine) {
+  return (
+    lineDays(line).length === 0 &&
+    moneyValue(line.base_pay) + moneyValue(line.percent_pay) + moneyValue(line.vacation_pay) === 0
+  );
+}
+
+// Ноль к выплате с учётом выдачи депозита.
+function lineNothingToPay(line: PayrollLine) {
+  return Math.abs(lineOnHand(line)) < 0.005;
+}
+
+// Долг по штрафу строки. Экран показывает только ненулевые суммы, поэтому `items` их и держит;
+// пометка без суммы списания не показывается.
+function linePenaltyDebt(line: PayrollLine) {
+  const broughtIn = moneyValue(line.penalty_debt_in);
+  const carriedOut = moneyValue(line.penalty_debt_out);
+  const writtenOff = moneyValue(line.penalty_debt_written_off);
+  const note = line.components?.penalty_debt_note;
+  return {
+    broughtIn,
+    carriedOut,
+    writtenOff,
+    note: typeof note === "string" && note && Math.abs(writtenOff) >= 0.005 ? note : null,
+    items: [
+      { label: "Долг с прошлых недель", amount: broughtIn },
+      { label: "Долг дальше", amount: carriedOut },
+      { label: "Списано", amount: writtenOff },
+    ].filter((item) => Math.abs(item.amount) >= 0.005),
+  };
+}
+
+// Долг показываем с копейками: общий formatMoney округляет до рубля, а штраф 839,42 ₽
+// должен совпасть с тем, что человек видит в своём отчёте.
+function formatDebtMoney(value: number) {
+  return new Intl.NumberFormat("ru-RU", {
+    style: "currency",
+    currency: "RUB",
+    minimumFractionDigits: Number.isInteger(normalizeMoney(value)) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function PenaltyDebtLines({ line }: { line: PayrollLine }) {
+  const { items, note } = linePenaltyDebt(line);
+  if (items.length === 0) return null;
+  return (
+    <>
+      {items.map((item) => (
+        <div className="whitespace-nowrap text-xs text-muted-foreground" key={item.label}>
+          {item.label} {formatDebtMoney(item.amount)}
+        </div>
+      ))}
+      {note ? <div className="text-xs text-muted-foreground">{note}</div> : null}
+    </>
+  );
 }
 
 type DayComponent = {

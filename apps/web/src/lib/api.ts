@@ -638,7 +638,18 @@ export type PayrollLine = {
   on_demand_accrued: number;
   on_demand_paid: number;
   on_demand_debt: number;
-  components: Record<string, unknown>;
+  // Долг человека по штрафу: что не удержалось из заработка недели. Суммы стоят на одной
+  // строке-носителе человека (строка основной роли), на прочих его строках — 0.
+  // Долг с прошлых недель: весь долг, принесённый в эту неделю.
+  penalty_debt_in: number;
+  // Долг дальше: что осталось неудержанным и уходит в следующую ведомость.
+  penalty_debt_out: number;
+  // Списано: что снято без удержания (решение владельца, увольнение).
+  penalty_debt_written_off: number;
+  components: Record<string, unknown> & {
+    // Причина списания словами для экрана ведомости. В персональный отчёт не передаётся.
+    penalty_debt_note?: string | null;
+  };
 };
 
 export type PayrollLineDepositOverridePatch = {
@@ -728,6 +739,10 @@ export type PayrollPersonalReport = {
     bonus_total: number;
     penalty_total: number;
     total_payable: number;
+    // Долг по штрафу за неделю: тот же смысл, что у одноимённых полей PayrollLine.
+    penalty_debt_in: number;
+    penalty_debt_out: number;
+    penalty_debt_written_off: number;
     is_substitute: boolean;
     manual_deposit_payout: number;
     manual_deposit_transactions: PayrollPersonalReportDepositTransaction[];
