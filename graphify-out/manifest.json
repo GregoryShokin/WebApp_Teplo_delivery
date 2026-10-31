@@ -1820,9 +1820,9 @@
     "semantic_hash": "c463d33adca80df9d531d809b44bc0ca"
   },
   "apps/api/app/api/v1/routes/accounting_suppliers.py": {
-    "mtime": 1792745285.4263866,
-    "ast_hash": "9bd604e2846e493ac1caa016b385a360",
-    "semantic_hash": "9bd604e2846e493ac1caa016b385a360"
+    "mtime": 1793457431.5647998,
+    "ast_hash": "b7cfb6b0d133656c387af90315a063c8",
+    "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/accumulation_fund.py": {
     "mtime": 1784800873.6600778,
@@ -1880,9 +1880,9 @@
     "semantic_hash": "06cfd0cc93bf049a01ced41d72aadd99"
   },
   "apps/api/app/api/v1/routes/inventory.py": {
-    "mtime": 1786099613.5643275,
-    "ast_hash": "6f85d81ef0c540dc2a4e5effa9892e9d",
-    "semantic_hash": "6f85d81ef0c540dc2a4e5effa9892e9d"
+    "mtime": 1793457431.5654082,
+    "ast_hash": "5e263e0d4a43da3e6ae15931bb3f511c",
+    "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/kassa.py": {
     "mtime": 1791313530.2559392,
@@ -1905,9 +1905,9 @@
     "semantic_hash": "a3d8d8f972e4875792b44b60e5bdf837"
   },
   "apps/api/app/api/v1/routes/payroll.py": {
-    "mtime": 1792755329.5932124,
-    "ast_hash": "b0c74303895a60df1fe7ed991d433681",
-    "semantic_hash": "b0c74303895a60df1fe7ed991d433681"
+    "mtime": 1793457431.565996,
+    "ast_hash": "20a9f19b537cc5d926c40d8aa3f93396",
+    "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/payroll_adjustments.py": {
     "mtime": 1786099613.5662785,
@@ -2245,9 +2245,9 @@
     "semantic_hash": "bfa75211dec20d728f93addcafe63469"
   },
   "apps/api/app/models/payroll.py": {
-    "mtime": 1791288938.7157688,
-    "ast_hash": "f43b0d2c179081fe885b6d9205360c87",
-    "semantic_hash": "f43b0d2c179081fe885b6d9205360c87"
+    "mtime": 1793457431.5667434,
+    "ast_hash": "17f3e9462328f038f0ce3cfaf048c95a",
+    "semantic_hash": ""
   },
   "apps/api/app/models/payroll_forecast.py": {
     "mtime": 1780926265.0835009,
@@ -2375,9 +2375,9 @@
     "semantic_hash": "f2caf08fb5191dac24a5e44f605efc2d"
   },
   "apps/api/app/schemas/payroll.py": {
-    "mtime": 1791313530.2568002,
-    "ast_hash": "685802f50f170277793226940259febd",
-    "semantic_hash": "685802f50f170277793226940259febd"
+    "mtime": 1793457431.567034,
+    "ast_hash": "643c63234857f9ff411ff0aa88146590",
+    "semantic_hash": ""
   },
   "apps/api/app/schemas/payroll_adjustments.py": {
     "mtime": 1781091380.93325,
@@ -3040,9 +3040,9 @@
     "semantic_hash": "eed7ca045f4121ed21dc6254062eec8f"
   },
   "apps/api/app/services/inventory_audit_service.py": {
-    "mtime": 1792749219.4672813,
-    "ast_hash": "3688553b7102cdb6da8bd9e008a690b1",
-    "semantic_hash": "3688553b7102cdb6da8bd9e008a690b1"
+    "mtime": 1793457431.5678546,
+    "ast_hash": "3f1bbb592e35c175bc512536a7333f3d",
+    "semantic_hash": ""
   },
   "apps/api/app/services/invoice_price_control.py": {
     "mtime": 1783870787.2734926,
@@ -3135,9 +3135,9 @@
     "semantic_hash": ""
   },
   "apps/api/app/services/payroll_adjustment_service.py": {
-    "mtime": 1781694650.8479972,
-    "ast_hash": "e2de8aa69fa032594c66531320603415",
-    "semantic_hash": "e2de8aa69fa032594c66531320603415"
+    "mtime": 1793457431.5684988,
+    "ast_hash": "68bf6eb0439b7ab0f208688df2b0911a",
+    "semantic_hash": ""
   },
   "apps/api/app/services/payroll_admin.py": {
     "mtime": 1792745285.4320338,
@@ -3165,9 +3165,9 @@
     "semantic_hash": "c8089443fe37980638739c77ba93de16"
   },
   "apps/api/app/services/payroll_calculator.py": {
-    "mtime": 1792759029.1001208,
-    "ast_hash": "a145fec64057d053276162e94971d49b",
-    "semantic_hash": "a145fec64057d053276162e94971d49b"
+    "mtime": 1793457431.5710144,
+    "ast_hash": "22d94f56f8f6b8045726efc73e06fa02",
+    "semantic_hash": ""
   },
   "apps/api/app/services/payroll_config.py": {
     "mtime": 1783327453.752723,
@@ -3215,9 +3215,9 @@
     "semantic_hash": "ba4c589c0e1a0d96799233699ef156c2"
   },
   "apps/api/app/services/payroll_personal_report.py": {
-    "mtime": 1790690186.961073,
-    "ast_hash": "a823d97075f9322616bea0209ad534ae",
-    "semantic_hash": "a823d97075f9322616bea0209ad534ae"
+    "mtime": 1793457431.571502,
+    "ast_hash": "7f1734c21a101fa99e051d4ed6d8c33a",
+    "semantic_hash": ""
   },
   "apps/api/app/services/payroll_reserve_audit.py": {
     "mtime": 1784067914.8734844,
@@ -3235,9 +3235,9 @@
     "semantic_hash": "d02c7bb9a86e489ce7e122a9f541c43f"
   },
   "apps/api/app/services/payroll_runner.py": {
-    "mtime": 1792755329.5946999,
-    "ast_hash": "24275184d5dfd2963a2c49ec786fcf9c",
-    "semantic_hash": "24275184d5dfd2963a2c49ec786fcf9c"
+    "mtime": 1793457431.5718052,
+    "ast_hash": "517aef2a1090037c7ec42cfc1245d6c4",
+    "semantic_hash": ""
   },
   "apps/api/app/services/plan_fact_service.py": {
     "mtime": 1783589719.8914633,
@@ -3440,9 +3440,9 @@
     "semantic_hash": "6df3b92a0748f145c2bb251eb9af28d3"
   },
   "apps/api/app/services/staff_balance_as_of.py": {
-    "mtime": 1792745285.436905,
-    "ast_hash": "aa927fd208afc4af4ded07d5a871d7d5",
-    "semantic_hash": "aa927fd208afc4af4ded07d5a871d7d5"
+    "mtime": 1793457431.5720994,
+    "ast_hash": "22792795faba507160fbcd3cd5645529",
+    "semantic_hash": ""
   },
   "apps/api/app/services/staff_taxonomy.py": {
     "mtime": 1783327453.754782,
@@ -5660,9 +5660,9 @@
     "semantic_hash": "344cefd7d89ec1b78a606c1a323b2cbf"
   },
   "apps/web/src/lib/api.ts": {
-    "mtime": 1792924565.1686845,
-    "ast_hash": "8415ea7894b518a6a41d75c00a7eada4",
-    "semantic_hash": "8415ea7894b518a6a41d75c00a7eada4"
+    "mtime": 1793457431.5749464,
+    "ast_hash": "15e01035dee5cfd43279b6340a4f98c7",
+    "semantic_hash": ""
   },
   "apps/web/src/lib/auth.ts": {
     "mtime": 1780747833.0947237,
@@ -6135,9 +6135,9 @@
     "semantic_hash": "6b4976348818a37abf2ef930aaf21709"
   },
   "apps/web/src/routes/payroll/audits.tsx": {
-    "mtime": 1783083478.184841,
-    "ast_hash": "00c30fad16d612b4ebe6d0c7203185f0",
-    "semantic_hash": "00c30fad16d612b4ebe6d0c7203185f0"
+    "mtime": 1793457431.5756347,
+    "ast_hash": "6a1757044bad8475df58afa57b36ea27",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/payroll/cash-payout-source-picker.tsx": {
     "mtime": 1784640283.3498566,
@@ -6180,9 +6180,9 @@
     "semantic_hash": "7a8ea6e9a348ac4b1618b57753bc74e2"
   },
   "apps/web/src/routes/payroll/personal-tab.tsx": {
-    "mtime": 1790690186.9722102,
-    "ast_hash": "fb66bec751d103b8dc6378545bd45d07",
-    "semantic_hash": "fb66bec751d103b8dc6378545bd45d07"
+    "mtime": 1793457431.5759165,
+    "ast_hash": "6e8fc777c672839213f130acb4dd6df8",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/payroll/recovery-dialog.tsx": {
     "mtime": 1783327453.816385,
@@ -6190,9 +6190,9 @@
     "semantic_hash": "55b7b94462c45e486bf6d76ff371a656"
   },
   "apps/web/src/routes/payroll/run-detail.tsx": {
-    "mtime": 1791313530.2636404,
-    "ast_hash": "7017c82761fb32839836c5caafcef6a4",
-    "semantic_hash": "7017c82761fb32839836c5caafcef6a4"
+    "mtime": 1793457431.5763726,
+    "ast_hash": "2f52190e89553e6816c5df1f82d34eff",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/payroll/runs.tsx": {
     "mtime": 1785761206.109239,
@@ -8452,6 +8452,41 @@
   "apps/web/tests/payment-history-document-states.spec.ts": {
     "mtime": 1793118795.5632737,
     "ast_hash": "dfb021525e7c911bfca7762a2c2b005e",
+    "semantic_hash": ""
+  },
+  "apps/api/alembic/versions/0280_payroll_line_penalty_debt.py": {
+    "mtime": 1793457431.5641131,
+    "ast_hash": "60aaffcc8ad49111436c6c52012b7c96",
+    "semantic_hash": ""
+  },
+  "apps/api/app/scripts/repair_audit_snapshots.py": {
+    "mtime": 1793457431.567135,
+    "ast_hash": "72f73afa080c9763b2bcd8d80737d848",
+    "semantic_hash": ""
+  },
+  "apps/api/app/scripts/repair_penalty_lines.py": {
+    "mtime": 1793457431.5672224,
+    "ast_hash": "32af2acd48753868edd0eb4a4ee02dd7",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/test_inventory_audit_snapshot.py": {
+    "mtime": 1793457431.5722075,
+    "ast_hash": "ceacac6b1d6335e8f7c0c6906338cf2e",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/test_payroll_penalty_debt.py": {
+    "mtime": 1793457431.5724185,
+    "ast_hash": "3128b2f14ca63732d3f5fa8e045d9bc3",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/test_repair_penalty_lines.py": {
+    "mtime": 1793457431.5726306,
+    "ast_hash": "ad263640f0cdbd92cff1e1fa7ec4ebd0",
+    "semantic_hash": ""
+  },
+  "apps/docker-compose.preview-penaltydebt.yml": {
+    "mtime": 1793457431.5728753,
+    "ast_hash": "2e304d8abbd871d8dec9dca284ab9f10",
     "semantic_hash": ""
   }
 }
