@@ -897,7 +897,13 @@ async def _transaction_counterparty_shares_brand_group(
 
 
 def _contains(value: str | None, pattern: str) -> bool:
-    return pattern.casefold() in (value or "").casefold()
+    # Банк пишет в назначении лишние пробелы («Предоставление  овердрафта»), а «Запомнить»
+    # хранит текст без них: без сжатия правило не узнаёт строку, из которой сделано.
+    return _squeezed(pattern) in _squeezed(value)
+
+
+def _squeezed(value: str | None) -> str:
+    return " ".join((value or "").split()).casefold()
 
 
 def _escape_like(pattern: str) -> str:
