@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -295,6 +296,8 @@ class KassaJournalItemRead(BaseModel):
     # Получатели для предзаполнения формы правки.
     employee_id: uuid.UUID | None = None
     counterparty_id: uuid.UUID | None = None
+    asset_id: uuid.UUID | None = None
+    asset_name: str | None = None
     # Маршрут кассовой выплаты (None — запись другого контура).
     kassa_flow: str | None = None
     # Своя сегодняшняя кассовая запись — доступны «Изменить»/«Удалить».
@@ -459,6 +462,7 @@ class KassaPayoutArticleRead(BaseModel):
     code: str
     name: str
     flow: str  # expense | employee_advance | employee_loan | supplier_prepayment
+    asset_link_kind: Literal["purchase", "repair", "maintenance"] | None = None
 
 
 class KassaPayoutEmployeeRead(BaseModel):
@@ -482,6 +486,7 @@ class KassaPayoutCreate(BaseModel):
     article_id: uuid.UUID
     amount: Decimal = Field(gt=0)
     comment: str | None = None
+    asset_id: uuid.UUID | None = None
     employee_id: uuid.UUID | None = None  # обязателен для статей аванса/займа
     counterparty_id: uuid.UUID | None = None  # обязателен для предоплаты поставщику
     location_id: uuid.UUID | None = None  # обязателен для статей с аналитикой по помещению

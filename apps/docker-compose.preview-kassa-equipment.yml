@@ -1,0 +1,73 @@
+# Isolated preview, slot 2: web/API via localhost:5193.
+# No production .env or scheduler. API network has no external egress.
+services:
+  postgres:
+    image: postgres:16
+    container_name: teplo-kassa-equipment-postgres
+    environment:
+      POSTGRES_DB: teplo
+      POSTGRES_USER: teplo
+      POSTGRES_PASSWORD: teplo
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [isolated]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teplo -d teplo"]
+      interval: 3s
+      retries: 20
+  api:
+    image: teplo-kassa-equipment-api:local
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    container_name: teplo-kassa-equipment-api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
+      TEPLO_TEST_DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo_test_kassa_equipment
+      ENVIRONMENT: local
+      SCHEDULER_ENABLED: "false"
+      API_RUNS_BACKGROUND_JOBS: "false"
+      EMPLOYEE_SYNC_ENABLED: "false"
+      COUNTERPARTY_INVOICE_SYNC_ENABLED: "false"
+      SBIS_SYNC_ENABLED: "false"
+      MAIL_POLL_ENABLED: "false"
+      TAX_REVENUE_SYNC_ENABLED: "false"
+      TEPLO_BANK_CLIENT_MODE: mock
+      IIKO_SERVER_BASE_URL: http://iiko-disabled.invalid
+      TEPLO_ADMIN_EMAIL: admin1@teplo.local
+      TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
+      JWT_SECRET_KEY: local-kassa-equipment-preview-secret-only
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+      BACKEND_CORS_ORIGINS: '["http://localhost:5193","http://127.0.0.1:5193"]'
+    volumes:
+      - ./api:/app/apps/api
+    networks: [isolated]
+    depends_on:
+      postgres:
+        condition: service_healthy
+  web:
+    image: teplo-kassa-equipment-web:local
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    container_name: teplo-kassa-equipment-web
+    environment:
+      VITE_API_BASE_URL: ""
+      VITE_API_PROXY_TARGET: http://api:8000
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--strictPort"]
+    ports:
+      - "127.0.0.1:5193:5173"
+    volumes:
+      - ./web:/app/apps/web
+      - webdeps:/app/apps/web/node_modules
+    networks: [isolated, entrance]
+    depends_on: [api]
+volumes:
+  pgdata:
+    external: true
+    name: teplo_kassa_equipment_pgdata
+  webdeps:
+networks:
+  entrance: {}
+  isolated:
+    internal: true

@@ -54,11 +54,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 ASSETS_READ_ACCESS = (Depends(require_permission("accounting.fixed_assets.read")),)
 ASSETS_EDIT_ACCESS = (Depends(require_permission("accounting.fixed_assets.edit")),)
-# Выбор объекта в разборе платежа: пускаем и того, кто разбирает ДДС. Подробности — в докстринге
-# ``list_asset_options``; коротко: без этого право «разбирать выписку» упирается в 403 на статье,
-# которая карточку требует, и платёж становится неразносимым вообще.
+# Выбор и создание ОС в общем разборе платежа.
 ASSETS_PICK_ACCESS = (
     Depends(require_any_permission(("accounting.fixed_assets.read", "finance.cashflow.classify"))),
+)
+# Касса получает только справочник выбора. Intake и создание карточек остаются
+# под прежними правами: право выдавать деньги не даёт права заводить имущество.
+ASSETS_OPTIONS_ACCESS = (
+    Depends(
+        require_any_permission(
+            ("accounting.fixed_assets.read", "finance.cashflow.classify", "kassa.payouts.create")
+        )
+    ),
 )
 # Закрытие месяца — это закрытие учётного периода, а не правка карточки: право отдельное,
 # чтобы «редактировать ОС» не давало права двигать отчётность.
@@ -465,7 +472,7 @@ class AssetOptionListRead(BaseModel):
     items: list[AssetOptionRead]
 
 
-@router.get("/options", response_model=AssetOptionListRead, dependencies=ASSETS_PICK_ACCESS)
+@router.get("/options", response_model=AssetOptionListRead, dependencies=ASSETS_OPTIONS_ACCESS)
 async def list_asset_options(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> AssetOptionListRead:
@@ -477,7 +484,8 @@ async def list_asset_options(
     сюда только ``accounting.fixed_assets.read`` — и человек с правом разбирать ДДС упрётся в
     403 на статье, которая объект ТРЕБУЕТ: разнести платёж станет нельзя вообще. Ровно это уже
     случилось с помещениями (``source.locations.read`` менеджеру не выдан). Поэтому пускаем по
-    любому из двух прав: видеть объекты в списке ≠ видеть их стоимость, историю и начисления.
+    праву просмотра ОС, разбора ДДС или выплаты из кассы. Последнее открывает только
+    этот справочник, не создание карточек и не полный реестр.
 
     Вторая — вес. Карточка реестра тянет накопленную амортизацию, месячную сумму и признак
     «амортизируется» — это запрос начислений по каждому объекту. Для выпадающего списка нужны

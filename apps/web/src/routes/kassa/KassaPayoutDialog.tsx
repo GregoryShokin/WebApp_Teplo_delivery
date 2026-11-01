@@ -22,6 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { apiErrorMessage } from "@/lib/api";
+import { assetOptionsQuery } from "@/routes/dds/shared";
+import { assetTitle } from "@/routes/dds/AssetPicker";
 import { getRegistry } from "@/routes/counterparties/api";
 import { formatRub } from "@/routes/counterparties/shared";
 import {
@@ -35,10 +37,8 @@ import {
 } from "@/routes/kassa/api";
 
 const FLOW_HINTS: Partial<Record<KassaPayoutFlow, string>> = {
-  employee_advance:
-    "Выдача попадёт в леджер авансов — удержится из ближайшей зарплаты сотрудника.",
-  employee_loan:
-    "Выдача попадёт в леджер займов — будет удерживаться из зарплаты по рассрочке.",
+  employee_advance: "Выдача попадёт в леджер авансов — удержится из ближайшей зарплаты сотрудника.",
+  employee_loan: "Выдача попадёт в леджер займов — будет удерживаться из зарплаты по рассрочке.",
   supplier_prepayment:
     "Появится дебиторка: поставщик должен привезти товар — накладные будут гаситься против этой предоплаты.",
 };
@@ -51,6 +51,7 @@ export type KassaPayoutEditTarget = {
   comment: string | null;
   employeeId: string | null;
   counterpartyId: string | null;
+  assetId: string | null;
 };
 
 type KassaPayoutDialogProps = {
@@ -74,6 +75,7 @@ export function KassaPayoutDialog({
   const [comment, setComment] = useState("");
   const [employeeId, setEmployeeId] = useState("");
   const [counterpartyId, setCounterpartyId] = useState("");
+  const [assetId, setAssetId] = useState("");
 
   const isEdit = editTarget !== null;
 
@@ -95,6 +97,8 @@ export function KassaPayoutDialog({
   const flow: KassaPayoutFlow | null = article?.flow ?? null;
   const needsEmployee = flow === "employee_advance" || flow === "employee_loan";
   const needsSupplier = flow === "supplier_prepayment";
+  const needsAsset = Boolean(article?.asset_link_kind);
+  const assetsQuery = useQuery(assetOptionsQuery(open && needsAsset));
 
   const employeesQuery = useQuery({
     queryKey: ["kassa", "payout-employees"],
@@ -117,12 +121,14 @@ export function KassaPayoutDialog({
     setComment(editTarget?.comment ?? "");
     setEmployeeId(editTarget?.employeeId ?? "");
     setCounterpartyId(editTarget?.counterpartyId ?? "");
+    setAssetId(editTarget?.assetId ?? "");
   }, [open, editTarget]);
 
   const saveMutation = useMutation({
     mutationFn: () => {
       const payload = {
         article_id: articleId,
+        asset_id: needsAsset ? assetId || null : null,
         amount: Number(amount),
         comment: comment.trim() || null,
         employee_id: needsEmployee ? employeeId || null : null,
@@ -137,12 +143,17 @@ export function KassaPayoutDialog({
       void queryClient.invalidateQueries({ queryKey: ["kassa"] });
       void queryClient.invalidateQueries({ queryKey: ["dds"] });
       void queryClient.invalidateQueries({ queryKey: ["cp"] });
+      void queryClient.invalidateQueries({ queryKey: ["fixed-assets"] });
+      void queryClient.invalidateQueries({ queryKey: ["asset-options"] });
       onOpenChange(false);
       onSaved();
     },
     onError: (error) =>
       toast.error(
-        apiErrorMessage(error, isEdit ? "Не удалось исправить выплату" : "Не удалось провести выплату"),
+        apiErrorMessage(
+          error,
+          isEdit ? "Не удалось исправить выплату" : "Не удалось провести выплату",
+        ),
       ),
   });
 
@@ -151,11 +162,15 @@ export function KassaPayoutDialog({
   const overBalance =
     typeof balance === "number" && Number.isFinite(amountNumber) && amountNumber > balance;
   const canSave =
-    Boolean(articleId) &&
+    Boolean(article) &&
+    !articlesQuery.isError &&
     Number.isFinite(amountNumber) &&
     amountNumber > 0 &&
     (!needsEmployee || Boolean(employeeId)) &&
     (!needsSupplier || Boolean(counterpartyId)) &&
+    (!needsAsset ||
+      (!assetsQuery.isError &&
+        (assetsQuery.data ?? []).some((asset) => asset.asset_id === assetId))) &&
     !saveMutation.isPending;
 
   return (
@@ -173,12 +188,16 @@ export function KassaPayoutDialog({
         <div className="grid gap-4">
           <div className="grid gap-2">
             <Label>Статья</Label>
-            <Select value={articleId} onValueChange={setArticleId}>
+            <Select
+              value={articleId}
+              onValueChange={(id) => {
+                setArticleId(id);
+                setAssetId("");
+              }}
+            >
               <SelectTrigger>
                 <SelectValue
-                  placeholder={
-                    articlesQuery.isLoading ? "Загрузка…" : "Выберите статью выплаты"
-                  }
+                  placeholder={articlesQuery.isLoading ? "Загрузка…" : "Выберите статью выплаты"}
                 />
               </SelectTrigger>
               <SelectContent>
@@ -191,8 +210,8 @@ export function KassaPayoutDialog({
             </Select>
             {!articlesQuery.isLoading && (articlesQuery.data ?? []).length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                Нет разрешённых статей — флаг «Доступна в кассе» включает владелец в каталоге
-                статей ДДС.
+                Нет разрешённых статей — флаг «Доступна в кассе» включает владелец в каталоге статей
+                ДДС.
               </p>
             ) : null}
           </div>
@@ -244,6 +263,68 @@ export function KassaPayoutDialog({
             </div>
           ) : null}
 
+          {needsAsset ? (
+            <div className="grid gap-2">
+              <Label>
+                Оборудование <span aria-hidden="true">*</span>
+              </Label>
+              <Select
+                value={assetId}
+                onValueChange={setAssetId}
+                disabled={assetsQuery.isLoading || assetsQuery.isError}
+              >
+                <SelectTrigger aria-label="Оборудование" aria-required="true">
+                  <SelectValue
+                    placeholder={assetsQuery.isLoading ? "Загрузка…" : "Выберите оборудование"}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {(assetsQuery.data ?? []).map((asset) => (
+                    <SelectItem key={asset.asset_id} value={asset.asset_id}>
+                      {assetTitle(asset)}
+                      {asset.status === "not_working" ? " · не работает" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {assetsQuery.isError ? (
+                <div className="text-sm text-destructive" role="alert">
+                  <p>
+                    {apiErrorMessage(
+                      assetsQuery.error,
+                      "Не удалось загрузить оборудование. Без выбора оборудования выплату провести нельзя.",
+                    )}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void assetsQuery.refetch()}
+                  >
+                    Повторить загрузку
+                  </Button>
+                </div>
+              ) : !assetsQuery.isLoading && (assetsQuery.data ?? []).length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Нет оборудования для выбора. Добавьте объект в разделе «Учёт ОС», затем повторите
+                  загрузку списка.
+                </p>
+              ) : assetId &&
+                !(assetsQuery.data ?? []).some((asset) => asset.asset_id === assetId) ? (
+                <p className="text-sm text-destructive" role="alert">
+                  Выбранное оборудование больше недоступно. Выберите другой объект.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {article?.asset_link_kind === "maintenance" ||
+                  article?.asset_link_kind === "repair"
+                    ? "Ремонт будет сохранён в истории выбранного оборудования."
+                    : "Платёж будет связан с выбранным оборудованием."}
+                </p>
+              )}
+            </div>
+          ) : null}
+
           {flow && FLOW_HINTS[flow] ? (
             <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
               {FLOW_HINTS[flow]}
@@ -261,8 +342,8 @@ export function KassaPayoutDialog({
             />
             {overBalance ? (
               <p className="text-xs font-medium text-amber-600">
-                Сумма больше учётного остатка кассы ({formatRub(balance)}) — выплата пройдёт,
-                но остаток уйдёт в минус. Проверьте сумму.
+                Сумма больше учётного остатка кассы ({formatRub(balance)}) — выплата пройдёт, но
+                остаток уйдёт в минус. Проверьте сумму.
               </p>
             ) : null}
           </div>
@@ -278,8 +359,8 @@ export function KassaPayoutDialog({
 
           {isEdit && (needsEmployee || needsSupplier) ? (
             <p className="text-xs text-muted-foreground">
-              Правка аванса или предоплаты проводится как отмена и новая выдача — у записи в
-              журнале появится новое время создания.
+              Правка аванса или предоплаты проводится как отмена и новая выдача — у записи в журнале
+              появится новое время создания.
             </p>
           ) : null}
         </div>
@@ -309,5 +390,6 @@ export function editTargetFromJournalItem(item: KassaJournalItem): KassaPayoutEd
     comment: item.comment ?? item.purpose,
     employeeId: item.employee_id,
     counterpartyId: item.counterparty_id,
+    assetId: item.asset_id,
   };
 }

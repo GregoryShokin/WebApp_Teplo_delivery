@@ -95,6 +95,7 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
       void queryClient.invalidateQueries({ queryKey: ["kassa"] });
       void queryClient.invalidateQueries({ queryKey: ["dds"] });
       void queryClient.invalidateQueries({ queryKey: ["cp"] });
+      void queryClient.invalidateQueries({ queryKey: ["fixed-assets"] });
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось удалить запись")),
   });
@@ -127,9 +128,9 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
       cell: (item) => (
         <div className="min-w-0">
           <div className="font-medium">{item.article_name ?? "Без статьи"}</div>
-          {item.counterparty_label || item.purpose || item.comment ? (
+          {item.asset_name || item.counterparty_label || item.purpose || item.comment ? (
             <div className="truncate text-xs text-muted-foreground">
-              {[item.counterparty_label, item.purpose ?? item.comment]
+              {[item.asset_name, item.counterparty_label, item.purpose ?? item.comment]
                 .filter(Boolean)
                 .join(" · ")}
             </div>

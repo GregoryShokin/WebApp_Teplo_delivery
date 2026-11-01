@@ -568,6 +568,7 @@ async def create_payout_endpoint(
             comment=payload.comment,
             employee_id=payload.employee_id,
             counterparty_id=payload.counterparty_id,
+            asset_id=payload.asset_id,
             location_id=payload.location_id,
             lease_id=payload.lease_id,
             actor_user_id=actor.user_id,
@@ -599,6 +600,7 @@ async def update_payout_endpoint(
             comment=payload.comment,
             employee_id=payload.employee_id,
             counterparty_id=payload.counterparty_id,
+            asset_id=payload.asset_id,
             actor_user_id=actor.user_id,
         )
     except KassaPayoutError as exc:

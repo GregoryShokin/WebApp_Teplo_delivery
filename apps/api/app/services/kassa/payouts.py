@@ -38,11 +38,13 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    AssetCashflowLink,
     CashflowTransaction,
     Counterparty,
     CounterpartyPayableProfile,
     DdsArticle,
     Employee,
+    FixedAsset,
     FreelancerShiftSettlement,
     PayrollLine,
     PayrollPayment,
@@ -53,6 +55,14 @@ from app.models import (
     Wallet,
 )
 from app.services import clock
+from app.services.asset_analytics import (
+    AssetContext,
+    AssetLinkError,
+    assets_linked_to_transaction,
+    link_transaction_to_asset,
+    resolve_asset_context,
+    unlink_transaction,
+)
 from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 from app.services.banking.safe_allocations import (
     ACTIVE_RESERVE_STATUSES,
@@ -230,6 +240,7 @@ async def list_payout_articles(session: AsyncSession) -> list[dict[str, Any]]:
             "code": article.code,
             "name": article.name,
             "flow": article_kassa_flow(article),
+            "asset_link_kind": article.asset_link_kind,
         }
         for article in articles
         if article.code not in PROTECTED_ARTICLE_CODES
@@ -269,6 +280,29 @@ async def _validated_payout_article(session: AsyncSession, article_id: uuid.UUID
     return article
 
 
+async def _payout_asset_context(
+    session: AsyncSession, article: DdsArticle, asset_id: uuid.UUID | None, amount: Decimal
+) -> AssetContext:
+    try:
+        return await resolve_asset_context(
+            session, article=article, asset_id=asset_id, amount=amount
+        )
+    except AssetLinkError as exc:
+        raise KassaPayoutError(str(exc)) from exc
+
+
+async def _ensure_repair_links_editable(
+    session: AsyncSession, transaction: CashflowTransaction
+) -> None:
+    # A current repair only records history. Purchase/capital links can already
+    # affect the asset's valuation and must be corrected from its own card.
+    links = await assets_linked_to_transaction(session, transaction.id)
+    if any(link.kind != "repair" for link in links):
+        raise KassaPayoutError(
+            "Платёж связан со стоимостью оборудования — исправьте привязку в карточке объекта"
+        )
+
+
 async def create_payout(
     session: AsyncSession,
     *,
@@ -277,6 +311,7 @@ async def create_payout(
     comment: str | None = None,
     employee_id: uuid.UUID | None = None,
     counterparty_id: uuid.UUID | None = None,
+    asset_id: uuid.UUID | None = None,
     location_id: uuid.UUID | None = None,
     lease_id: uuid.UUID | None = None,
     actor_user_id: uuid.UUID | None = None,
@@ -290,6 +325,7 @@ async def create_payout(
     amount = _money(amount)
     if amount <= 0:
         raise KassaPayoutError("Сумма должна быть больше нуля")
+    asset_context = await _payout_asset_context(session, article, asset_id, amount)
     wallet = await get_kassa_wallet(session)
     today = kassa_today()
     try:
@@ -384,6 +420,10 @@ async def create_payout(
         created_by_user_id=actor_user_id,
     )
     session.add(transaction)
+    await session.flush()
+    await link_transaction_to_asset(
+        session, context=asset_context, transaction_id=transaction.id, amount=amount
+    )
     await session.commit()
     await session.refresh(transaction)
     return KassaPayoutResult(kind="expense", transaction_id=transaction.id)
@@ -466,6 +506,8 @@ async def _remove_payout_target(
 ) -> None:
     """Снять запись вместе с источником (проверки уже пройдены в _editable_target)."""
     if kind == "manual":
+        await _ensure_repair_links_editable(session, transaction)
+        await unlink_transaction(session, transaction.id)
         await session.delete(transaction)
         await session.commit()
         return
@@ -498,6 +540,7 @@ async def update_payout(
     comment: str | None = None,
     employee_id: uuid.UUID | None = None,
     counterparty_id: uuid.UUID | None = None,
+    asset_id: uuid.UUID | None = None,
     actor_user_id: uuid.UUID | None = None,
 ) -> KassaPayoutResult:
     """Исправить свою сегодняшнюю кассовую запись.
@@ -515,10 +558,22 @@ async def update_payout(
     if new_amount <= 0:
         raise KassaPayoutError("Сумма должна быть больше нуля")
 
+    asset_context = await _payout_asset_context(session, new_article, asset_id, new_amount)
+    await _ensure_repair_links_editable(session, transaction)
+    links = await assets_linked_to_transaction(session, transaction.id)
+    if len(links) > 1:
+        raise KassaPayoutError(
+            "Платёж связан с несколькими объектами — исправьте связи в карточках оборудования"
+        )
+
     if kind == "manual" and new_flow == "expense":
+        await unlink_transaction(session, transaction.id)
         transaction.article_id = new_article.id
         transaction.amount = new_amount
         transaction.payment_purpose = comment
+        await link_transaction_to_asset(
+            session, context=asset_context, transaction_id=transaction.id, amount=new_amount
+        )
         await session.commit()
         return KassaPayoutResult(kind="expense", transaction_id=transaction.id)
 
@@ -529,6 +584,7 @@ async def update_payout(
         session,
         article_id=new_article.id,
         amount=new_amount,
+        asset_id=asset_id,
         comment=comment,
         employee_id=employee_id,
         counterparty_id=counterparty_id,
@@ -874,6 +930,16 @@ async def kassa_journal(
     counterparty_names = await _counterparty_names(session, transactions)
     freelancer_payouts = await _freelancer_shift_payouts(session, transactions)
 
+    asset_links: dict[uuid.UUID, list[tuple[uuid.UUID, str]]] = {}
+    if transactions:
+        linked = await session.execute(
+            select(AssetCashflowLink.cashflow_transaction_id, FixedAsset.id, FixedAsset.name)
+            .join(FixedAsset, FixedAsset.id == AssetCashflowLink.asset_id)
+            .where(AssetCashflowLink.cashflow_transaction_id.in_([t.id for t in transactions]))
+        )
+        for transaction_id, asset_id, asset_name in linked:
+            asset_links.setdefault(transaction_id, []).append((asset_id, asset_name))
+
     today = kassa_today()
     items: list[dict[str, Any]] = []
     for transaction, article in rows:
@@ -934,6 +1000,7 @@ async def kassa_journal(
                 )
         if label is None and transaction.counterparty_id is not None:
             label = counterparty_names.get(transaction.counterparty_id)
+        linked_assets = asset_links.get(transaction.id, [])
         items.append(
             {
                 "id": transaction.id,
@@ -948,6 +1015,8 @@ async def kassa_journal(
                 "counterparty_label": label,
                 "employee_id": employee_id,
                 "counterparty_id": transaction.counterparty_id,
+                "asset_id": linked_assets[0][0] if len(linked_assets) == 1 else None,
+                "asset_name": ", ".join(name for _, name in linked_assets) or None,
                 "kassa_flow": flow,
                 "editable": editable,
                 # Ошибочную выдачу внештатнику отменяют целиком (деньги + зачёт в ведомости),

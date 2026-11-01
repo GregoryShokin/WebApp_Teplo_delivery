@@ -326,6 +326,8 @@ export type KassaJournalItem = {
   counterparty_label: string | null;
   employee_id: string | null;
   counterparty_id: string | null;
+  asset_id: string | null;
+  asset_name: string | null;
   kassa_flow: KassaJournalFlow | null;
   editable: boolean;
   /** Ошибочную выдачу внештатнику отменяют целиком (право kassa.freelancer_shift.void). */
@@ -351,6 +353,7 @@ export type KassaPayoutArticle = {
   code: string;
   name: string;
   flow: KassaPayoutFlow;
+  asset_link_kind: "purchase" | "repair" | "maintenance" | null;
 };
 
 export type KassaPayoutEmployee = {
@@ -368,6 +371,7 @@ export type KassaPayoutPayload = {
   article_id: string;
   amount: number;
   comment?: string | null;
+  asset_id?: string | null;
   employee_id?: string | null;
   counterparty_id?: string | null;
 };
