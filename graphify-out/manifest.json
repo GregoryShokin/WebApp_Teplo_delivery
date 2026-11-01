@@ -55,7 +55,7 @@
     "semantic_hash": "a2d02a18c043a86a88db76ff671a884e"
   },
   "WORK-IN-PROGRESS.md": {
-    "mtime": 1791752059.454123,
+    "mtime": 1793559422.1555457,
     "ast_hash": "b487033bde7279e1068b63aa8a68602c",
     "semantic_hash": "b487033bde7279e1068b63aa8a68602c"
   },
@@ -1865,8 +1865,8 @@
     "semantic_hash": "d3178f307d8e25b561f1354df5efcf1f"
   },
   "apps/api/app/api/v1/routes/fixed_assets.py": {
-    "mtime": 1793552928.397,
-    "ast_hash": "565a3887ea8188d9199409b99f4dfd84",
+    "mtime": 1793558985.6640391,
+    "ast_hash": "bda147bb9615e10f63f88cb1cb4e7ce3",
     "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/health.py": {
@@ -2000,9 +2000,9 @@
     "semantic_hash": "7746a43ecd4fc78cad64463cad817a2c"
   },
   "apps/api/app/auth/permissions.py": {
-    "mtime": 1786099613.5698483,
-    "ast_hash": "6bdb6ff54bbd8d166e7c7a7e743c577e",
-    "semantic_hash": "6bdb6ff54bbd8d166e7c7a7e743c577e"
+    "mtime": 1793558985.664766,
+    "ast_hash": "a299d39ef1f2a448b3bd0736a07f3730",
+    "semantic_hash": ""
   },
   "apps/api/app/auth/service.py": {
     "mtime": 1780761267.0856135,
@@ -2120,14 +2120,14 @@
     "semantic_hash": "49bea8fe60cc203f72e740329075db29"
   },
   "apps/api/app/main.py": {
-    "mtime": 1785331831.8646967,
-    "ast_hash": "0d7597a1009dc760d6f35b7b507f3a53",
-    "semantic_hash": "0d7597a1009dc760d6f35b7b507f3a53"
+    "mtime": 1793558985.6655138,
+    "ast_hash": "07b67ac4b13a74e202b931b0b63376d8",
+    "semantic_hash": ""
   },
   "apps/api/app/models/__init__.py": {
-    "mtime": 1786099613.5710688,
-    "ast_hash": "577e5b1ef22c0e4ce5bb17e5dac44207",
-    "semantic_hash": "577e5b1ef22c0e4ce5bb17e5dac44207"
+    "mtime": 1793558985.6660397,
+    "ast_hash": "7f095e2f7873248eae5b39e0fed08f05",
+    "semantic_hash": ""
   },
   "apps/api/app/models/audit.py": {
     "mtime": 1780501500.6420217,
@@ -2210,9 +2210,9 @@
     "semantic_hash": "14df95f05c1ef9968b4f2ac5ca61f838"
   },
   "apps/api/app/models/fixed_asset.py": {
-    "mtime": 1785678451.1536756,
-    "ast_hash": "a8b9faed4a4c3c3b10b97efbf939c047",
-    "semantic_hash": "a8b9faed4a4c3c3b10b97efbf939c047"
+    "mtime": 1793558985.6669285,
+    "ast_hash": "cd96bd07523c1fc2fd8f29a4f5540531",
+    "semantic_hash": ""
   },
   "apps/api/app/models/freelancer.py": {
     "mtime": 1783589719.8849533,
@@ -2590,19 +2590,19 @@
     "semantic_hash": "33d51e8a7d979693b951894933504508"
   },
   "apps/api/app/services/asset_analytics.py": {
-    "mtime": 1785524198.1309867,
-    "ast_hash": "df228fb31a2dedaf45ca9def8f455474",
-    "semantic_hash": "df228fb31a2dedaf45ca9def8f455474"
+    "mtime": 1793558985.6675076,
+    "ast_hash": "610583eb6333923c5a3e09697081fb84",
+    "semantic_hash": ""
   },
   "apps/api/app/services/asset_balance.py": {
-    "mtime": 1786188800.4929605,
-    "ast_hash": "7724957943b02075ed3a016c38dfe51c",
-    "semantic_hash": "7724957943b02075ed3a016c38dfe51c"
+    "mtime": 1793558985.669035,
+    "ast_hash": "53befc3d81267be3129346a6b16ef46d",
+    "semantic_hash": ""
   },
   "apps/api/app/services/asset_disposal.py": {
-    "mtime": 1786188800.4931707,
-    "ast_hash": "de4286ac5fe1a6928ff944b5680b5e78",
-    "semantic_hash": "de4286ac5fe1a6928ff944b5680b5e78"
+    "mtime": 1793558985.6712115,
+    "ast_hash": "e2196cb544f550969586509267f2bc73",
+    "semantic_hash": ""
   },
   "apps/api/app/services/asset_intake.py": {
     "mtime": 1785514700.251952,
@@ -2610,9 +2610,9 @@
     "semantic_hash": "6d5264ed4242f2cb57b465a2414bf22b"
   },
   "apps/api/app/services/asset_revaluation.py": {
-    "mtime": 1785678451.1543107,
-    "ast_hash": "8e3af88a76410dc60e3d7077fb7a5091",
-    "semantic_hash": "8e3af88a76410dc60e3d7077fb7a5091"
+    "mtime": 1793558985.6717062,
+    "ast_hash": "2bda3193529b375b2ab74ffc9a28d584",
+    "semantic_hash": ""
   },
   "apps/api/app/services/attendance_loader.py": {
     "mtime": 1791278428.3480532,
@@ -2955,9 +2955,9 @@
     "semantic_hash": "460f5d38f72bafc63b699090b523dd76"
   },
   "apps/api/app/services/fixed_assets.py": {
-    "mtime": 1785570056.2852712,
-    "ast_hash": "313c6844e80c80eb6594810b2ed6dfb0",
-    "semantic_hash": "313c6844e80c80eb6594810b2ed6dfb0"
+    "mtime": 1793558985.6727555,
+    "ast_hash": "882eefd0f09605cb6709043d62e542f4",
+    "semantic_hash": ""
   },
   "apps/api/app/services/freelancer/__init__.py": {
     "mtime": 1783589719.888283,
@@ -5965,14 +5965,14 @@
     "semantic_hash": ""
   },
   "apps/web/src/routes/fixed-assets/api.ts": {
-    "mtime": 1785678451.1546624,
-    "ast_hash": "c69a3c1007823ca274df94ee9117006a",
-    "semantic_hash": "c69a3c1007823ca274df94ee9117006a"
+    "mtime": 1793558985.6741316,
+    "ast_hash": "9b78e4ed8601802a8f653aa32db5dabf",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/fixed-assets/index.tsx": {
-    "mtime": 1785678451.1559134,
-    "ast_hash": "30ae78ec6dc281a7e90b36b9eeeb93e0",
-    "semantic_hash": "30ae78ec6dc281a7e90b36b9eeeb93e0"
+    "mtime": 1793558985.6748598,
+    "ast_hash": "cbb6e883328be71eab3963f146ea6b7e",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/kassa/CreateChequeDialog.tsx": {
     "mtime": 1785167997.2662458,
@@ -8522,6 +8522,31 @@
   "docs/changes/2026-11-01-kassa-equipment-required.md": {
     "mtime": 1793555318.5387003,
     "ast_hash": "70fc5c72bb4f04263178778f3d211401",
+    "semantic_hash": ""
+  },
+  "apps/api/alembic/versions/0282_asset_capitalization.py": {
+    "mtime": 1793558985.6632514,
+    "ast_hash": "828a205185b2049c145ccb0c212b7f09",
+    "semantic_hash": ""
+  },
+  "apps/api/app/services/asset_capitalization.py": {
+    "mtime": 1793558985.669635,
+    "ast_hash": "7fd5f3a21c7ac4adc519a280cfcd4aea",
+    "semantic_hash": ""
+  },
+  "apps/api/scripts/check_asset_capitalization_prod_copy.py": {
+    "mtime": 1793558985.6731496,
+    "ast_hash": "244e21cabb16cbbce10a311446731a08",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/test_asset_capitalization.py": {
+    "mtime": 1793558985.6734629,
+    "ast_hash": "d66290b93c5243152f3c5ee7d7f720cb",
+    "semantic_hash": ""
+  },
+  "docs/changes/2026-11-01-asset-capitalization-dated.md": {
+    "mtime": 1793559422.1560671,
+    "ast_hash": "7655606d5734319e5d46bd2693e8dedf",
     "semantic_hash": ""
   }
 }
