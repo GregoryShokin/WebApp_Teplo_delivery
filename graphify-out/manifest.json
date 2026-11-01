@@ -240,9 +240,9 @@
     "semantic_hash": "a5999653599b9a7e6e0c2bc63bec7eb3"
   },
   "app-spec/modules/finance/payment-calendar/spec.md": {
-    "mtime": 1780086922.4079323,
-    "ast_hash": "1c41ec15a2345537be95f8d9112c84ad",
-    "semantic_hash": "1c41ec15a2345537be95f8d9112c84ad"
+    "mtime": 1793465728.2907016,
+    "ast_hash": "739f8d3a984663a8c3c54c1676b373d3",
+    "semantic_hash": ""
   },
   "app-spec/modules/finance/payroll-taxes-methodology.md": {
     "mtime": 1780247657.121769,
@@ -1865,9 +1865,9 @@
     "semantic_hash": "d3178f307d8e25b561f1354df5efcf1f"
   },
   "apps/api/app/api/v1/routes/fixed_assets.py": {
-    "mtime": 1786188800.4891865,
-    "ast_hash": "d47abad02f31f17e3e80484ed8929033",
-    "semantic_hash": "d47abad02f31f17e3e80484ed8929033"
+    "mtime": 1793552928.397,
+    "ast_hash": "565a3887ea8188d9199409b99f4dfd84",
+    "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/health.py": {
     "mtime": 1779897652.3432052,
@@ -1885,9 +1885,9 @@
     "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/kassa.py": {
-    "mtime": 1791313530.2559392,
-    "ast_hash": "7160990ed0aeaa8a753ff177a2863e2c",
-    "semantic_hash": "7160990ed0aeaa8a753ff177a2863e2c"
+    "mtime": 1793552928.3979986,
+    "ast_hash": "ae766965e55591490f2dbad2e056b7ee",
+    "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/locations.py": {
     "mtime": 1790347841.5560172,
@@ -2370,9 +2370,9 @@
     "semantic_hash": "4c174800f9c03eb2d10148863f4a7c07"
   },
   "apps/api/app/schemas/kassa.py": {
-    "mtime": 1791296058.694107,
-    "ast_hash": "f2caf08fb5191dac24a5e44f605efc2d",
-    "semantic_hash": "f2caf08fb5191dac24a5e44f605efc2d"
+    "mtime": 1793552928.3989575,
+    "ast_hash": "809372d10a01210b4df1cc66689a9bf4",
+    "semantic_hash": ""
   },
   "apps/api/app/schemas/payroll.py": {
     "mtime": 1793457431.567034,
@@ -3085,9 +3085,9 @@
     "semantic_hash": "c0221621350a8c6918ee95827ff5fecc"
   },
   "apps/api/app/services/kassa/payouts.py": {
-    "mtime": 1791313530.257147,
-    "ast_hash": "e821ff17aad7cc4c77712297b799bac0",
-    "semantic_hash": "e821ff17aad7cc4c77712297b799bac0"
+    "mtime": 1793552928.3996816,
+    "ast_hash": "1fd164d8e12888aaab5d2cc4b80b418c",
+    "semantic_hash": ""
   },
   "apps/api/app/services/lease_accruals.py": {
     "mtime": 1785668249.2511365,
@@ -5990,9 +5990,9 @@
     "semantic_hash": "f64447ca42e288635d29f9d7fe52a923"
   },
   "apps/web/src/routes/kassa/KassaPayoutDialog.tsx": {
-    "mtime": 1783280278.9169366,
-    "ast_hash": "0089aca21d017cf187b862262a6f0279",
-    "semantic_hash": "0089aca21d017cf187b862262a6f0279"
+    "mtime": 1793552928.4017556,
+    "ast_hash": "6cdf9f725f1f73522ea96284186ce493",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/kassa/ShiftDetailDialog.tsx": {
     "mtime": 1787225769.2024662,
@@ -6000,9 +6000,9 @@
     "semantic_hash": "1f152894fcd58f8cfbd5f2c518897f80"
   },
   "apps/web/src/routes/kassa/api.ts": {
-    "mtime": 1791296058.6996994,
-    "ast_hash": "13b820be55283ae690b331a9d4c61ac2",
-    "semantic_hash": "13b820be55283ae690b331a9d4c61ac2"
+    "mtime": 1793552928.4023325,
+    "ast_hash": "b345aafd7ba171eaebde9b896982845c",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/kassa/index.tsx": {
     "mtime": 1783589719.8970053,
@@ -6020,9 +6020,9 @@
     "semantic_hash": "6c38bd8d1cd7d4822c04b31dacf42b76"
   },
   "apps/web/src/routes/kassa/tabs/journal.tsx": {
-    "mtime": 1785337610.7230666,
-    "ast_hash": "c4dce349a7802319c95d04d8e0248f00",
-    "semantic_hash": "c4dce349a7802319c95d04d8e0248f00"
+    "mtime": 1793552928.4029822,
+    "ast_hash": "163def340b528925527f9356abf7db72",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/kassa/tabs/pending.tsx": {
     "mtime": 1791296058.700679,
@@ -6525,9 +6525,9 @@
     "semantic_hash": "ae1eeb8ac548b14d0e6f2e525ba9a344"
   },
   "business-docs/finance/dds-methodology.md": {
-    "mtime": 1780083812.965792,
-    "ast_hash": "7e7d592c40e4a4010c33596c77f3f6ab",
-    "semantic_hash": "7e7d592c40e4a4010c33596c77f3f6ab"
+    "mtime": 1793465728.2935545,
+    "ast_hash": "0df8cd1695779694b231a95bf87bd47c",
+    "semantic_hash": ""
   },
   "business-docs/finance/economic-block.md": {
     "mtime": 1780083994.8479183,
@@ -8502,6 +8502,26 @@
   "apps/api/tests/test_tbank_overdraft_rules.py": {
     "mtime": 1793465728.2928042,
     "ast_hash": "8d5ea477de9caf4d4e175de869c144f2",
+    "semantic_hash": ""
+  },
+  "apps/api/scripts/check_kassa_equipment_prod_copy.py": {
+    "mtime": 1793552928.400094,
+    "ast_hash": "d50c9fb7eea5867648b780ead0734bc0",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/kassa/test_kassa_equipment.py": {
+    "mtime": 1793552928.400603,
+    "ast_hash": "7a6d406caaaa1a65e5ad68ddb76d09e6",
+    "semantic_hash": ""
+  },
+  "apps/docker-compose.preview-kassa-equipment.yml": {
+    "mtime": 1793552928.4008222,
+    "ast_hash": "daec490b5e576b87e27639e947883e4d",
+    "semantic_hash": ""
+  },
+  "docs/changes/2026-11-01-kassa-equipment-required.md": {
+    "mtime": 1793552928.403397,
+    "ast_hash": "b49fa54764e0b81420b5b0dfc3175b7d",
     "semantic_hash": ""
   }
 }
