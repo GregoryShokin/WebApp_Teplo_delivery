@@ -4,6 +4,7 @@ import { LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import {
   Dialog,
   DialogContent,
@@ -265,28 +266,36 @@ export function KassaPayoutDialog({
 
           {needsAsset ? (
             <div className="grid gap-2">
-              <Label>
+              <Label htmlFor="kassa-equipment">
                 Оборудование <span aria-hidden="true">*</span>
               </Label>
-              <Select
+              <Combobox
+                id="kassa-equipment"
                 value={assetId}
-                onValueChange={setAssetId}
+                onChange={setAssetId}
                 disabled={assetsQuery.isLoading || assetsQuery.isError}
-              >
-                <SelectTrigger aria-label="Оборудование" aria-required="true">
-                  <SelectValue
-                    placeholder={assetsQuery.isLoading ? "Загрузка…" : "Выберите оборудование"}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {(assetsQuery.data ?? []).map((asset) => (
-                    <SelectItem key={asset.asset_id} value={asset.asset_id}>
-                      {assetTitle(asset)}
-                      {asset.status === "not_working" ? " · не работает" : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder={assetsQuery.isLoading ? "Загрузка…" : "Выберите оборудование"}
+                searchPlaceholder="Название, номер или модель…"
+                emptyMessage="Оборудование не найдено"
+                options={(assetsQuery.data ?? []).map((asset) => ({
+                  value: asset.asset_id,
+                  label: [
+                    assetTitle(asset),
+                    asset.location_name,
+                    asset.status === "not_working" ? "не работает" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · "),
+                  keywords: [
+                    asset.inventory_number,
+                    asset.name,
+                    asset.brand_model,
+                    asset.location_name,
+                  ]
+                    .filter(Boolean)
+                    .join(" "),
+                }))}
+              />
               {assetsQuery.isError ? (
                 <div className="text-sm text-destructive" role="alert">
                   <p>
