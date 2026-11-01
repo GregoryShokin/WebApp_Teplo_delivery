@@ -5990,8 +5990,8 @@
     "semantic_hash": "f64447ca42e288635d29f9d7fe52a923"
   },
   "apps/web/src/routes/kassa/KassaPayoutDialog.tsx": {
-    "mtime": 1793552928.4017556,
-    "ast_hash": "6cdf9f725f1f73522ea96284186ce493",
+    "mtime": 1793555093.6063964,
+    "ast_hash": "459c62a81cad72cfdb8770988a1b2f44",
     "semantic_hash": ""
   },
   "apps/web/src/routes/kassa/ShiftDetailDialog.tsx": {
@@ -8520,8 +8520,8 @@
     "semantic_hash": ""
   },
   "docs/changes/2026-11-01-kassa-equipment-required.md": {
-    "mtime": 1793552928.403397,
-    "ast_hash": "b49fa54764e0b81420b5b0dfc3175b7d",
+    "mtime": 1793555318.5387003,
+    "ast_hash": "70fc5c72bb4f04263178778f3d211401",
     "semantic_hash": ""
   }
 }
