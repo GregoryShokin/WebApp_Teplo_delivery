@@ -16,6 +16,15 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
+### codex-asset-capitalization — ветка `codex/asset-capitalization-dated`
+- worktree: `../Teplo-agent-asset-capitalization`.
+- зона: датированная капитализация ремонта ОС, карточка/история, расчёты ОС, миграция 0282, связанные проверки.
+- собственная test-БД: контейнер `teplo-capitalization-test-db`, база `teplo_test_capitalization`; после проверок удаляется.
+- стенд на сервере: `teplo-capitalization-preview-*`, отдельная внутренняя сеть и копия БД; локальный SSH-туннель `127.0.0.1:5243`.
+- статус: реализовано и проверено; показ владельцу. В main не сливать, на бой не устанавливать до отдельного подтверждения.
+- отчёт: `docs/changes/2026-11-01-asset-capitalization-dated.md`.
+
+
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`

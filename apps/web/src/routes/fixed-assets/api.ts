@@ -117,7 +117,38 @@ export type Disposal = {
   period_frozen: boolean;
 };
 
+export type Repair = {
+  link_id: string;
+  transaction_id: string;
+  operation_date: string;
+  amount: Money;
+  article_name: string;
+  payment_purpose: string | null;
+  status: "pending" | "confirmed" | "dismissed" | "maintenance";
+  effective_on: string | null;
+  depreciation_from: string | null;
+  decided_at: string | null;
+  decided_by: string | null;
+  note: string | null;
+  cost_before: Money | null;
+  cost_after: Money | null;
+  monthly_after: Money | null;
+};
+export type CapitalizationPreview = {
+  amount: Money;
+  effective_on: string;
+  depreciation_from: string;
+  cost_before: Money;
+  cost_after: Money;
+  residual_before: Money;
+  residual_after: Money;
+  monthly_before: Money;
+  monthly_after: Money;
+  useful_life_months: number | null;
+};
+
 export type FixedAssetDetail = FixedAsset & {
+  repairs: Repair[];
   entries: DepreciationEntry[];
   condition_reports: ConditionReport[];
   disposal: Disposal | null;
@@ -366,5 +397,15 @@ export async function closeDepreciationMonth(periodMonth: string): Promise<Month
     { period_month: periodMonth },
     { timeout: 120_000 },
   );
+  return response.data;
+}
+
+
+export async function previewCapitalization(assetId: string, linkId: string, effectiveOn: string): Promise<CapitalizationPreview> {
+  const response = await api.get<CapitalizationPreview>(`${BASE}/${assetId}/repairs/${linkId}/preview`, { params: { effective_on: effectiveOn } });
+  return response.data;
+}
+export async function decideCapitalization(assetId: string, linkId: string, payload: { status: "confirmed" | "dismissed"; effective_on: string | null; note: string | null }): Promise<FixedAssetDetail> {
+  const response = await api.post<FixedAssetDetail>(`${BASE}/${assetId}/repairs/${linkId}/decision`, payload);
   return response.data;
 }

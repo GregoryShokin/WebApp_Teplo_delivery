@@ -123,7 +123,7 @@ async def dispose_asset(
             f"месяцем, когда о пропаже узнали"
         )
 
-    residual = await residual_value(session, asset)
+    residual = await residual_value(session, asset, on_date=when)
 
     movement = AssetMovement(
         asset_id=asset.id,

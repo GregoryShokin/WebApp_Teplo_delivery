@@ -463,3 +463,47 @@ class DepreciationEntry(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class AssetCapitalization(Base):
+    """Dated owner decision; base cost and historical depreciation remain immutable."""
+
+    __tablename__ = "asset_capitalization"
+    __table_args__ = (
+        UniqueConstraint("link_id", name="uq_asset_capitalization_link"),
+        CheckConstraint(
+            "status IN ('confirmed','dismissed')", name="ck_asset_capitalization_status"
+        ),
+        CheckConstraint("amount > 0", name="ck_asset_capitalization_amount"),
+        CheckConstraint(
+            (
+                "(status = 'confirmed' AND effective_on IS NOT NULL AND "
+                "depreciation_from IS NOT NULL) OR (status = 'dismissed' AND "
+                "effective_on IS NULL AND depreciation_from IS NULL)"
+            ),
+            name="ck_asset_capitalization_dates",
+        ),
+        Index("ix_asset_capitalization_asset_date", "asset_id", "effective_on"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    asset_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("fixed_asset.id", ondelete="RESTRICT"), nullable=False
+    )
+    link_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("asset_cashflow_link.id", ondelete="RESTRICT"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    cost_before: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    cost_after: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    monthly_before: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    monthly_after: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    effective_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    depreciation_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    decided_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

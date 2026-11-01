@@ -347,6 +347,7 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ),
     ("accounting.fixed_assets.read", "Учёт", "Смотреть основные средства"),
     ("accounting.fixed_assets.edit", "Учёт", "Редактировать основные средства"),
+    ("accounting.fixed_assets.capitalize", "Учёт", "Подтверждать капитализацию ремонта ОС"),
     ("accounting.suppliers.read", "Учёт", "Смотреть взаиморасчёты с поставщиками"),
     ("accounting.suppliers.edit", "Учёт", "Редактировать взаиморасчёты с поставщиками"),
     (

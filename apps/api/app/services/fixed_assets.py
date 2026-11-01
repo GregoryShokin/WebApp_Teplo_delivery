@@ -21,6 +21,7 @@ from app.models.fixed_asset import (
     FIXED_ASSET_THRESHOLD,
     UPGRADE_SHARE_THRESHOLD,
 )
+from app.services import asset_capitalization
 from app.services.taxes.concurrency import insert_or_reread
 
 # Статусы, при которых амортизация не начисляется. ``disposed``/``sold`` — объект выбыл.
@@ -121,10 +122,24 @@ async def accumulated_depreciation(session: AsyncSession, asset_id: uuid.UUID) -
     return _money(total)
 
 
-async def residual_value(session: AsyncSession, asset: FixedAsset) -> Decimal:
+async def residual_value(
+    session: AsyncSession, asset: FixedAsset, *, on_date: date | None = None
+) -> Decimal:
     """Остаточная стоимость: первоначальная минус накопленная амортизация."""
-    accrued = await accumulated_depreciation(session, asset.id)
-    return max(_money(asset.initial_cost) - accrued, Decimal("0.00"))
+    if on_date is None:
+        accrued = await accumulated_depreciation(session, asset.id)
+    else:
+        accrued = _money(
+            await session.scalar(
+                select(func.coalesce(func.sum(DepreciationEntry.amount), 0)).where(
+                    DepreciationEntry.asset_id == asset.id,
+                    DepreciationEntry.period_month <= month_start(on_date),
+                )
+            )
+        )
+    return max(
+        await asset_capitalization.cost_at(session, asset, on=on_date) - accrued, Decimal("0.00")
+    )
 
 
 async def accrue_depreciation(
@@ -139,11 +154,12 @@ async def accrue_depreciation(
     копейки округления накапливаются, и без этого у объекта вечно висел бы хвост в несколько
     копеек, который не даёт остаточной стоимости дойти до нуля.
     """
+    await asset_capitalization.accounting_lock(session)
     period = month_start(period_month)
     query = select(FixedAsset).where(FixedAsset.status.not_in(INACTIVE_STATUSES))
     if asset_id is not None:
         query = query.where(FixedAsset.id == asset_id)
-    assets = (await session.scalars(query)).all()
+    assets = (await session.scalars(query.order_by(FixedAsset.id).with_for_update())).all()
 
     created: list[DepreciationEntry] = []
     for asset in assets:
@@ -162,11 +178,16 @@ async def accrue_depreciation(
         if exists is not None:
             continue
 
-        residual = await residual_value(session, asset)
+        residual = await residual_value(
+            session, asset, on_date=asset_capitalization.month_end(period)
+        )
         if residual <= 0:
             continue
 
-        planned = _money(_money(asset.initial_cost) / Decimal(life))
+        depreciation_base = await asset_capitalization.cost_at(
+            session, asset, on=period, depreciation=True
+        )
+        planned = _money(depreciation_base / Decimal(life))
         amount = min(planned, residual) if planned > 0 else residual
         # Хвост меньше планового взноса дотягиваем сразу — иначе остаётся вечная копейка.
         if residual - amount < planned:
@@ -221,10 +242,13 @@ async def recompute_residuals(session: AsyncSession, asset_id: uuid.UUID) -> Non
         )
     ).all()
 
-    residual = _money(asset.initial_cost)
+    accrued = Decimal("0.00")
     for entry in entries:
-        residual = _money(residual - _money(entry.amount))
-        entry.residual_after = residual
+        accrued += _money(entry.amount)
+        cost = await asset_capitalization.cost_at(
+            session, asset, on=asset_capitalization.month_end(entry.period_month)
+        )
+        entry.residual_after = _money(cost - accrued)
     await session.flush()
 
 

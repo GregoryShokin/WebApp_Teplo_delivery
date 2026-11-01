@@ -37,6 +37,7 @@ from app.models import (
     DepreciationEntry,
     FixedAsset,
 )
+from app.services import asset_capitalization
 from app.services.asset_disposal import GONE_MOVEMENTS
 from app.services.clock import MOSCOW_TZ
 
@@ -167,6 +168,9 @@ async def balance_lines(session: AsyncSession, *, as_of: date) -> list[BalanceLi
     ).all()
     monthly = {asset_id: _money(total) for asset_id, total in month_rows}
 
+    capitalized = await asset_capitalization.additions(
+        session, [a.id for a in assets], on=asset_capitalization.month_end(period)
+    )
     buckets: dict[str, dict[str, object]] = {}
     for asset in assets:
         # Неработающее — своя строка, и из строки своей категории оно ИСКЛЮЧАЕТСЯ: иначе
@@ -189,7 +193,7 @@ async def balance_lines(session: AsyncSession, *, as_of: date) -> list[BalanceLi
                 "depreciation": Decimal("0.00"),
             },
         )
-        initial = _money(asset.initial_cost)
+        initial = _money(asset.initial_cost) + capitalized.get(asset.id, Decimal("0.00"))
         got = accrued.get(asset.id, Decimal("0.00"))
         bucket["count"] = int(bucket["count"]) + 1  # type: ignore[call-overload]
         bucket["initial"] = _money(bucket["initial"]) + initial  # type: ignore[operator]
@@ -225,6 +229,7 @@ async def snapshot_month(
     должна догнать реальность. Защита от тихого дрейфа не здесь, а в ``compare_with_snapshot``:
     она сравнивает снимок с текущим состоянием и показывает расхождение владельцу.
     """
+    await asset_capitalization.accounting_lock(session)
     period = month_start(period_month)
     lines = await balance_lines(session, as_of=period)
 

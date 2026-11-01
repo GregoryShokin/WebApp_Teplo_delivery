@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -42,6 +42,7 @@ from app.models import (
 from app.services import (
     asset_analytics,
     asset_balance,
+    asset_capitalization,
     asset_disposal,
     asset_intake,
     asset_revaluation,
@@ -260,7 +261,46 @@ class SaleRequest(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
 
 
+class RepairRead(BaseModel):
+    cost_before: Decimal | None
+    cost_after: Decimal | None
+    monthly_after: Decimal | None
+    link_id: uuid.UUID
+    transaction_id: uuid.UUID
+    operation_date: date
+    amount: Decimal
+    article_name: str
+    payment_purpose: str | None
+    status: Literal["pending", "confirmed", "dismissed", "maintenance"]
+    effective_on: date | None
+    depreciation_from: date | None
+    decided_at: datetime | None
+    decided_by: str | None
+    note: str | None
+
+
+class CapitalizationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["confirmed", "dismissed"]
+    effective_on: date | None = None
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class CapitalizationPreviewRead(BaseModel):
+    amount: Decimal
+    effective_on: date
+    depreciation_from: date
+    cost_before: Decimal
+    cost_after: Decimal
+    residual_before: Decimal
+    residual_after: Decimal
+    monthly_before: Decimal
+    monthly_after: Decimal
+    useful_life_months: int | None
+
+
 class FixedAssetDetailRead(FixedAssetRead):
+    repairs: list[RepairRead] = Field(default_factory=list)
     entries: list[DepreciationEntryRead]
     # История сообщений о состоянии с предложениями модели — свежие первыми.
     condition_reports: list[ConditionReportRead] = Field(default_factory=list)
@@ -391,17 +431,37 @@ def _monthly_amount(asset: FixedAsset, life: int | None, residual: Decimal) -> D
     return min(planned.quantize(Decimal("0.01")), residual)
 
 
-def _payload(
+async def _payload(
     asset: FixedAsset,
+    session: AsyncSession,
     *,
     category: AssetCategory | None,
     location_name: str | None,
     accrued: Decimal,
+    additions: dict | None = None,
+    depreciation_additions: dict | None = None,
 ) -> FixedAssetRead:
-    initial = Decimal(str(asset.initial_cost))
+    initial = (
+        Decimal(str(asset.initial_cost)) + additions.get(asset.id, Decimal("0"))
+        if additions is not None
+        else await asset_capitalization.cost_at(session, asset)
+    )
     residual = max(initial - accrued, Decimal("0.00"))
     life = asset.useful_life_months or (category.useful_life_months if category else None)
-    monthly = _monthly_amount(asset, life, residual)
+    base = (
+        Decimal(str(asset.initial_cost)) + depreciation_additions.get(asset.id, Decimal("0"))
+        if depreciation_additions is not None
+        else await asset_capitalization.cost_at(
+            session, asset, on=asset_capitalization.today().replace(day=1), depreciation=True
+        )
+    )
+    monthly = (
+        min((base / Decimal(life)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), residual)
+        if life
+        and asset.commissioned_on is not None
+        and asset.status not in service.INACTIVE_STATUSES
+        else Decimal("0.00")
+    )
     return FixedAssetRead(
         id=asset.id,
         name=asset.name,
@@ -515,7 +575,7 @@ async def list_asset_options(
                 location_name=location_name,
                 status=asset.status,  # type: ignore[arg-type]
                 status_title=STATUS_TITLES.get(asset.status, asset.status),
-                initial_cost=Decimal(str(asset.initial_cost)),
+                initial_cost=await asset_capitalization.cost_at(session, asset),
             )
             for asset, location_name in rows
         ]
@@ -739,7 +799,7 @@ async def create_asset_from_payment(
         location_name=location.name if location else None,
         status=asset.status,  # type: ignore[arg-type]
         status_title=STATUS_TITLES.get(asset.status, asset.status),
-        initial_cost=Decimal(str(asset.initial_cost)),
+        initial_cost=await asset_capitalization.cost_at(session, asset),
     )
 
 
@@ -761,6 +821,12 @@ async def get_summary(
     locations = {row.id: row for row in (await session.scalars(select(Location))).all()}
     accrued_map = await _accrued_by_asset(session, [asset.id for asset in assets])
 
+    additions = await asset_capitalization.additions(
+        session, [a.id for a in assets], on=asset_capitalization.today()
+    )
+    depreciation_additions = await asset_capitalization.additions(
+        session, [a.id for a in assets], on=asset_capitalization.today(), depreciation=True
+    )
     buckets: dict[uuid.UUID | None, CategoryTotalRead] = {}
     places: dict[uuid.UUID | None, LocationTotalRead] = {}
     totals = {
@@ -772,7 +838,15 @@ async def get_summary(
     for asset in assets:
         category = categories.get(asset.category_id) if asset.category_id else None
         accrued = accrued_map.get(asset.id, Decimal("0.00"))
-        row = _payload(asset, category=category, location_name=None, accrued=accrued)
+        row = await _payload(
+            asset,
+            session,
+            category=category,
+            location_name=None,
+            accrued=accrued,
+            additions=additions,
+            depreciation_additions=depreciation_additions,
+        )
         bucket = buckets.get(asset.category_id)
         if bucket is None:
             bucket = CategoryTotalRead(
@@ -1061,13 +1135,22 @@ async def list_assets(
     locations = {row.id: row.name for row in (await session.scalars(select(Location))).all()}
     accrued_map = await _accrued_by_asset(session, [row.id for row in rows])
 
+    additions = await asset_capitalization.additions(
+        session, [a.id for a in rows], on=asset_capitalization.today()
+    )
+    depreciation_additions = await asset_capitalization.additions(
+        session, [a.id for a in rows], on=asset_capitalization.today(), depreciation=True
+    )
     return FixedAssetListRead(
         items=[
-            _payload(
+            await _payload(
                 row,
+                session,
                 category=categories.get(row.category_id) if row.category_id else None,
                 location_name=locations.get(row.location_id) if row.location_id else None,
                 accrued=accrued_map.get(row.id, Decimal("0.00")),
+                additions=additions,
+                depreciation_additions=depreciation_additions,
             )
             for row in rows
         ],
@@ -1098,14 +1181,18 @@ async def get_asset(
             .order_by(AssetConditionReport.created_at.desc())
         )
     ).all()
-    base = _payload(
+    base = await _payload(
         asset,
+        session,
         category=category,
         location_name=location.name if location else None,
         accrued=accrued,
     )
     return FixedAssetDetailRead(
         **base.model_dump(),
+        repairs=[
+            RepairRead(**item) for item in await asset_capitalization.history(session, asset.id)
+        ],
         entries=[
             DepreciationEntryRead(
                 period_month=entry.period_month,
@@ -1159,8 +1246,9 @@ async def create_asset_endpoint(
     await session.refresh(asset)
     category = await session.get(AssetCategory, asset.category_id) if asset.category_id else None
     location = await session.get(Location, asset.location_id) if asset.location_id else None
-    return _payload(
+    return await _payload(
         asset,
+        session,
         category=category,
         location_name=location.name if location else None,
         accrued=Decimal("0.00"),
@@ -1208,6 +1296,16 @@ async def update_asset(
             ),
         )
 
+    if {"initial_cost", "useful_life_months", "commissioned_on", "category_id"}.intersection(
+        fields
+    ) and await asset_capitalization.valuation_locked(session, asset.id):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "По оборудованию есть решения о ремонте. Изменять базу стоимости и"
+                " срок обычной правкой нельзя."
+            ),
+        )
     for field, value in fields.items():
         setattr(asset, field, value)
 
@@ -1230,8 +1328,9 @@ async def update_asset(
 
     category = await session.get(AssetCategory, asset.category_id) if asset.category_id else None
     location = await session.get(Location, asset.location_id) if asset.location_id else None
-    return _payload(
+    return await _payload(
         asset,
+        session,
         category=category,
         location_name=location.name if location else None,
         accrued=accrued,
@@ -1471,8 +1570,9 @@ async def sell_asset_endpoint(
     category = await session.get(AssetCategory, asset.category_id) if asset.category_id else None
     location = await session.get(Location, asset.location_id) if asset.location_id else None
     accrued = await service.accumulated_depreciation(session, asset.id)
-    return _payload(
+    return await _payload(
         asset,
+        session,
         category=category,
         location_name=location.name if location else None,
         accrued=accrued,
@@ -1506,8 +1606,9 @@ async def cancel_disposal_endpoint(
     category = await session.get(AssetCategory, asset.category_id) if asset.category_id else None
     location = await session.get(Location, asset.location_id) if asset.location_id else None
     accrued = await service.accumulated_depreciation(session, asset.id)
-    return _payload(
+    return await _payload(
         asset,
+        session,
         category=category,
         location_name=location.name if location else None,
         accrued=accrued,
@@ -1535,3 +1636,54 @@ async def close_month_endpoint(
         entries=int(run.result.get("entries", 0)),
         amount=Decimal(str(run.result.get("amount", "0.00"))),
     )
+
+
+@router.get(
+    "/{asset_id}/repairs/{link_id}/preview",
+    response_model=CapitalizationPreviewRead,
+    dependencies=ASSETS_READ_ACCESS,
+)
+async def preview_capitalization(
+    asset_id: uuid.UUID,
+    link_id: uuid.UUID,
+    effective_on: date,
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    asset = await _asset_or_404(session, asset_id)
+    try:
+        return await asset_capitalization.preview(session, asset, link_id, effective_on)
+    except asset_capitalization.CapitalizationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{asset_id}/repairs/{link_id}/decision",
+    response_model=FixedAssetDetailRead,
+    dependencies=(Depends(require_permission("accounting.fixed_assets.capitalize")),),
+)
+async def decide_capitalization(
+    asset_id: uuid.UUID,
+    link_id: uuid.UUID,
+    payload: CapitalizationRequest,
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    if actor.user_id is None:
+        raise HTTPException(
+            status_code=401, detail="Войдите в систему, чтобы сохранить автора решения"
+        )
+    try:
+        await asset_capitalization.decide(
+            session,
+            asset_id=asset_id,
+            link_id=link_id,
+            status=payload.status,
+            when=payload.effective_on,
+            user_id=actor.user_id,
+            note=payload.note,
+        )
+        await session.commit()
+    except asset_capitalization.CapitalizationError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return await get_asset(asset_id, session)

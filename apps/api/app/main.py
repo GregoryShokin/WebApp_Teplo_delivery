@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
@@ -61,6 +63,20 @@ def create_app() -> FastAPI:
             except Exception:  # noqa: BLE001 - не валим запрос из-за реестра
                 pass
         return await call_next(request)
+
+    @app.exception_handler(IntegrityError)
+    async def repair_decision_integrity_error(request: Request, exc: IntegrityError):
+        if "Решение о ремонте уже принято" in str(exc.orig):
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "detail": (
+                        "По ремонту уже принято решение. Изменять или удалять его платёж и"
+                        " связь с оборудованием нельзя."
+                    )
+                },
+            )
+        raise exc
 
     app.include_router(api_router, prefix="/api/v1")
     return app

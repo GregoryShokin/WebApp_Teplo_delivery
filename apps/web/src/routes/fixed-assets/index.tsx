@@ -68,6 +68,9 @@ import {
   type FixedAsset,
   type FixedAssetDetail,
   type Money,
+  type Repair,
+  previewCapitalization,
+  decideCapitalization,
   cancelAssetDisposal,
   closeDepreciationMonth,
   correctDepreciation,
@@ -1322,6 +1325,90 @@ function ConditionTab({ asset, canEdit }: { asset: FixedAssetDetail; canEdit: bo
   );
 }
 
+function RepairItem({ asset, repair, canCapitalize }: { asset: FixedAssetDetail; repair: Repair; canCapitalize: boolean }) {
+  const client = useQueryClient();
+  const [opened, setOpened] = useState(false);
+  const [effectiveOn, setEffectiveOn] = useState(() => new Date().toLocaleDateString("sv-SE"));
+  const [note, setNote] = useState("");
+  const estimate = useQuery({
+    queryKey: [QUERY_ROOT, "capitalization-preview", asset.id, repair.link_id, effectiveOn],
+    queryFn: () => previewCapitalization(asset.id, repair.link_id, effectiveOn),
+    enabled: opened && Boolean(effectiveOn) && repair.status === "pending",
+    retry: false,
+  });
+  const decision = useMutation({
+    mutationFn: (status: "confirmed" | "dismissed") => decideCapitalization(asset.id, repair.link_id, {
+      status, effective_on: status === "confirmed" ? effectiveOn : null, note: note.trim() || null,
+    }),
+    onSuccess: (data) => {
+      client.setQueryData([QUERY_ROOT, "card", asset.id], data);
+      void client.invalidateQueries({ queryKey: [QUERY_ROOT] });
+      setOpened(false);
+      toast.success("Решение по ремонту сохранено");
+    },
+  });
+  const value = estimate.data;
+  const titles = { pending: "Ожидает решения", confirmed: "Капитализирован", dismissed: "Капитализация отклонена", maintenance: "Текущий ремонт" };
+  return (
+    <Card className="shadow-none">
+      <CardContent className="space-y-3 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-medium">{moneyExact(repair.amount)} · {formatDate(repair.operation_date)}</span>
+          <Badge variant="outline">{titles[repair.status]}</Badge>
+        </div>
+        <p className="text-sm text-muted-foreground">{repair.article_name}</p>
+        {repair.payment_purpose ? <p className="text-sm">{repair.payment_purpose}</p> : null}
+        {repair.status === "confirmed" ? (
+          <div className="rounded-md border bg-emerald-50 p-3 text-sm space-y-1">
+            <p>Стоимость с {formatDate(repair.effective_on as string)}: {moneyExact(repair.cost_before ?? 0)} → <b>{moneyExact(repair.cost_after ?? 0)}</b></p>
+            <p>Амортизация с {formatMonth(repair.depreciation_from as string)}: <b>{moneyExact(repair.monthly_after ?? 0)} в месяц</b></p>
+          </div>
+        ) : null}
+        {repair.decided_at ? <p className="text-xs text-muted-foreground">Решение: {formatDate(repair.decided_at)} · {repair.decided_by ?? "Пользователь удалён"}</p> : null}
+        {repair.note ? <p className="text-sm">{repair.note}</p> : null}
+        {repair.status === "pending" && canCapitalize && !opened ? (
+          <Button variant="outline" onClick={() => setOpened(true)}>Рассмотреть капитализацию</Button>
+        ) : null}
+        {opened ? (
+          <div className="space-y-3 rounded-md border p-3">
+            <div className="space-y-1">
+              <Label htmlFor={`capital-date-${repair.link_id}`}>Дата применения</Label>
+              <Input id={`capital-date-${repair.link_id}`} type="date" min={repair.operation_date} max={new Date().toLocaleDateString("sv-SE")} value={effectiveOn} disabled={decision.isPending} onChange={(event) => setEffectiveOn(event.target.value)} />
+            </div>
+            <p className="text-xs text-muted-foreground">Стоимость увеличится с этой даты, амортизация — со следующего месяца. Срок службы не меняется.</p>
+            {estimate.isFetching ? <p className="text-sm">Рассчитываем…</p> : null}
+            {estimate.isError ? <ErrorBlock error={estimate.error} fallback="Не удалось рассчитать капитализацию" /> : null}
+            {value && !estimate.isFetching && !estimate.isError ? (
+              <dl className="grid grid-cols-2 gap-2 text-sm">
+                <dt>Стоимость</dt><dd>{moneyExact(value.cost_before)} → <b>{moneyExact(value.cost_after)}</b></dd>
+                <dt>Остаточная стоимость</dt><dd>{moneyExact(value.residual_before)} → <b>{moneyExact(value.residual_after)}</b></dd>
+                <dt>Амортизация с {formatMonth(value.depreciation_from)}</dt><dd>{moneyExact(value.monthly_before)} → <b>{moneyExact(value.monthly_after)}</b></dd>
+                <dt>Срок службы</dt><dd>{value.useful_life_months ? `${value.useful_life_months} мес` : "Не задан — начисления не начнутся"}</dd>
+              </dl>
+            ) : null}
+            <div className="space-y-1">
+              <Label htmlFor={`capital-note-${repair.link_id}`}>Комментарий к решению</Label>
+              <Textarea id={`capital-note-${repair.link_id}`} value={note} maxLength={2000} disabled={decision.isPending} onChange={(event) => setNote(event.target.value)} />
+            </div>
+            {decision.isError ? <ErrorBlock error={decision.error} fallback="Не удалось сохранить решение" /> : null}
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={decision.isPending || estimate.isFetching || estimate.isError || !value || value.effective_on !== effectiveOn} onClick={() => decision.mutate("confirmed")}>Подтвердить капитализацию</Button>
+              <Button variant="outline" disabled={decision.isPending} onClick={() => decision.mutate("dismissed")}>Отклонить капитализацию</Button>
+              <Button variant="ghost" disabled={decision.isPending} onClick={() => setOpened(false)}>Отмена</Button>
+            </div>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RepairsTab({ asset }: { asset: FixedAssetDetail }) {
+  const permissions = usePermissions();
+  const canCapitalize = permissions.hasPermission("accounting.fixed_assets.capitalize");
+  return asset.repairs.length ? <div className="space-y-3">{asset.repairs.map((repair) => <RepairItem key={repair.link_id} asset={asset} repair={repair} canCapitalize={canCapitalize} />)}</div> : <EmptyState title="Ремонтов пока нет" description="Здесь появятся платежи, привязанные к этому оборудованию." />;
+}
+
 function AssetSheet({
   assetId,
   canEdit,
@@ -1373,6 +1460,7 @@ function AssetSheet({
                   Состояние
                   {asset.condition_reports.some((item) => item.status === "proposed") ? " ●" : ""}
                 </TabsTrigger>
+                <TabsTrigger value="repairs">Ремонты ({asset.repairs.length})</TabsTrigger>
                 <TabsTrigger value="history">Начисления ({asset.entries.length})</TabsTrigger>
               </TabsList>
 
@@ -1443,6 +1531,7 @@ function AssetSheet({
                 <ConditionTab asset={asset} canEdit={canEdit} />
               </TabsContent>
 
+              <TabsContent value="repairs"><RepairsTab asset={asset} /></TabsContent>
               <TabsContent value="history">
                 {asset.entries.length === 0 ? (
                   <EmptyState

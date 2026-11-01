@@ -57,6 +57,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AssetCashflowLink, CashflowTransaction, DdsArticle, FixedAsset
+from app.services import asset_capitalization
 from app.services.fixed_assets import (
     INACTIVE_STATUSES,
     capital_repair_floor,
@@ -171,16 +172,16 @@ def _purchase_context(asset: FixedAsset, amount: Decimal) -> AssetContext:
 async def _classify(session: AsyncSession, asset: FixedAsset, amount: Decimal) -> str:
     """Вердикт правила по паре «объект и сумма» — с порогами из настроек владельца."""
     return classify_asset_expense(
-        asset.initial_cost,
+        await asset_capitalization.cost_at(session, asset),
         amount,
         share_threshold=await upgrade_share_threshold(session),
         floor=await capital_repair_floor(session),
     )
 
 
-def _share_text(asset: FixedAsset, amount: Decimal) -> str:
+def _share_text(asset: FixedAsset, amount: Decimal, cost: Decimal | None = None) -> str:
     """Доля расхода от стоимости объекта словами — чтобы отказ объяснял себя цифрой."""
-    base = Decimal(str(asset.initial_cost or 0))
+    base = Decimal(str(asset.initial_cost or 0)) if cost is None else cost
     if base <= 0:
         return "стоимость объекта не заполнена"
     return f"это {Decimal(str(amount)) / base:.1%} его стоимости ({base:.2f} ₽)"
@@ -201,6 +202,9 @@ async def _repair_context(
     см. ``_maintenance_context``.
     """
     verdict = await _classify(session, asset, amount)
+    share_description = _share_text(
+        asset, amount, await asset_capitalization.cost_at(session, asset)
+    )
     if verdict == "upgrade":
         return AssetContext(
             asset_id=asset.id, link_kind="upgrade", capitalize=True, review_reason=None
@@ -210,7 +214,7 @@ async def _repair_context(
         reason = (
             f"дешевле {floor:.2f} ₽ — столько не стоит ни один капитальный ремонт"
             if Decimal(str(amount)) < floor
-            else f"{_share_text(asset, amount)}, а капитальным ремонт становится с "
+            else f"{share_description}, а капитальным ремонт становится с "
             f"{await upgrade_share_threshold(session):.0%}"
         )
         pair = await _article_name_for_kind(session, "maintenance")
@@ -249,12 +253,16 @@ async def _maintenance_context(
     капитальный ремонт по невнимательности уходит в расход, и баланс отстаёт от реальности.
     """
     verdict = await _classify(session, asset, amount)
+    share_description = _share_text(
+        asset, amount, await asset_capitalization.cost_at(session, asset)
+    )
     reason: str | None = None
     if verdict == "upgrade":
         pair = await _article_name_for_kind(session, "repair")
         reason = (
             f"Работы на {Decimal(str(amount)):.2f} ₽ проведены как текущий ремонт, но "
-            f"{_share_text(asset, amount)} — это тянет на капитальный. Если объект после них "
+            f"{share_description} — это тянет на капитальный. "
+            "Если объект после них "
             f"стал дороже, проведите расход по статье «{pair}»"
         )
     return AssetContext(
@@ -312,7 +320,7 @@ async def link_transaction_to_asset(
     if asset is not None:
         reason = context.review_reason
         if context.capitalize:
-            new_cost = Decimal(str(asset.initial_cost)) + Decimal(str(amount))
+            new_cost = await asset_capitalization.cost_at(session, asset) + Decimal(str(amount))
             reason = (
                 f"Работы на {Decimal(str(amount)):.2f} ₽ — это больше 15% стоимости, то есть "
                 f"модернизация. Подтвердите новую первоначальную стоимость "
@@ -336,6 +344,10 @@ async def unlink_transaction(session: AsyncSession, transaction_id: uuid.UUID) -
     Капитализацию откатить нельзя и не пытаемся: она уже могла попасть в закрытый месяц.
     Возвращаем число снятых связей, чтобы вызывающий мог сказать об этом в логе.
     """
+    try:
+        await asset_capitalization.protect_transaction(session, transaction_id)
+    except asset_capitalization.CapitalizationError as exc:
+        raise AssetLinkError(str(exc)) from exc
     links = (
         await session.scalars(
             select(AssetCashflowLink).where(
@@ -381,6 +393,10 @@ async def ensure_asset_link_survives(
     карточке объекта, потом менять статью. Решение о судьбе объекта принимает человек — код
     угадать его не может.
     """
+    try:
+        await asset_capitalization.protect_transaction(session, transaction_id)
+    except asset_capitalization.CapitalizationError as exc:
+        raise AssetLinkError(str(exc)) from exc
     links = await assets_linked_to_transaction(session, transaction_id)
     if not links:
         return

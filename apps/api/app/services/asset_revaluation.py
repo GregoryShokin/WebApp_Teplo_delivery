@@ -582,6 +582,14 @@ async def decide_report(
     if asset is None:
         raise LlmCallError("Объект не найден")
 
+    from app.services.asset_capitalization import valuation_locked
+
+    if await valuation_locked(session, asset.id):
+        raise LlmCallError(
+            "По оборудованию есть решения о ремонте: менять его стоимость или "
+            "срок переоценкой нельзя"
+        )
+
     if report.kind == "purchase":
         asset.useful_life_months = int(report.proposed_useful_life_months or 0)
         report.status = "applied"
